@@ -191,6 +191,7 @@ export const initializeGame = (playerNames: string[]): GameState => {
     lastPlacedTile: startingTile,
     pendingChainFoundation: null,
     merger: null,
+    mergerAdjacentChains: null,
     stocksPurchasedThisTurn: 0,
     gameLog: [{
       timestamp: Date.now(),
@@ -200,6 +201,7 @@ export const initializeGame = (playerNames: string[]): GameState => {
       details: `Starting tile ${startingTile} placed on board`,
     }],
     winner: null,
+    endGameVotes: [],
   };
 };
 

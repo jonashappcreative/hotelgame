@@ -14,7 +14,142 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      game_players: {
+        Row: {
+          cash: number
+          created_at: string
+          id: string
+          is_connected: boolean
+          player_index: number
+          player_name: string
+          room_id: string
+          session_id: string
+          stocks: Json
+          tiles: string[] | null
+        }
+        Insert: {
+          cash?: number
+          created_at?: string
+          id?: string
+          is_connected?: boolean
+          player_index: number
+          player_name: string
+          room_id: string
+          session_id: string
+          stocks?: Json
+          tiles?: string[] | null
+        }
+        Update: {
+          cash?: number
+          created_at?: string
+          id?: string
+          is_connected?: boolean
+          player_index?: number
+          player_name?: string
+          room_id?: string
+          session_id?: string
+          stocks?: Json
+          tiles?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_players_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "game_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      game_rooms: {
+        Row: {
+          created_at: string
+          id: string
+          room_code: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          room_code: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          room_code?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      game_states: {
+        Row: {
+          board: Json
+          chains: Json
+          current_player_index: number
+          end_game_votes: string[] | null
+          game_log: Json
+          id: string
+          last_placed_tile: string | null
+          merger: Json | null
+          pending_chain_foundation: string[] | null
+          phase: string
+          room_id: string
+          stock_bank: Json
+          stocks_purchased_this_turn: number
+          tile_bag: string[] | null
+          updated_at: string
+          winner: string | null
+        }
+        Insert: {
+          board?: Json
+          chains?: Json
+          current_player_index?: number
+          end_game_votes?: string[] | null
+          game_log?: Json
+          id?: string
+          last_placed_tile?: string | null
+          merger?: Json | null
+          pending_chain_foundation?: string[] | null
+          phase?: string
+          room_id: string
+          stock_bank?: Json
+          stocks_purchased_this_turn?: number
+          tile_bag?: string[] | null
+          updated_at?: string
+          winner?: string | null
+        }
+        Update: {
+          board?: Json
+          chains?: Json
+          current_player_index?: number
+          end_game_votes?: string[] | null
+          game_log?: Json
+          id?: string
+          last_placed_tile?: string | null
+          merger?: Json | null
+          pending_chain_foundation?: string[] | null
+          phase?: string
+          room_id?: string
+          stock_bank?: Json
+          stocks_purchased_this_turn?: number
+          tile_bag?: string[] | null
+          updated_at?: string
+          winner?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_states_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: true
+            referencedRelation: "game_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

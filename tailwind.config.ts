@@ -69,6 +69,9 @@ export default {
           festival: "hsl(var(--chain-festival))",
           continental: "hsl(var(--chain-continental))",
           imperial: "hsl(var(--chain-imperial))",
+          merger: "hsl(var(--chain-merger))",
+          majority: "hsl(var(--chain-majority))",
+          minority: "hsl(var(--chain-minority))",
         },
         tile: {
           empty: "hsl(var(--tile-empty))",
@@ -76,6 +79,7 @@ export default {
           hover: "hsl(var(--tile-hover))",
         },
         cash: {
+          DEFAULT: "hsl(var(--cash))",
           positive: "hsl(var(--cash-positive))",
           neutral: "hsl(var(--cash-neutral))",
         },
