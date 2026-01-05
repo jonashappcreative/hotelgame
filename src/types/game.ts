@@ -78,9 +78,11 @@ export interface GameState {
   lastPlacedTile: TileId | null;
   pendingChainFoundation: TileId[] | null;
   merger: MergerState | null;
+  mergerAdjacentChains: ChainName[] | null;
   stocksPurchasedThisTurn: number;
   gameLog: GameLogEntry[];
   winner: string | null;
+  endGameVotes: string[];
 }
 
 export interface GameLogEntry {

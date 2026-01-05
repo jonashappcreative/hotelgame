@@ -9,8 +9,12 @@ const Index = () => {
     startGame,
     handleTilePlacement,
     handleFoundChain,
+    handleChooseMergerSurvivor,
+    handlePayMergerBonuses,
+    handleMergerStockChoice,
     handleBuyStocks,
     handleSkipBuyStock,
+    handleEndGameVote,
     resetGame,
   } = useGameState();
 
@@ -23,8 +27,12 @@ const Index = () => {
       gameState={gameState}
       onTilePlacement={(tileId) => handleTilePlacement(tileId as TileId)}
       onFoundChain={(chain) => handleFoundChain(chain as ChainName)}
+      onChooseMergerSurvivor={handleChooseMergerSurvivor}
+      onPayMergerBonuses={handlePayMergerBonuses}
+      onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
       onSkipBuyStock={handleSkipBuyStock}
+      onEndGameVote={handleEndGameVote}
       onNewGame={resetGame}
     />
   );
