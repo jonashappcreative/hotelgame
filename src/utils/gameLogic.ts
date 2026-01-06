@@ -488,15 +488,11 @@ export const endTurn = (state: GameState): GameState => {
 };
 
 // Check if game should end
+// Game ends ONLY when any chain reaches 41+ tiles
 export const checkGameEnd = (state: GameState): boolean => {
   const activeChains = Object.values(state.chains).filter(c => c.isActive);
   
-  // Condition 1: All active chains are safe
-  if (activeChains.length > 0 && activeChains.every(c => c.isSafe)) {
-    return true;
-  }
-
-  // Condition 2: Any chain has 41+ tiles
+  // ONLY condition: Any chain has 41+ tiles
   if (activeChains.some(c => c.tiles.length >= END_GAME_CHAIN_SIZE)) {
     return true;
   }

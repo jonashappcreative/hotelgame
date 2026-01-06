@@ -8,9 +8,10 @@ interface PlayerHandProps {
   isCurrentPlayer: boolean;
   canPlace: boolean;
   onTileClick: (tileId: TileId) => void;
+  selectedTile?: TileId | null;
 }
 
-export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTileClick }: PlayerHandProps) => {
+export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTileClick, selectedTile }: PlayerHandProps) => {
   const isTilePlayable = (tileId: TileId): boolean => {
     if (!isCurrentPlayer || !canPlace) return false;
     const analysis = analyzeTilePlacement(gameState, tileId);
@@ -31,6 +32,7 @@ export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTile
         {tiles.map(tileId => {
           const playable = isTilePlayable(tileId);
           const reason = getTileReason(tileId);
+          const isSelected = selectedTile === tileId;
           
           return (
             <button
@@ -40,14 +42,16 @@ export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTile
               className={cn(
                 "relative aspect-[4/3] rounded-lg font-mono text-sm font-semibold",
                 "border-2 transition-all duration-200",
-                playable
-                  ? "bg-primary/20 border-primary text-primary cursor-pointer hover:bg-primary/30 hover:scale-105 animate-pulse-subtle"
-                  : "bg-muted/50 border-border/50 text-muted-foreground cursor-not-allowed opacity-60"
+                isSelected
+                  ? "bg-primary border-primary text-primary-foreground scale-105 ring-2 ring-primary ring-offset-2 ring-offset-background"
+                  : playable
+                    ? "bg-primary/20 border-primary text-primary cursor-pointer hover:bg-primary/30 hover:scale-105 animate-pulse-subtle"
+                    : "bg-muted/50 border-border/50 text-muted-foreground cursor-not-allowed opacity-60"
               )}
               title={reason || undefined}
             >
               {tileId}
-              {playable && (
+              {playable && !isSelected && (
                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
               )}
             </button>

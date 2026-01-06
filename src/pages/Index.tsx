@@ -31,7 +31,7 @@ const Index = () => {
       onPayMergerBonuses={handlePayMergerBonuses}
       onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
-      onSkipBuyStock={handleSkipBuyStock}
+      onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
       onNewGame={resetGame}
     />

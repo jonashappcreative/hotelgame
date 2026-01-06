@@ -32,13 +32,12 @@ export const EndGameVote = ({
   const votesNeeded = Math.ceil(gameState.players.length / 2);
   const currentVotes = gameState.endGameVotes?.length || 0;
 
-  // Check end game eligibility
+  // Check end game eligibility - can vote anytime during place_tile or buy_stock phase
   const activeChains = Object.values(gameState.chains).filter(c => c.isActive);
-  const safeChains = activeChains.filter(c => c.isSafe);
   const hasChainOver40 = activeChains.some(c => c.tiles.length >= 41);
-  const allChainsSafe = activeChains.length > 0 && activeChains.every(c => c.isSafe);
 
-  const canEndGame = safeChains.length > 0 || hasChainOver40 || allChainsSafe;
+  // Allow voting when at least one chain is active
+  const canEndGame = activeChains.length > 0;
 
   if (!canCallVote || !canEndGame) {
     return null;
@@ -70,20 +69,10 @@ export const EndGameVote = ({
         <DialogHeader>
           <DialogTitle>Vote to End Game</DialogTitle>
           <DialogDescription>
-            The game can end now because:
-            {safeChains.length > 0 && (
-              <span className="block mt-1">
-                • {safeChains.length} chain{safeChains.length > 1 ? 's are' : ' is'} safe (11+ tiles)
-              </span>
-            )}
+            Vote to end the game early. If majority agrees, the game will end and final scores will be calculated.
             {hasChainOver40 && (
-              <span className="block mt-1">
-                • A chain has reached 41+ tiles
-              </span>
-            )}
-            {allChainsSafe && (
-              <span className="block mt-1">
-                • All chains are safe
+              <span className="block mt-1 text-primary">
+                • A chain has reached 41+ tiles - game will end automatically!
               </span>
             )}
           </DialogDescription>

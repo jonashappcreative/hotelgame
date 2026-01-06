@@ -1,4 +1,5 @@
-import { GameState, ChainName, MergerStockDecision } from '@/types/game';
+import { useState } from 'react';
+import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
 import { PlayerCard } from './PlayerCard';
@@ -11,7 +12,9 @@ import { MergerSurvivorChoice } from './MergerSurvivorChoice';
 import { MergerBonusDisplay } from './MergerBonusDisplay';
 import { MergerStockDecision as MergerStockDecisionComponent } from './MergerStockDecision';
 import { EndGameVote } from './EndGameVote';
-import { getPlayerNetWorth, getAvailableChainsForFoundation } from '@/utils/gameLogic';
+import { TileConfirmationModal } from './TileConfirmationModal';
+import { UnplayableTilesModal } from './UnplayableTilesModal';
+import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
 
 interface GameContainerProps {
@@ -22,9 +25,10 @@ interface GameContainerProps {
   onPayMergerBonuses: () => void;
   onMergerStockChoice: (decision: MergerStockDecision) => void;
   onBuyStocks: (purchases: { chain: string; quantity: number }[]) => void;
-  onSkipBuyStock: () => void;
+  onEndTurn: () => void;
   onEndGameVote: (vote: boolean) => void;
   onNewGame: () => void;
+  onDiscardTile?: (tileId: TileId) => void;
 }
 
 export const GameContainer = ({
@@ -35,15 +39,23 @@ export const GameContainer = ({
   onPayMergerBonuses,
   onMergerStockChoice,
   onBuyStocks,
-  onSkipBuyStock,
+  onEndTurn,
   onEndGameVote,
   onNewGame,
+  onDiscardTile,
 }: GameContainerProps) => {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+  
+  // Tile selection state for confirmation modal
+  const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  const [showGameOver, setShowGameOver] = useState(true);
   
   // For local play, we're always "all players" but show current player's view
   const myPlayer = currentPlayer;
   const isMyTurn = true; // In local mode, it's always the current player's turn
+
+  // Check if player has unplayable tiles
+  const hasNoPlayableTiles = gameState.phase === 'place_tile' && !hasPlayableTiles(gameState, gameState.currentPlayerIndex);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]
@@ -64,17 +76,56 @@ export const GameContainer = ({
   };
 
   // Check if end game voting is allowed
-  const activeChains = Object.values(gameState.chains).filter(c => c.isActive);
-  const safeChains = activeChains.filter(c => c.isSafe);
-  const canCallEndGameVote = safeChains.length > 0 && 
+  const canCallEndGameVote = 
     gameState.phase !== 'game_over' &&
     ['place_tile', 'buy_stock'].includes(gameState.phase);
 
+  // Handle tile selection (show confirmation modal)
+  const handleTileSelect = (tileId: TileId) => {
+    setSelectedTile(tileId);
+  };
+
+  // Handle tile confirmation
+  const handleTileConfirm = () => {
+    if (selectedTile) {
+      onTilePlacement(selectedTile);
+      setSelectedTile(null);
+    }
+  };
+
+  // Handle tile discard
+  const handleDiscardTile = (tileId: TileId) => {
+    if (onDiscardTile) {
+      onDiscardTile(tileId);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-4 lg:p-6">
+      {/* Tile Confirmation Modal */}
+      <TileConfirmationModal
+        selectedTile={selectedTile}
+        onConfirm={handleTileConfirm}
+        onCancel={() => setSelectedTile(null)}
+      />
+
+      {/* Unplayable Tiles Modal */}
+      <UnplayableTilesModal
+        isOpen={hasNoPlayableTiles}
+        tiles={myPlayer.tiles}
+        gameState={gameState}
+        onDiscard={handleDiscardTile}
+        onClose={() => {}}
+      />
+
       {/* Game Over Modal */}
-      {gameState.phase === 'game_over' && (
-        <GameOver gameState={gameState} onNewGame={onNewGame} />
+      {gameState.phase === 'game_over' && showGameOver && (
+        <GameOver 
+          gameState={gameState} 
+          onNewGame={onNewGame}
+          onClose={() => setShowGameOver(false)}
+          onReturnToLobby={onNewGame}
+        />
       )}
 
       <div className="max-w-[1600px] mx-auto">
@@ -111,7 +162,8 @@ export const GameContainer = ({
               gameState={gameState}
               playerTiles={myPlayer.tiles}
               isCurrentPlayer={isMyTurn}
-              onTileClick={onTilePlacement}
+              onTileClick={handleTileSelect}
+              selectedTile={selectedTile}
             />
 
             {/* Action Area */}
@@ -122,7 +174,8 @@ export const GameContainer = ({
                 gameState={gameState}
                 isCurrentPlayer={isMyTurn}
                 canPlace={gameState.phase === 'place_tile'}
-                onTileClick={onTilePlacement}
+                onTileClick={handleTileSelect}
+                selectedTile={selectedTile}
               />
 
               {/* Current Action */}
@@ -178,7 +231,7 @@ export const GameContainer = ({
                     gameState={gameState}
                     playerCash={myPlayer.cash}
                     onPurchase={onBuyStocks}
-                    onSkip={onSkipBuyStock}
+                    onEndTurn={onEndTurn}
                   />
                 )}
               </div>

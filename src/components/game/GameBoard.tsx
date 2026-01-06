@@ -7,12 +7,13 @@ interface GameBoardProps {
   playerTiles: TileId[];
   isCurrentPlayer: boolean;
   onTileClick: (tileId: TileId) => void;
+  selectedTile?: TileId | null;
 }
 
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick }: GameBoardProps) => {
+export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile }: GameBoardProps) => {
   const canPlaceTile = (tileId: TileId): boolean => {
     if (!isCurrentPlayer || gameState.phase !== 'place_tile') return false;
     if (!playerTiles.includes(tileId)) return false;
@@ -72,7 +73,8 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                     isPlaced && !chainName && "tile-placed",
                     chainName && `tile-chain ${getChainClass(chainName)}`,
                     canPlace && "tile-playable cursor-pointer",
-                    isInHand && !isPlaced && "ring-1 ring-primary/30",
+                    selectedTile === tileId && "ring-2 ring-primary scale-105",
+                    isInHand && !isPlaced && !selectedTile && "ring-1 ring-primary/30",
                     !canPlace && !isPlaced && "opacity-70"
                   )}
                   title={tileId}
