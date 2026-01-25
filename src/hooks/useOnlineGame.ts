@@ -30,6 +30,7 @@ import {
   joinRoom,
   leaveRoom,
   getRoomPlayers,
+  getSecurePlayerData,
   startGame as startOnlineGame,
   updateGameState,
   dbToGameState,
@@ -82,13 +83,9 @@ export const useOnlineGame = () => {
     return unsubscribe;
   }, [roomId, roomCode]);
 
+  // Fetch player data securely - only own tiles visible, opponents' tiles hidden
   const fetchFullPlayerData = async (rId: string) => {
-    const { data } = await supabase
-      .from('game_players')
-      .select('*')
-      .eq('room_id', rId)
-      .order('player_index');
-    return data || [];
+    return await getSecurePlayerData(rId);
   };
 
   const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4) => {

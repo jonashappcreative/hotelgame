@@ -105,10 +105,10 @@ export const leaveRoom = async (roomId: string): Promise<void> => {
     .eq('session_id', sessionId);
 };
 
-// Get room players
+// Get room players (public info only - excludes tiles for security)
 export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number }[]> => {
   const { data, error } = await supabase
-    .from('game_players')
+    .from('game_players_public')
     .select('id, player_name, player_index')
     .eq('room_id', roomId)
     .order('player_index');
@@ -119,6 +119,48 @@ export const getRoomPlayers = async (roomId: string): Promise<{ id: string; play
   }
 
   return data || [];
+};
+
+// Get player data with secure tile handling
+// Only returns tiles for the current session's player, others get empty arrays
+export const getSecurePlayerData = async (roomId: string): Promise<any[]> => {
+  const sessionId = getSessionId();
+  
+  // Fetch public player data (excludes tiles)
+  const { data: publicData, error: publicError } = await supabase
+    .from('game_players_public')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('player_index');
+
+  if (publicError || !publicData) {
+    console.error('Error fetching player data:', publicError);
+    return [];
+  }
+
+  // Only fetch tiles for the current player (session-based)
+  const myPlayerIndex = publicData.findIndex(p => p.session_id === sessionId);
+  let myTiles: string[] = [];
+  
+  if (myPlayerIndex >= 0) {
+    // Fetch own tiles from the full table
+    const { data: myData, error: myError } = await supabase
+      .from('game_players')
+      .select('tiles')
+      .eq('room_id', roomId)
+      .eq('session_id', sessionId)
+      .single();
+
+    if (!myError && myData) {
+      myTiles = myData.tiles || [];
+    }
+  }
+
+  // Return players with tiles only for the session owner
+  return publicData.map((p, index) => ({
+    ...p,
+    tiles: index === myPlayerIndex ? myTiles : []
+  }));
 };
 
 // Start the game

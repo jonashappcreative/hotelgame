@@ -155,7 +155,50 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      game_players_public: {
+        Row: {
+          cash: number | null
+          created_at: string | null
+          id: string | null
+          is_connected: boolean | null
+          player_index: number | null
+          player_name: string | null
+          room_id: string | null
+          session_id: string | null
+          stocks: Json | null
+        }
+        Insert: {
+          cash?: number | null
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          player_index?: number | null
+          player_name?: string | null
+          room_id?: string | null
+          session_id?: string | null
+          stocks?: Json | null
+        }
+        Update: {
+          cash?: number | null
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          player_index?: number | null
+          player_name?: string | null
+          room_id?: string | null
+          session_id?: string | null
+          stocks?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_players_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "game_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       [_ in never]: never
