@@ -16,9 +16,11 @@ import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
+import { Clock } from 'lucide-react';
 
 interface GameContainerProps {
   gameState: GameState;
+  myPlayerIndex?: number; // Optional - if undefined, show all (local mode)
   onTilePlacement: (tileId: string) => void;
   onFoundChain: (chain: string) => void;
   onChooseMergerSurvivor: (chain: ChainName) => void;
@@ -33,6 +35,7 @@ interface GameContainerProps {
 
 export const GameContainer = ({
   gameState,
+  myPlayerIndex: myPlayerIndexProp,
   onTilePlacement,
   onFoundChain,
   onChooseMergerSurvivor,
@@ -50,12 +53,20 @@ export const GameContainer = ({
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const [showGameOver, setShowGameOver] = useState(true);
   
-  // For local play, we're always "all players" but show current player's view
-  const myPlayer = currentPlayer;
-  const isMyTurn = true; // In local mode, it's always the current player's turn
+  // Determine if we're in online mode (myPlayerIndex provided) or local mode
+  const isOnlineMode = myPlayerIndexProp !== undefined;
+  const myPlayerIndex = myPlayerIndexProp ?? gameState.currentPlayerIndex;
+  const myPlayer = gameState.players[myPlayerIndex];
+  const isMyTurn = myPlayerIndex === gameState.currentPlayerIndex;
+  
+  // Check if it's my turn for merger stock decisions
+  const isMyMergerTurn = gameState.phase === 'merger_handle_stock' && 
+    gameState.merger?.currentPlayerIndex === myPlayerIndex;
 
   // Check if player has unplayable tiles
-  const hasNoPlayableTiles = gameState.phase === 'place_tile' && !hasPlayableTiles(gameState, gameState.currentPlayerIndex);
+  const hasNoPlayableTiles = gameState.phase === 'place_tile' && 
+    isMyTurn && 
+    !hasPlayableTiles(gameState, gameState.currentPlayerIndex);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]
@@ -118,6 +129,19 @@ export const GameContainer = ({
         onClose={() => {}}
       />
 
+      {/* Waiting for other player overlay (online mode only) */}
+      {isOnlineMode && !isMyTurn && gameState.phase !== 'game_over' && !isMyMergerTurn && (
+        <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-40 flex items-center justify-center">
+          <div className="bg-card rounded-xl p-6 shadow-xl border text-center">
+            <Clock className="w-8 h-8 text-primary mx-auto mb-3 animate-pulse" />
+            <p className="text-lg font-semibold">Waiting for {currentPlayer.name}...</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              It's their turn to play
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Game Over Modal */}
       {gameState.phase === 'game_over' && showGameOver && (
         <GameOver 
@@ -168,15 +192,26 @@ export const GameContainer = ({
 
             {/* Action Area */}
             <div className="grid md:grid-cols-2 gap-4">
-              {/* Player's Hand */}
+            {/* Player's Hand - only show your own tiles */}
+            {(!isOnlineMode || isMyTurn) && (
               <PlayerHand
                 tiles={myPlayer.tiles}
                 gameState={gameState}
                 isCurrentPlayer={isMyTurn}
-                canPlace={gameState.phase === 'place_tile'}
+                canPlace={gameState.phase === 'place_tile' && isMyTurn}
                 onTileClick={handleTileSelect}
                 selectedTile={selectedTile}
               />
+            )}
+            
+            {/* Waiting message when not your turn */}
+            {isOnlineMode && !isMyTurn && gameState.phase === 'place_tile' && (
+              <div className="bg-card rounded-xl p-4 shadow-md flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">
+                  Your tiles are hidden while waiting
+                </p>
+              </div>
+            )}
 
               {/* Current Action */}
               <div>
@@ -217,22 +252,59 @@ export const GameContainer = ({
                 )}
 
                 {gameState.phase === 'merger_handle_stock' && gameState.merger?.currentDefunctChain && gameState.merger.survivingChain && (
-                  <MergerStockDecisionComponent
-                    gameState={gameState}
-                    playerIndex={gameState.merger.currentPlayerIndex}
-                    defunctChain={gameState.merger.currentDefunctChain}
-                    survivingChain={gameState.merger.survivingChain}
-                    onDecision={onMergerStockChoice}
-                  />
+                  isMyMergerTurn ? (
+                    <MergerStockDecisionComponent
+                      gameState={gameState}
+                      playerIndex={gameState.merger.currentPlayerIndex}
+                      defunctChain={gameState.merger.currentDefunctChain}
+                      survivingChain={gameState.merger.survivingChain}
+                      onDecision={onMergerStockChoice}
+                    />
+                  ) : isOnlineMode ? (
+                    <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-lg font-semibold mb-2">Merger in Progress</p>
+                        <p className="text-sm text-muted-foreground">
+                          Waiting for {gameState.players[gameState.merger.currentPlayerIndex].name} to decide...
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <MergerStockDecisionComponent
+                      gameState={gameState}
+                      playerIndex={gameState.merger.currentPlayerIndex}
+                      defunctChain={gameState.merger.currentDefunctChain}
+                      survivingChain={gameState.merger.survivingChain}
+                      onDecision={onMergerStockChoice}
+                    />
+                  )
                 )}
 
                 {gameState.phase === 'buy_stock' && (
-                  <StockPurchase
-                    gameState={gameState}
-                    playerCash={myPlayer.cash}
-                    onPurchase={onBuyStocks}
-                    onEndTurn={onEndTurn}
-                  />
+                  isMyTurn ? (
+                    <StockPurchase
+                      gameState={gameState}
+                      playerCash={myPlayer.cash}
+                      onPurchase={onBuyStocks}
+                      onEndTurn={onEndTurn}
+                    />
+                  ) : isOnlineMode ? (
+                    <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-lg font-semibold mb-2">Stock Purchase</p>
+                        <p className="text-sm text-muted-foreground">
+                          Waiting for {currentPlayer.name} to buy stocks...
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <StockPurchase
+                      gameState={gameState}
+                      playerCash={myPlayer.cash}
+                      onPurchase={onBuyStocks}
+                      onEndTurn={onEndTurn}
+                    />
+                  )
                 )}
               </div>
             </div>

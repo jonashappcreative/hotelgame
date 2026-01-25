@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Users, Play, UserPlus, Sparkles } from 'lucide-react';
+import { Users, Play, UserPlus, ArrowLeft } from 'lucide-react';
 
 interface LobbyProps {
   onStartGame: (playerNames: string[]) => void;
+  onBack?: () => void;
 }
 
-export const Lobby = ({ onStartGame }: LobbyProps) => {
+export const Lobby = ({ onStartGame, onBack }: LobbyProps) => {
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [focusedInput, setFocusedInput] = useState<number | null>(null);
 
@@ -30,14 +31,27 @@ export const Lobby = ({ onStartGame }: LobbyProps) => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        {/* Back Button */}
+        {onBack && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="mb-4"
+            onClick={onBack}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+        )}
+
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
-            <Sparkles className="w-8 h-8 text-primary" />
+            <Users className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2">Acquire</h1>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Local Play</h1>
           <p className="text-muted-foreground">
-            The classic hotel empire building game
+            Enter all 4 player names
           </p>
         </div>
 
