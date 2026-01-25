@@ -315,11 +315,16 @@ export const subscribeToRoom = (
       {
         event: '*',
         schema: 'public',
-        table: 'game_states_public',
+        table: 'game_states',
         filter: `room_id=eq.${roomId}`,
       },
       (payload) => {
-        onGameStateChange(payload.new);
+        // Filter out tile_bag from the payload for security
+        const state = payload.new as any;
+        if (state) {
+          const { tile_bag, ...publicState } = state;
+          onGameStateChange(publicState);
+        }
       }
     )
     .on(
