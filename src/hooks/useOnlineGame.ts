@@ -51,6 +51,7 @@ export const useOnlineGame = () => {
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [players, setPlayers] = useState<OnlinePlayer[]>([]);
   const [myPlayerIndex, setMyPlayerIndex] = useState<number | null>(null);
+  const [maxPlayers, setMaxPlayers] = useState<number>(4);
   const [roomStatus, setRoomStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -90,10 +91,10 @@ export const useOnlineGame = () => {
     return data || [];
   };
 
-  const handleCreateRoom = useCallback(async (playerName: string) => {
+  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4) => {
     setIsLoading(true);
     try {
-      const result = await createRoom();
+      const result = await createRoom(playerCount);
       if (!result) {
         toast({ title: 'Error', description: 'Failed to create room', variant: 'destructive' });
         return;
@@ -107,6 +108,7 @@ export const useOnlineGame = () => {
 
       setRoomId(result.roomId);
       setRoomCode(result.roomCode);
+      setMaxPlayers(result.maxPlayers);
       setMyPlayerIndex(joinResult.playerIndex!);
 
       const currentPlayers = await getRoomPlayers(result.roomId);
@@ -129,6 +131,7 @@ export const useOnlineGame = () => {
 
       setRoomId(result.roomId!);
       setRoomCode(code.toUpperCase());
+      setMaxPlayers(result.maxPlayers || 4);
       setMyPlayerIndex(result.playerIndex!);
 
       const currentPlayers = await getRoomPlayers(result.roomId!);
@@ -137,23 +140,26 @@ export const useOnlineGame = () => {
       // Check if game already started
       const { data: room } = await supabase
         .from('game_rooms')
-        .select('status')
+        .select('status, max_players')
         .eq('id', result.roomId!)
         .single();
 
-      if (room?.status === 'playing') {
-        setRoomStatus('playing');
-        // Fetch game state
-        const { data: dbState } = await supabase
-          .from('game_states')
-          .select('*')
-          .eq('room_id', result.roomId!)
-          .single();
-        
-        if (dbState) {
-          const fullPlayers = await fetchFullPlayerData(result.roomId!);
-          const fullState = dbToGameState(dbState, fullPlayers, code.toUpperCase());
-          setGameState(fullState);
+      if (room) {
+        setMaxPlayers(room.max_players || 4);
+        if (room.status === 'playing') {
+          setRoomStatus('playing');
+          // Fetch game state
+          const { data: dbState } = await supabase
+            .from('game_states')
+            .select('*')
+            .eq('room_id', result.roomId!)
+            .single();
+          
+          if (dbState) {
+            const fullPlayers = await fetchFullPlayerData(result.roomId!);
+            const fullState = dbToGameState(dbState, fullPlayers, code.toUpperCase());
+            setGameState(fullState);
+          }
         }
       }
 
@@ -175,10 +181,10 @@ export const useOnlineGame = () => {
   }, [roomId]);
 
   const handleStartGame = useCallback(async () => {
-    if (!roomId || !roomCode || players.length !== 4) {
+    if (!roomId || !roomCode || players.length !== maxPlayers) {
       toast({ 
         title: 'Cannot Start', 
-        description: 'Need exactly 4 players', 
+        description: `Need exactly ${maxPlayers} players`, 
         variant: 'destructive' 
       });
       return;
@@ -202,7 +208,7 @@ export const useOnlineGame = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [roomId, roomCode, players]);
+  }, [roomId, roomCode, players, maxPlayers]);
 
   // Game action wrapper that syncs to database
   const syncGameAction = useCallback(async (
@@ -495,6 +501,7 @@ export const useOnlineGame = () => {
     roomCode,
     players,
     myPlayerIndex,
+    maxPlayers,
     roomStatus,
     isLoading,
     isMyTurn: gameState?.currentPlayerIndex === myPlayerIndex,

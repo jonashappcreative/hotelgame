@@ -4,6 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { Users, Copy, Loader2, ArrowLeft, Play } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -11,8 +13,9 @@ interface OnlineLobbyProps {
   roomCode: string | null;
   players: { id: string; player_name: string; player_index: number }[];
   myPlayerIndex: number | null;
+  maxPlayers: number;
   isLoading: boolean;
-  onCreateRoom: (playerName: string) => void;
+  onCreateRoom: (playerName: string, maxPlayers: number) => void;
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
   onStartGame: () => void;
@@ -22,6 +25,7 @@ export const OnlineLobby = ({
   roomCode,
   players,
   myPlayerIndex,
+  maxPlayers,
   isLoading,
   onCreateRoom,
   onJoinRoom,
@@ -30,6 +34,7 @@ export const OnlineLobby = ({
 }: OnlineLobbyProps) => {
   const [playerName, setPlayerName] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [selectedPlayerCount, setSelectedPlayerCount] = useState('4');
   const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
 
   const handleCopyCode = () => {
@@ -44,7 +49,7 @@ export const OnlineLobby = ({
       toast({ title: 'Enter your name', variant: 'destructive' });
       return;
     }
-    onCreateRoom(playerName.trim());
+    onCreateRoom(playerName.trim(), parseInt(selectedPlayerCount));
   };
 
   const handleJoin = () => {
@@ -81,7 +86,7 @@ export const OnlineLobby = ({
           <CardContent className="space-y-6">
             {/* Player slots */}
             <div className="space-y-2">
-              {[0, 1, 2, 3].map(index => {
+              {Array.from({ length: maxPlayers }, (_, index) => {
                 const player = players.find(p => p.player_index === index);
                 return (
                   <div
@@ -123,7 +128,7 @@ export const OnlineLobby = ({
               </Button>
               <Button 
                 onClick={onStartGame}
-                disabled={players.length !== 4 || isLoading}
+                disabled={players.length !== maxPlayers || isLoading}
                 className="flex-1"
               >
                 {isLoading ? (
@@ -135,9 +140,9 @@ export const OnlineLobby = ({
               </Button>
             </div>
 
-            {players.length !== 4 && (
+            {players.length !== maxPlayers && (
               <p className="text-center text-sm text-muted-foreground">
-                Need {4 - players.length} more player{4 - players.length > 1 ? 's' : ''} to start
+                Need {maxPlayers - players.length} more player{maxPlayers - players.length > 1 ? 's' : ''} to start
               </p>
             )}
           </CardContent>
@@ -204,6 +209,30 @@ export const OnlineLobby = ({
                 onChange={(e) => setPlayerName(e.target.value)}
                 maxLength={20}
               />
+            </div>
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Number of Players</label>
+              <RadioGroup 
+                value={selectedPlayerCount} 
+                onValueChange={setSelectedPlayerCount}
+                className="flex flex-wrap gap-2"
+              >
+                {[2, 3, 4, 5, 6].map((count) => (
+                  <div key={count} className="flex items-center">
+                    <RadioGroupItem 
+                      value={count.toString()} 
+                      id={`player-count-${count}`} 
+                      className="peer sr-only"
+                    />
+                    <Label
+                      htmlFor={`player-count-${count}`}
+                      className="flex items-center justify-center w-12 h-10 rounded-lg border-2 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 hover:bg-muted/50 transition-colors"
+                    >
+                      {count}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
             </div>
             <Button 
               className="w-full"

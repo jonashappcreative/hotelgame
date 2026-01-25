@@ -9,6 +9,7 @@ const OnlineGame = () => {
     roomCode,
     players,
     myPlayerIndex,
+    maxPlayers,
     roomStatus,
     isLoading,
     handleCreateRoom,
@@ -33,6 +34,7 @@ const OnlineGame = () => {
         roomCode={roomCode}
         players={players}
         myPlayerIndex={myPlayerIndex}
+        maxPlayers={maxPlayers}
         isLoading={isLoading}
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
