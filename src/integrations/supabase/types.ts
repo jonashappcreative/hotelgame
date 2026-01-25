@@ -232,7 +232,6 @@ export type Database = {
           player_index: number | null
           player_name: string | null
           room_id: string | null
-          session_id: string | null
           stocks: Json | null
         }
         Insert: {
@@ -243,7 +242,6 @@ export type Database = {
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null
-          session_id?: string | null
           stocks?: Json | null
         }
         Update: {
@@ -254,7 +252,6 @@ export type Database = {
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null
-          session_id?: string | null
           stocks?: Json | null
         }
         Relationships: [
