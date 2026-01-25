@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameState } from '@/hooks/useGameState';
+import { useAuth } from '@/contexts/AuthContext';
 import { Lobby } from '@/components/game/Lobby';
 import { GameContainer } from '@/components/game/GameContainer';
 import { TileId, ChainName } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Monitor, Sparkles, Wifi } from 'lucide-react';
+import { Monitor, Sparkles, Wifi, User, LogOut, History } from 'lucide-react';
 
 type GameMode = 'select' | 'local';
 
 const Index = () => {
   const [mode, setMode] = useState<GameMode>('select');
   const navigate = useNavigate();
+  const { user, profile, signOut, loading: authLoading } = useAuth();
   
   const {
     gameState,
@@ -28,11 +30,58 @@ const Index = () => {
     resetGame,
   } = useGameState();
 
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
   // Mode selection screen
   if (mode === 'select') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
+          {/* User Menu - Top Right */}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            {!authLoading && (
+              <>
+                {user ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate('/history')}
+                    >
+                      <History className="w-4 h-4 mr-2" />
+                      History
+                    </Button>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50">
+                      <User className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        {profile?.display_name || 'Player'}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSignOut}
+                      title="Sign out"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/auth')}
+                  >
+                    <User className="w-4 h-4 mr-2" />
+                    Sign In
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">

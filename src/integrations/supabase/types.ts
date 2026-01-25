@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      game_history: {
+        Row: {
+          final_cash: number | null
+          final_stock_value: number | null
+          final_total: number | null
+          id: string
+          placement: number | null
+          played_at: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          final_cash?: number | null
+          final_stock_value?: number | null
+          final_total?: number | null
+          id?: string
+          placement?: number | null
+          played_at?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          final_cash?: number | null
+          final_stock_value?: number | null
+          final_total?: number | null
+          id?: string
+          placement?: number | null
+          played_at?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_history_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "game_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_players: {
         Row: {
           cash: number
@@ -26,6 +67,7 @@ export type Database = {
           session_id: string
           stocks: Json
           tiles: string[] | null
+          user_id: string | null
         }
         Insert: {
           cash?: number
@@ -38,6 +80,7 @@ export type Database = {
           session_id: string
           stocks?: Json
           tiles?: string[] | null
+          user_id?: string | null
         }
         Update: {
           cash?: number
@@ -50,6 +93,7 @@ export type Database = {
           session_id?: string
           stocks?: Json
           tiles?: string[] | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -152,6 +196,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
