@@ -1,9 +1,19 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameState } from '@/hooks/useGameState';
 import { Lobby } from '@/components/game/Lobby';
 import { GameContainer } from '@/components/game/GameContainer';
 import { TileId, ChainName } from '@/types/game';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Monitor, Sparkles, Wifi } from 'lucide-react';
+
+type GameMode = 'select' | 'local';
 
 const Index = () => {
+  const [mode, setMode] = useState<GameMode>('select');
+  const navigate = useNavigate();
+  
   const {
     gameState,
     startGame,
@@ -18,8 +28,75 @@ const Index = () => {
     resetGame,
   } = useGameState();
 
+  // Mode selection screen
+  if (mode === 'select') {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
+              <Sparkles className="w-8 h-8 text-primary" />
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight mb-2">Acquire</h1>
+            <p className="text-muted-foreground">
+              The classic hotel empire building game
+            </p>
+          </div>
+
+          {/* Mode Selection */}
+          <Card className="shadow-lg">
+            <CardHeader className="text-center pb-4">
+              <CardTitle className="text-xl">Choose Game Mode</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button
+                variant="outline"
+                className="w-full h-20 flex flex-col items-center justify-center gap-2"
+                onClick={() => setMode('local')}
+              >
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-5 h-5" />
+                  <span className="text-lg font-semibold">Local Play</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  Play on one device, passing it around
+                </span>
+              </Button>
+
+              <Button
+                className="w-full h-20 flex flex-col items-center justify-center gap-2"
+                onClick={() => navigate('/online')}
+              >
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-5 h-5" />
+                  <span className="text-lg font-semibold">Online Multiplayer</span>
+                </div>
+                <span className="text-xs text-primary-foreground/80">
+                  Play with friends on separate devices
+                </span>
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Game Info */}
+          <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
+            <h3 className="font-medium mb-2 text-sm">How to Play</h3>
+            <ul className="text-xs text-muted-foreground space-y-1">
+              <li>• Place tiles to form hotel chains</li>
+              <li>• Buy stocks in chains you believe will grow</li>
+              <li>• Merge chains to earn bonuses</li>
+              <li>• End with the most cash to win!</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Local mode - show lobby if no game
   if (!gameState) {
-    return <Lobby onStartGame={startGame} />;
+    return <Lobby onStartGame={startGame} onBack={() => setMode('select')} />;
   }
 
   return (
@@ -33,7 +110,10 @@ const Index = () => {
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
       onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
-      onNewGame={resetGame}
+      onNewGame={() => {
+        resetGame();
+        setMode('select');
+      }}
     />
   );
 };
