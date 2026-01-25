@@ -109,7 +109,7 @@ export const joinRoom = async (
     .select('*')
     .eq('room_id', room.id)
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   if (myPlayer) {
     return { success: true, roomId: room.id, playerIndex: myPlayer.player_index, maxPlayers };
@@ -189,12 +189,12 @@ export const getSecurePlayerData = async (roomId: string): Promise<any[]> => {
   }
 
   // Fetch own player data separately using user_id
-  const { data: myPlayer, error: myPlayerError } = await supabase
+  const { data: myPlayer } = await supabase
     .from('game_players')
     .select('player_index, tiles')
     .eq('room_id', roomId)
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   const myPlayerIndex = myPlayer?.player_index ?? -1;
   const myTiles: string[] = myPlayer?.tiles || [];
