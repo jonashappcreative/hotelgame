@@ -13,12 +13,12 @@ export const getSessionId = (): string => {
 };
 
 // Create a new game room
-export const createRoom = async (): Promise<{ roomCode: string; roomId: string } | null> => {
+export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
   const roomCode = generateRoomCode();
   
   const { data, error } = await supabase
     .from('game_rooms')
-    .insert({ room_code: roomCode })
+    .insert({ room_code: roomCode, max_players: maxPlayers })
     .select()
     .single();
 
@@ -27,14 +27,14 @@ export const createRoom = async (): Promise<{ roomCode: string; roomId: string }
     return null;
   }
 
-  return { roomCode: data.room_code, roomId: data.id };
+  return { roomCode: data.room_code, roomId: data.id, maxPlayers: data.max_players };
 };
 
 // Join an existing room
 export const joinRoom = async (
   roomCode: string, 
   playerName: string
-): Promise<{ success: boolean; roomId?: string; playerIndex?: number; error?: string }> => {
+): Promise<{ success: boolean; roomId?: string; playerIndex?: number; maxPlayers?: number; error?: string }> => {
   const sessionId = getSessionId();
   
   // Find the room
@@ -52,6 +52,8 @@ export const joinRoom = async (
     return { success: false, error: 'Game already started' };
   }
 
+  const maxPlayers = room.max_players || 4;
+
   // Check existing players
   const { data: players, error: playersError } = await supabase
     .from('game_players')
@@ -66,10 +68,10 @@ export const joinRoom = async (
   // Check if this session already joined
   const existingPlayer = players?.find(p => p.session_id === sessionId);
   if (existingPlayer) {
-    return { success: true, roomId: room.id, playerIndex: existingPlayer.player_index };
+    return { success: true, roomId: room.id, playerIndex: existingPlayer.player_index, maxPlayers };
   }
 
-  if (players && players.length >= 4) {
+  if (players && players.length >= maxPlayers) {
     return { success: false, error: 'Room is full' };
   }
 
@@ -89,7 +91,7 @@ export const joinRoom = async (
     return { success: false, error: 'Failed to join room' };
   }
 
-  return { success: true, roomId: room.id, playerIndex };
+  return { success: true, roomId: room.id, playerIndex, maxPlayers };
 };
 
 // Leave a room
