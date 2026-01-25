@@ -80,7 +80,7 @@ export const joinRoom = async (
     .from('game_rooms')
     .select('*')
     .eq('room_code', roomCode.toUpperCase())
-    .single();
+    .maybeSingle();
 
   if (roomError || !room) {
     return { success: false, error: 'Room not found' };
@@ -92,18 +92,7 @@ export const joinRoom = async (
 
   const maxPlayers = room.max_players || 4;
 
-  // Check existing players via the public view
-  const { data: players, error: playersError } = await supabase
-    .from('game_players_public')
-    .select('*')
-    .eq('room_id', room.id)
-    .order('player_index');
-
-  if (playersError) {
-    return { success: false, error: 'Error checking players' };
-  }
-
-  // Check if this user already joined (check our own record)
+  // Check if this user already joined (check our own record first)
   const { data: myPlayer } = await supabase
     .from('game_players')
     .select('*')
@@ -115,28 +104,66 @@ export const joinRoom = async (
     return { success: true, roomId: room.id, playerIndex: myPlayer.player_index, maxPlayers };
   }
 
-  if (players && players.length >= maxPlayers) {
-    return { success: false, error: 'Room is full' };
-  }
+  // Try to join with retry logic for race conditions
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current player count
+    const { data: players, error: playersError } = await supabase
+      .from('game_players_public')
+      .select('player_index')
+      .eq('room_id', room.id)
+      .order('player_index');
 
-  // Add player with user_id for authentication
-  const playerIndex = players?.length || 0;
-  const { error: insertError } = await supabase
-    .from('game_players')
-    .insert({
-      room_id: room.id,
-      player_name: playerName,
-      player_index: playerIndex,
-      user_id: userId,
-      session_id: sessionId, // Keep for backward compatibility
-    });
+    if (playersError) {
+      return { success: false, error: 'Error checking players' };
+    }
 
-  if (insertError) {
+    if (players && players.length >= maxPlayers) {
+      return { success: false, error: 'Room is full' };
+    }
+
+    // Find the next available player_index (handle gaps from players leaving)
+    const usedIndices = new Set(players?.map(p => p.player_index) || []);
+    let playerIndex = 0;
+    while (usedIndices.has(playerIndex) && playerIndex < maxPlayers) {
+      playerIndex++;
+    }
+
+    if (playerIndex >= maxPlayers) {
+      return { success: false, error: 'Room is full' };
+    }
+
+    // Try to insert player
+    const { data: insertedPlayer, error: insertError } = await supabase
+      .from('game_players')
+      .insert({
+        room_id: room.id,
+        player_name: playerName,
+        player_index: playerIndex,
+        user_id: userId,
+        session_id: sessionId,
+      })
+      .select()
+      .maybeSingle();
+
+    if (!insertError && insertedPlayer) {
+      return { success: true, roomId: room.id, playerIndex: insertedPlayer.player_index, maxPlayers };
+    }
+
+    // If it's a unique constraint violation, retry
+    if (insertError?.code === '23505') {
+      console.log(`Join attempt ${attempt + 1} failed due to race condition, retrying...`);
+      // Small delay before retry
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+      continue;
+    }
+
+    // Other error - fail immediately
     console.error('Error joining room:', insertError);
     return { success: false, error: 'Failed to join room' };
   }
 
-  return { success: true, roomId: room.id, playerIndex, maxPlayers };
+  return { success: false, error: 'Failed to join room after multiple attempts' };
 };
 
 // Leave a room
