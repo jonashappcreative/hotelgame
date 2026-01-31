@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +33,7 @@ export const OnlineLobby = ({
   onLeaveRoom,
   onStartGame,
 }: OnlineLobbyProps) => {
+  const navigate = useNavigate();
   const [playerName, setPlayerName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [selectedPlayerCount, setSelectedPlayerCount] = useState('4');
@@ -155,30 +157,41 @@ export const OnlineLobby = ({
   if (mode === 'menu') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-              <Users className="h-8 w-8 text-primary" />
-            </div>
-            <CardTitle className="text-3xl font-bold">Acquire</CardTitle>
-            <p className="text-muted-foreground">Online Multiplayer</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button 
-              className="w-full h-14 text-lg"
-              onClick={() => setMode('create')}
-            >
-              Create Room
-            </Button>
-            <Button 
-              variant="outline"
-              className="w-full h-14 text-lg"
-              onClick={() => setMode('join')}
-            >
-              Join Room
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="w-full max-w-md">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="mb-4"
+            onClick={() => navigate('/')}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
+                <Users className="h-8 w-8 text-primary" />
+              </div>
+              <CardTitle className="text-3xl font-bold">Acquire</CardTitle>
+              <p className="text-muted-foreground">Online Multiplayer</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button 
+                className="w-full h-14 text-lg"
+                onClick={() => setMode('create')}
+              >
+                Create Room
+              </Button>
+              <Button 
+                variant="outline"
+                className="w-full h-14 text-lg"
+                onClick={() => setMode('join')}
+              >
+                Join Room
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

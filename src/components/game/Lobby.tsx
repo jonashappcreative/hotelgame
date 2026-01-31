@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Users, Play, UserPlus, ArrowLeft } from 'lucide-react';
 
@@ -10,8 +12,26 @@ interface LobbyProps {
 }
 
 export const Lobby = ({ onStartGame, onBack }: LobbyProps) => {
-  const [playerNames, setPlayerNames] = useState(['', '', '', '']);
+  const [selectedPlayerCount, setSelectedPlayerCount] = useState(4);
+  const [playerNames, setPlayerNames] = useState<string[]>(['', '', '', '']);
   const [focusedInput, setFocusedInput] = useState<number | null>(null);
+
+  // Update player names array when count changes
+  useEffect(() => {
+    setPlayerNames(prev => {
+      const newNames = [...prev];
+      if (newNames.length < selectedPlayerCount) {
+        // Add empty slots
+        while (newNames.length < selectedPlayerCount) {
+          newNames.push('');
+        }
+      } else if (newNames.length > selectedPlayerCount) {
+        // Remove extra slots
+        newNames.length = selectedPlayerCount;
+      }
+      return newNames;
+    });
+  }, [selectedPlayerCount]);
 
   const updatePlayerName = (index: number, name: string) => {
     const newNames = [...playerNames];
@@ -20,7 +40,7 @@ export const Lobby = ({ onStartGame, onBack }: LobbyProps) => {
   };
 
   const filledPlayers = playerNames.filter(name => name.trim().length > 0);
-  const canStart = filledPlayers.length === 4;
+  const canStart = filledPlayers.length === selectedPlayerCount;
 
   const handleStart = () => {
     if (canStart) {
@@ -51,17 +71,43 @@ export const Lobby = ({ onStartGame, onBack }: LobbyProps) => {
           </div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Local Play</h1>
           <p className="text-muted-foreground">
-            Enter all 4 player names
+            Set up your game
           </p>
         </div>
 
         {/* Player Setup */}
         <div className="bg-card rounded-2xl p-6 shadow-lg border border-border">
+          {/* Player Count Selection */}
+          <div className="mb-6">
+            <label className="text-sm font-medium mb-3 block">Number of Players</label>
+            <RadioGroup 
+              value={selectedPlayerCount.toString()} 
+              onValueChange={(v) => setSelectedPlayerCount(parseInt(v))}
+              className="flex flex-wrap gap-2"
+            >
+              {[2, 3, 4, 5, 6].map((count) => (
+                <div key={count} className="flex items-center">
+                  <RadioGroupItem 
+                    value={count.toString()} 
+                    id={`local-player-count-${count}`} 
+                    className="peer sr-only"
+                  />
+                  <Label
+                    htmlFor={`local-player-count-${count}`}
+                    className="flex items-center justify-center w-12 h-10 rounded-lg border-2 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 hover:bg-muted/50 transition-colors"
+                  >
+                    {count}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
+
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-5 h-5 text-muted-foreground" />
             <h2 className="font-semibold">Players</h2>
             <span className="ml-auto text-sm text-muted-foreground">
-              {filledPlayers.length} / 4
+              {filledPlayers.length} / {selectedPlayerCount}
             </span>
           </div>
 
@@ -107,7 +153,7 @@ export const Lobby = ({ onStartGame, onBack }: LobbyProps) => {
 
           {!canStart && (
             <p className="text-center text-sm text-muted-foreground mt-3">
-              Enter names for all 4 players to start
+              Enter names for all {selectedPlayerCount} players to start
             </p>
           )}
         </div>
