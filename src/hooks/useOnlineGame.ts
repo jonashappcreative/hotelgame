@@ -52,12 +52,33 @@ export const useOnlineGame = () => {
       (newPlayers) => {
         setPlayers(newPlayers);
       },
-      async (newState) => {
-        // Fetch fresh player data to construct complete game state
-        const freshPlayers = await fetchFullPlayerData(roomId);
-        if (newState && roomCode) {
-          const fullState = dbToGameState(newState, freshPlayers, roomCode);
-          setGameState(fullState);
+      async () => {
+        // Don't use subscription payload - fetch full state from database
+        // Subscription payloads only contain changed fields, missing board data!
+        console.log('[useOnlineGame] Game state update notification - fetching full state from DB');
+
+        try {
+          // Fetch complete game state from game_states_public view
+          const { data: dbState, error: stateError } = await supabase
+            .from('game_states_public')
+            .select('*')
+            .eq('room_id', roomId)
+            .single();
+
+          if (stateError) {
+            console.error('[useOnlineGame] Error fetching game state:', stateError);
+            return;
+          }
+
+          // Fetch fresh player data
+          const freshPlayers = await fetchFullPlayerData(roomId);
+
+          if (dbState && roomCode) {
+            const fullState = dbToGameState(dbState, freshPlayers, roomCode);
+            setGameState(fullState);
+          }
+        } catch (error) {
+          console.error('[useOnlineGame] Error refreshing game state:', error);
         }
       },
       (status) => {
