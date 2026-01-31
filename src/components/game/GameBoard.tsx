@@ -60,7 +60,7 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
               const tile = getTileState(tileId);
               const isInHand = playerTiles.includes(tileId);
               const canPlace = canPlaceTile(tileId);
-              const isPlaced = tile?.placed;
+              const isPlaced = tile?.placed === true;  // Explicit boolean check
               const chainName = tile?.chain;
 
               return (
@@ -70,18 +70,19 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                   disabled={!canPlace}
                   className={cn(
                     "tile flex-1 aspect-[4/3] min-h-[28px] md:min-h-[36px] text-[10px] md:text-xs font-mono",
-                    isPlaced && !chainName && "tile-placed",
-                    chainName && `tile-chain ${getChainClass(chainName)}`,
+                    tile?.placed && !tile?.chain && "tile-placed",  // Explicit tile existence check
+                    tile?.chain && `tile-chain ${getChainClass(tile.chain)}`,  // Explicit chain check
                     canPlace && "tile-playable cursor-pointer",
                     selectedTile === tileId && "ring-2 ring-primary scale-105",
-                    isInHand && !isPlaced && !selectedTile && "ring-1 ring-primary/30",
-                    !canPlace && !isPlaced && "opacity-70"
+                    isInHand && !tile?.placed && !selectedTile && "ring-1 ring-primary/30",
+                    !canPlace && !tile?.placed && "opacity-50"
                   )}
                   title={tileId}
                 >
-                  {(isPlaced || canPlace) && (
+                  {/* Always show tile ID for placed tiles or playable tiles */}
+                  {(tile?.placed === true || canPlace) && (
                     <span className={cn(
-                      "font-medium",
+                      "font-semibold",  // Changed to semibold for better visibility
                       chainName === 'tower' ? "text-background" : "text-foreground"
                     )}>
                       {tileId}
