@@ -105,9 +105,9 @@ export const joinRoom = async (
   }
 
   // Try to join with retry logic for race conditions
-  const maxRetries = 3;
+  const maxRetries = 5;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    // Get current player count
+    // Get current player count using the public view
     const { data: players, error: playersError } = await supabase
       .from('game_players_public')
       .select('player_index')
@@ -150,11 +150,29 @@ export const joinRoom = async (
       return { success: true, roomId: room.id, playerIndex: insertedPlayer.player_index, maxPlayers };
     }
 
-    // If it's a unique constraint violation, retry
+    // If it's a unique constraint violation, check if we're already in the game
     if (insertError?.code === '23505') {
-      console.log(`Join attempt ${attempt + 1} failed due to race condition, retrying...`);
-      // Small delay before retry
-      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+      console.log(`Join attempt ${attempt + 1} failed due to unique constraint, checking if already joined...`);
+
+      // Re-check if this user already joined (might have succeeded in parallel request/tab)
+      const { data: existingPlayer } = await supabase
+        .from('game_players')
+        .select('*')
+        .eq('room_id', room.id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existingPlayer) {
+        console.log('User already in game, returning existing player');
+        return { success: true, roomId: room.id, playerIndex: existingPlayer.player_index, maxPlayers };
+      }
+
+      // Not a duplicate user - must be a player_index race condition, retry
+      console.log('Not a duplicate user, retrying with new player_index...');
+      // Exponential backoff with random jitter to desynchronize concurrent requests
+      const baseDelay = 150 * Math.pow(2, attempt);
+      const jitter = Math.random() * 100;
+      await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
       continue;
     }
 
