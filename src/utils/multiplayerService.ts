@@ -288,16 +288,27 @@ export const updateGameState = async (roomId: string, gameState: GameState): Pro
 
 // Convert database state to GameState
 export const dbToGameState = (
-  dbState: any, 
-  players: any[], 
+  dbState: any,
+  players: any[],
   roomCode: string
 ): GameState => {
+  // Debug logging
+  console.log('[dbToGameState] Received dbState:', {
+    hasBoardField: !!dbState.board,
+    boardType: typeof dbState.board,
+    boardKeys: dbState.board ? Object.keys(dbState.board).length : 0,
+    phase: dbState.phase,
+  });
+
   // Convert board object back to Map
   const board = new Map<TileId, TileState>();
   if (dbState.board) {
     Object.entries(dbState.board).forEach(([key, value]) => {
       board.set(key as TileId, value as TileState);
     });
+    console.log(`[dbToGameState] Converted ${board.size} tiles to board Map`);
+  } else {
+    console.warn('[dbToGameState] No board data in dbState!');
   }
 
   // Convert players
@@ -367,6 +378,11 @@ export const subscribeToRoom = (
         // Filter out tile_bag from the payload for security
         const state = payload.new as any;
         if (state) {
+          console.log('[subscribeToRoom] Received game_states update:', {
+            hasBoard: !!state.board,
+            boardType: typeof state.board,
+            phase: state.phase,
+          });
           const { tile_bag, ...publicState } = state;
           onGameStateChange(publicState);
         }
