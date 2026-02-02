@@ -95,19 +95,25 @@ export const useOnlineGame = () => {
   };
 
   const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4) => {
+    console.log(`[DEBUG HOOK] handleCreateRoom called — playerName="${playerName}", playerCount=${playerCount}`);
     setIsLoading(true);
     try {
       const result = await createRoom(playerCount);
       if (!result) {
+        console.error('[DEBUG HOOK] handleCreateRoom — createRoom() returned null');
         toast({ title: 'Error', description: 'Failed to create room', variant: 'destructive' });
         return;
       }
+      console.log(`[DEBUG HOOK] handleCreateRoom — room created: code=${result.roomCode}, id=${result.roomId}`);
 
+      console.log(`[DEBUG HOOK] handleCreateRoom — now joining own room as "${playerName}"...`);
       const joinResult = await joinRoom(result.roomCode, playerName);
       if (!joinResult.success) {
+        console.error(`[DEBUG HOOK] handleCreateRoom — joinRoom() FAILED: ${joinResult.error}`);
         toast({ title: 'Error', description: joinResult.error, variant: 'destructive' });
         return;
       }
+      console.log(`[DEBUG HOOK] handleCreateRoom — joined own room at index ${joinResult.playerIndex}`);
 
       setRoomId(result.roomId);
       setRoomCode(result.roomCode);
@@ -116,6 +122,7 @@ export const useOnlineGame = () => {
 
       const currentPlayers = await getRoomPlayers(result.roomId);
       setPlayers(currentPlayers);
+      console.log(`[DEBUG HOOK] handleCreateRoom — COMPLETE. Room ${result.roomCode} ready with ${currentPlayers.length} player(s)`);
 
       toast({ title: 'Room Created', description: `Share code: ${result.roomCode}` });
     } finally {
@@ -124,13 +131,16 @@ export const useOnlineGame = () => {
   }, []);
 
   const handleJoinRoom = useCallback(async (code: string, playerName: string) => {
+    console.log(`[DEBUG HOOK] handleJoinRoom called — code="${code}", playerName="${playerName}"`);
     setIsLoading(true);
     try {
       const result = await joinRoom(code.toUpperCase(), playerName);
       if (!result.success) {
+        console.error(`[DEBUG HOOK] handleJoinRoom — joinRoom() FAILED: ${result.error}`);
         toast({ title: 'Error', description: result.error, variant: 'destructive' });
         return;
       }
+      console.log(`[DEBUG HOOK] handleJoinRoom — joinRoom() succeeded: room_id=${result.roomId}, playerIndex=${result.playerIndex}, maxPlayers=${result.maxPlayers}`);
 
       setRoomId(result.roomId!);
       setRoomCode(code.toUpperCase());
@@ -139,8 +149,10 @@ export const useOnlineGame = () => {
 
       const currentPlayers = await getRoomPlayers(result.roomId!);
       setPlayers(currentPlayers);
+      console.log(`[DEBUG HOOK] handleJoinRoom — fetched ${currentPlayers.length} players in room`);
 
       // Check if game already started
+      console.log(`[DEBUG HOOK] handleJoinRoom — checking room status...`);
       const { data: room } = await supabase
         .from('game_rooms')
         .select('status, max_players')
@@ -148,8 +160,10 @@ export const useOnlineGame = () => {
         .single();
 
       if (room) {
+        console.log(`[DEBUG HOOK] handleJoinRoom — room status="${room.status}", max_players=${room.max_players}`);
         setMaxPlayers(room.max_players || 4);
         if (room.status === 'playing') {
+          console.log('[DEBUG HOOK] handleJoinRoom — game already in progress, fetching game state...');
           setRoomStatus('playing');
           // Fetch game state from public view
           const { data: dbState } = await supabase
@@ -157,15 +171,17 @@ export const useOnlineGame = () => {
             .select('*')
             .eq('room_id', result.roomId!)
             .single();
-          
+
           if (dbState) {
             const fullPlayers = await fetchFullPlayerData(result.roomId!);
             const fullState = dbToGameState(dbState, fullPlayers, code.toUpperCase());
             setGameState(fullState);
+            console.log('[DEBUG HOOK] handleJoinRoom — game state loaded for in-progress game');
           }
         }
       }
 
+      console.log(`[DEBUG HOOK] handleJoinRoom — COMPLETE. "${playerName}" is in room ${code.toUpperCase()}`);
       toast({ title: 'Joined Room', description: `Welcome, ${playerName}!` });
     } finally {
       setIsLoading(false);
@@ -173,6 +189,7 @@ export const useOnlineGame = () => {
   }, []);
 
   const handleLeaveRoom = useCallback(async () => {
+    console.log(`[DEBUG HOOK] handleLeaveRoom called — roomId=${roomId}`);
     if (!roomId) return;
     await leaveRoom(roomId);
     setRoomId(null);
@@ -181,6 +198,7 @@ export const useOnlineGame = () => {
     setMyPlayerIndex(null);
     setGameState(null);
     setRoomStatus('waiting');
+    console.log('[DEBUG HOOK] handleLeaveRoom — state reset complete');
   }, [roomId]);
 
   const handleStartGame = useCallback(async () => {
