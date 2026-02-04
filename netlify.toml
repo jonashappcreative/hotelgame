@@ -21,8 +21,8 @@
   from = "/*"
   to = "/index.html"
   status = 200
-  # Don't redirect if the path is a file (like .js, .css, images, etc.)
-  conditions = {Role = ["public"]}
+  # Force rewrite so all paths serve index.html (SPA routing)
+  force = true
 
 # Headers for security and performance
 [[headers]]
