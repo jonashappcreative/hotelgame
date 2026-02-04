@@ -15,7 +15,7 @@ const OnlineGame = () => {
     handleCreateRoom,
     handleJoinRoom,
     handleLeaveRoom,
-    handleStartGame,
+    handleToggleReady,
     handleTilePlacement,
     handleDiscardTile,
     handleFoundChain,
@@ -40,7 +40,7 @@ const OnlineGame = () => {
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
         onLeaveRoom={handleLeaveRoom}
-        onStartGame={handleStartGame}
+        onToggleReady={handleToggleReady}
       />
     );
   }

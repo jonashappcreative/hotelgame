@@ -197,10 +197,10 @@ export const leaveRoom = async (roomId: string): Promise<void> => {
 };
 
 // Get room players (public info only - excludes tiles for security)
-export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number }[]> => {
+export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number; is_ready: boolean }[]> => {
   const { data, error } = await supabase
     .from('game_players_public')
-    .select('id, player_name, player_index')
+    .select('id, player_name, player_index, is_ready')
     .eq('room_id', roomId)
     .order('player_index');
 
@@ -212,8 +212,19 @@ export const getRoomPlayers = async (roomId: string): Promise<{ id: string; play
   return (data || []).map(p => ({
     id: p.id || '',
     player_name: p.player_name || '',
-    player_index: p.player_index ?? 0
+    player_index: p.player_index ?? 0,
+    is_ready: p.is_ready ?? false,
   }));
+};
+
+// Toggle ready state for the current player
+export const toggleReady = async (roomId: string): Promise<{ success: boolean; gameStarted?: boolean; error?: string }> => {
+  const result = await executeGameAction('toggle_ready', roomId);
+  return {
+    success: result.success,
+    gameStarted: result.data?.gameStarted,
+    error: result.error,
+  };
 };
 
 // Get player data with secure tile handling

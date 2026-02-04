@@ -16,7 +16,7 @@ interface MergerStockDecision {
 }
 
 interface GameActionRequest {
-  action: 'start_game' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
+  action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
           'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'skip_buy' |
           'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status';
   roomId: string;
@@ -272,17 +272,145 @@ Deno.serve(async (req) => {
     let result: { success: boolean; error?: string; data?: any } = { success: false };
 
     switch (action) {
+      case 'toggle_ready': {
+        // Toggle this player's ready state
+        const newReadyState = !playerData.is_ready;
+
+        await adminClient
+          .from('game_players')
+          .update({ is_ready: newReadyState })
+          .eq('id', playerData.id);
+
+        // If toggling to not-ready, just return
+        if (!newReadyState) {
+          result = { success: true, data: { gameStarted: false, isReady: false } };
+          break;
+        }
+
+        // Check if all players are ready and room is full
+        const { data: room } = await adminClient
+          .from('game_rooms')
+          .select('max_players')
+          .eq('id', roomId)
+          .single();
+
+        // Re-fetch all players to get fresh ready states
+        const { data: freshPlayers } = await adminClient
+          .from('game_players')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('player_index');
+
+        if (!room || !freshPlayers) {
+          result = { success: true, data: { gameStarted: false, isReady: true } };
+          break;
+        }
+
+        const allReady = freshPlayers.length === room.max_players &&
+          freshPlayers.every(p => p.is_ready);
+
+        if (!allReady) {
+          result = { success: true, data: { gameStarted: false, isReady: true } };
+          break;
+        }
+
+        // All players ready — start the game!
+        console.log('All players ready, starting game for room:', roomId);
+
+        // Initialize tile bag
+        let tileBag = shuffle(generateAllTiles());
+
+        // Initialize board
+        const board: Record<string, any> = {};
+        for (const tileId of generateAllTiles()) {
+          board[tileId] = { id: tileId, placed: false, chain: null };
+        }
+
+        // Place starting tile
+        const startingTile = tileBag.pop()!;
+        board[startingTile] = { id: startingTile, placed: true, chain: null };
+
+        // Initialize chains
+        const chains: Record<ChainName, any> = {
+          sackson: { name: 'sackson', tiles: [], isActive: false, isSafe: false },
+          tower: { name: 'tower', tiles: [], isActive: false, isSafe: false },
+          worldwide: { name: 'worldwide', tiles: [], isActive: false, isSafe: false },
+          american: { name: 'american', tiles: [], isActive: false, isSafe: false },
+          festival: { name: 'festival', tiles: [], isActive: false, isSafe: false },
+          continental: { name: 'continental', tiles: [], isActive: false, isSafe: false },
+          imperial: { name: 'imperial', tiles: [], isActive: false, isSafe: false },
+        };
+
+        // Initialize stock bank
+        const stockBank: Record<ChainName, number> = {
+          sackson: 25, tower: 25, worldwide: 25, american: 25,
+          festival: 25, continental: 25, imperial: 25,
+        };
+
+        // Deal tiles to players and reset ready state
+        for (const player of freshPlayers) {
+          const playerTiles = tileBag.splice(0, 6);
+          await adminClient
+            .from('game_players')
+            .update({
+              tiles: playerTiles,
+              cash: 6000,
+              stocks: { sackson: 0, tower: 0, worldwide: 0, american: 0, festival: 0, continental: 0, imperial: 0 },
+              is_ready: false,
+            })
+            .eq('id', player.id);
+        }
+
+        // Create game state
+        const { error: insertError } = await adminClient
+          .from('game_states')
+          .insert({
+            room_id: roomId,
+            current_player_index: 0,
+            phase: 'place_tile',
+            board,
+            chains,
+            stock_bank: stockBank,
+            tile_bag: tileBag,
+            last_placed_tile: startingTile,
+            game_log: [{
+              timestamp: Date.now(),
+              playerId: 'system',
+              playerName: 'System',
+              action: 'Game started',
+              details: `Starting tile ${startingTile} placed on board`,
+            }],
+          });
+
+        if (insertError) {
+          console.error('Insert error:', insertError);
+          return new Response(JSON.stringify({ error: 'Failed to create game state' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Update room status
+        await adminClient
+          .from('game_rooms')
+          .update({ status: 'playing' })
+          .eq('id', roomId);
+
+        result = { success: true, data: { gameStarted: true, isReady: true } };
+        break;
+      }
+
       case 'start_game': {
-        // Only host (player_index 0) can start the game
+        // Kept for backward compatibility but toggle_ready is the preferred way
         if (myPlayerIndex !== 0) {
-          return new Response(JSON.stringify({ error: 'Only host can start game' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Only host can start game' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         const playerNames = allPlayers.map(p => p.player_name);
-        
+
         // Initialize tile bag
         let tileBag = shuffle(generateAllTiles());
 
@@ -349,9 +477,9 @@ Deno.serve(async (req) => {
 
         if (insertError) {
           console.error('Insert error:', insertError);
-          return new Response(JSON.stringify({ error: 'Failed to create game state' }), { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Failed to create game state' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 

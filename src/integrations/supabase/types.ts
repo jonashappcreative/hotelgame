@@ -61,6 +61,7 @@ export type Database = {
           created_at: string
           id: string
           is_connected: boolean
+          is_ready: boolean
           player_index: number
           player_name: string
           room_id: string
@@ -74,6 +75,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_connected?: boolean
+          is_ready?: boolean
           player_index: number
           player_name: string
           room_id: string
@@ -87,6 +89,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_connected?: boolean
+          is_ready?: boolean
           player_index?: number
           player_name?: string
           room_id?: string
@@ -229,6 +232,7 @@ export type Database = {
           created_at: string | null
           id: string | null
           is_connected: boolean | null
+          is_ready: boolean | null
           player_index: number | null
           player_name: string | null
           room_id: string | null
@@ -239,6 +243,7 @@ export type Database = {
           created_at?: string | null
           id?: string | null
           is_connected?: boolean | null
+          is_ready?: boolean | null
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null
@@ -249,6 +254,7 @@ export type Database = {
           created_at?: string | null
           id?: string | null
           is_connected?: boolean | null
+          is_ready?: boolean | null
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null

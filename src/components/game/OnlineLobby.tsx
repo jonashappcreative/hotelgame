@@ -7,19 +7,19 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Users, Copy, Loader2, ArrowLeft, Play } from 'lucide-react';
+import { Users, Copy, Loader2, ArrowLeft, Check } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface OnlineLobbyProps {
   roomCode: string | null;
-  players: { id: string; player_name: string; player_index: number }[];
+  players: { id: string; player_name: string; player_index: number; is_ready: boolean }[];
   myPlayerIndex: number | null;
   maxPlayers: number;
   isLoading: boolean;
   onCreateRoom: (playerName: string, maxPlayers: number) => void;
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
-  onStartGame: () => void;
+  onToggleReady: () => void;
 }
 
 export const OnlineLobby = ({
@@ -31,7 +31,7 @@ export const OnlineLobby = ({
   onCreateRoom,
   onJoinRoom,
   onLeaveRoom,
-  onStartGame,
+  onToggleReady,
 }: OnlineLobbyProps) => {
   const navigate = useNavigate();
   const [playerName, setPlayerName] = useState('');
@@ -94,23 +94,39 @@ export const OnlineLobby = ({
                   <div
                     key={index}
                     className={`flex items-center justify-between p-3 rounded-lg border ${
-                      player 
-                        ? 'bg-primary/10 border-primary/30' 
+                      player
+                        ? player.is_ready
+                          ? 'bg-green-500/10 border-green-500/40'
+                          : 'bg-primary/10 border-primary/30'
                         : 'bg-muted/30 border-dashed'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        player ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
+                        player
+                          ? player.is_ready
+                            ? 'bg-green-500 text-white'
+                            : 'bg-primary text-primary-foreground'
+                          : 'bg-muted'
                       }`}>
-                        {index + 1}
+                        {player?.is_ready ? <Check className="h-4 w-4" /> : index + 1}
                       </div>
                       <span className={player ? 'font-medium' : 'text-muted-foreground'}>
                         {player ? player.player_name : 'Waiting...'}
                       </span>
+                      {player && index === myPlayerIndex && (
+                        <Badge variant="secondary">You</Badge>
+                      )}
                     </div>
-                    {player && index === myPlayerIndex && (
-                      <Badge variant="secondary">You</Badge>
+                    {player && (
+                      <Badge
+                        variant="outline"
+                        className={`flex-shrink-0 ${player.is_ready
+                          ? 'border-green-500/50 text-green-600'
+                          : 'border-yellow-500/50 text-yellow-600'}`}
+                      >
+                        {player.is_ready ? 'Ready' : 'Not Ready'}
+                      </Badge>
                     )}
                   </div>
                 );
@@ -119,34 +135,47 @@ export const OnlineLobby = ({
 
             <Separator />
 
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={onLeaveRoom}
-                className="flex-1"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Leave
-              </Button>
-              <Button 
-                onClick={onStartGame}
-                disabled={players.length !== maxPlayers || isLoading}
-                className="flex-1"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4 mr-2" />
-                )}
-                Start Game
-              </Button>
-            </div>
+            {(() => {
+              const myPlayer = players.find(p => p.player_index === myPlayerIndex);
+              const isReady = myPlayer?.is_ready ?? false;
+              const readyCount = players.filter(p => p.is_ready).length;
+              return (
+                <>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={onLeaveRoom}
+                      className="flex-1"
+                      disabled={isReady}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Leave
+                    </Button>
+                    <Button
+                      onClick={onToggleReady}
+                      disabled={isLoading}
+                      variant={isReady ? 'outline' : 'default'}
+                      className="flex-1"
+                    >
+                      {isLoading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : isReady ? null : (
+                        <Check className="h-4 w-4 mr-2" />
+                      )}
+                      {isReady ? 'Cancel Ready' : 'Click to Ready Up'}
+                    </Button>
+                  </div>
 
-            {players.length !== maxPlayers && (
-              <p className="text-center text-sm text-muted-foreground">
-                Need {maxPlayers - players.length} more player{maxPlayers - players.length > 1 ? 's' : ''} to start
-              </p>
-            )}
+                  <p className="text-center text-sm text-muted-foreground">
+                    {players.length < maxPlayers
+                      ? `Need ${maxPlayers - players.length} more player${maxPlayers - players.length > 1 ? 's' : ''} to start`
+                      : readyCount === maxPlayers
+                        ? 'All players ready — starting game...'
+                        : `${readyCount}/${maxPlayers} players ready`}
+                  </p>
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
       </div>

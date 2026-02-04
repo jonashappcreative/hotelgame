@@ -23,6 +23,7 @@ import {
   subscribeToRoom,
   getOrCreateAuthSession,
   getCurrentUserId,
+  toggleReady,
 } from '@/utils/multiplayerService';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -31,6 +32,7 @@ interface OnlinePlayer {
   id: string;
   player_name: string;
   player_index: number;
+  is_ready: boolean;
 }
 
 export const useOnlineGame = () => {
@@ -183,44 +185,40 @@ export const useOnlineGame = () => {
     setRoomStatus('waiting');
   }, [roomId]);
 
-  const handleStartGame = useCallback(async () => {
-    if (!roomId || !roomCode || players.length !== maxPlayers) {
-      toast({ 
-        title: 'Cannot Start', 
-        description: `Need exactly ${maxPlayers} players`, 
-        variant: 'destructive' 
-      });
-      return;
-    }
+  const handleToggleReady = useCallback(async () => {
+    if (!roomId) return;
 
     setIsLoading(true);
     try {
-      const result = await executeGameAction('start_game', roomId);
-      
+      const result = await toggleReady(roomId);
+
       if (!result.success) {
-        toast({ title: 'Error', description: result.error || 'Failed to start game', variant: 'destructive' });
+        toast({ title: 'Error', description: result.error || 'Failed to toggle ready', variant: 'destructive' });
         return;
       }
 
-      // Fetch the newly created game state
-      const { data: dbState } = await supabase
-        .from('game_states_public')
-        .select('*')
-        .eq('room_id', roomId)
-        .single();
+      if (result.gameStarted) {
+        // Game auto-started because all players were ready
+        // The subscription will handle state transition, but fetch immediately too
+        const { data: dbState } = await supabase
+          .from('game_states_public')
+          .select('*')
+          .eq('room_id', roomId)
+          .single();
 
-      if (dbState) {
-        const fullPlayers = await fetchFullPlayerData(roomId);
-        const fullState = dbToGameState(dbState, fullPlayers, roomCode);
-        setGameState(fullState);
+        if (dbState && roomCode) {
+          const fullPlayers = await fetchFullPlayerData(roomId);
+          const fullState = dbToGameState(dbState, fullPlayers, roomCode);
+          setGameState(fullState);
+        }
+
+        setRoomStatus('playing');
+        toast({ title: 'Game Started!', description: `${players[0]?.player_name}'s turn` });
       }
-
-      setRoomStatus('playing');
-      toast({ title: 'Game Started!', description: `${players[0]?.player_name}'s turn` });
     } finally {
       setIsLoading(false);
     }
-  }, [roomId, roomCode, players, maxPlayers]);
+  }, [roomId, roomCode, players]);
 
   // Refresh game state from database
   const refreshGameState = useCallback(async () => {
@@ -478,7 +476,7 @@ export const useOnlineGame = () => {
     handleCreateRoom,
     handleJoinRoom,
     handleLeaveRoom,
-    handleStartGame,
+    handleToggleReady,
     
     // Game actions
     handleTilePlacement,
