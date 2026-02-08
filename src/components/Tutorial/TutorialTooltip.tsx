@@ -52,9 +52,9 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   };
 
   const positionClasses = {
-    'center': 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
-    'bottom-right': 'fixed bottom-6 right-6 max-w-md',
-    'top-right': 'fixed top-6 right-6 max-w-md',
+    'center': 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-lg max-h-[85vh]',
+    'bottom-right': 'fixed bottom-4 right-4 max-w-sm max-h-[80vh]',
+    'top-right': 'fixed top-4 right-4 max-w-sm max-h-[80vh]',
   };
 
   // Parse content for markdown-like formatting
@@ -91,8 +91,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
           exit={{ opacity: 0, y: 20, scale: 0.95 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={cn(
-            "z-50 bg-card border border-border rounded-xl shadow-lg p-5 w-full",
-            position === 'center' && "max-w-lg",
+            "z-50 bg-card border border-border rounded-xl shadow-lg p-5 w-full flex flex-col overflow-hidden",
             positionClasses[position]
           )}
         >
@@ -113,12 +112,14 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
           </div>
 
           {/* Title */}
-          <h3 className="text-lg font-semibold mb-3">{title}</h3>
+          <h3 className="text-lg font-semibold mb-3 shrink-0">{title}</h3>
 
-          {/* Content */}
-          <div className="text-sm text-muted-foreground space-y-1.5 mb-4">
-            {formatContent(content)}
-          </div>
+          {/* Scrollable Content Area */}
+          <div className="overflow-y-auto flex-1 min-h-0">
+            {/* Content */}
+            <div className="text-sm text-muted-foreground space-y-1.5 mb-4">
+              {formatContent(content)}
+            </div>
 
           {/* Validation Feedback */}
           <AnimatePresence>
@@ -147,14 +148,16 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Interactive Hint */}
-          {isInteractive && !validationSuccess && (
-            <p className="text-xs text-primary mb-4 italic">
-              ☝️ Complete the action above to continue
-            </p>
-          )}
+            {/* Interactive Hint */}
+            {isInteractive && !validationSuccess && (
+              <p className="text-xs text-primary mb-4 italic">
+                ☝️ Complete the action above to continue
+              </p>
+            )}
+          </div>
 
-          {/* Navigation */}
+          {/* Navigation - Always visible at bottom */}
+          <div className="shrink-0">
           <TutorialNavigation
             onNext={onNext}
             onBack={onBack}
@@ -163,6 +166,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
             nextLabel={nextButtonLabel}
             isLastStep={isLastStep}
           />
+          </div>
         </motion.div>
       </AnimatePresence>
 

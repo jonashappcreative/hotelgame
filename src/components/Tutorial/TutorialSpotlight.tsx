@@ -63,7 +63,7 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
 
   if (!isVisible) return null;
 
-  // If no selector provided, show full overlay (for intro screens)
+  // If no selector provided, show full overlay (for intro screens) - match spotlight overlay darkness
   if (!targetSelector) {
     return (
       <AnimatePresence>
@@ -71,7 +71,8 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm"
+          className="fixed inset-0 z-40"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
         />
       </AnimatePresence>
     );
@@ -90,10 +91,10 @@ export const TutorialSpotlight: React.FC<TutorialSpotlightProps> = ({
             className="fixed inset-0 z-40 pointer-events-none"
             style={{
               background: `
-                linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.85) ${rect.left}px, transparent ${rect.left}px),
-                linear-gradient(to left, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.85) ${window.innerWidth - rect.left - rect.width}px, transparent ${window.innerWidth - rect.left - rect.width}px),
-                linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.85) ${rect.top}px, transparent ${rect.top}px),
-                linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.85) ${window.innerHeight - rect.top - rect.height}px, transparent ${window.innerHeight - rect.top - rect.height}px)
+                linear-gradient(to right, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.6) ${rect.left}px, transparent ${rect.left}px),
+                linear-gradient(to left, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.6) ${window.innerWidth - rect.left - rect.width}px, transparent ${window.innerWidth - rect.left - rect.width}px),
+                linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.6) ${rect.top}px, transparent ${rect.top}px),
+                linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.6) ${window.innerHeight - rect.top - rect.height}px, transparent ${window.innerHeight - rect.top - rect.height}px)
               `,
             }}
           />
