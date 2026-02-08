@@ -299,15 +299,16 @@ Let's set one up...`,
   {
     id: 18,
     title: 'Trigger a Merger',
-    content: `We've placed a Festival chain near Sackson.
+    content: `Look at the board! We've placed a **Festival chain** (green) right next to your Sackson chain.
 
-Place your **5D** tile between Sackson and Festival.
+There's a gap at **6F** between them.
 
-This will merge the two chains!`,
-    spotlightSelector: '[data-tutorial="tile-5D"]',
+Place your **6F** tile to connect both chains and trigger a merger!`,
+    spotlightSelector: '[data-tutorial="game-board"]',
+    spotlightShape: 'rectangle',
     isInteractive: true,
     interactiveType: 'place_tile',
-    expectedAction: { type: 'place_tile', value: '5D' },
+    expectedAction: { type: 'place_tile', value: '6F' },
   },
 
   // Step 19: Surviving vs. Dissolved Chain
@@ -325,6 +326,7 @@ If chains are **TIED** in size, YOU (the active player) choose which survives.
 
 Now, let's talk about the money you made...`,
     spotlightSelector: '[data-tutorial="game-board"]',
+    spotlightShape: 'rectangle',
     nextButtonLabel: 'Show me the money!',
   },
 

@@ -104,7 +104,7 @@ export const createInitialTutorialState = (): TutorialGameState => {
       continental: 0,
       imperial: 0,
     },
-    playerTiles: ['6E', '6D', '6C', '5E', '4B', '5D'] as TileId[],
+    playerTiles: ['6E', '6D', '6C', '5E', '4B', '6F'] as TileId[],
     currentStep: 1,
   };
 };

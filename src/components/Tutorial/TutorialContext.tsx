@@ -61,7 +61,42 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
 
   const goToNextStep = useCallback(() => {
     if (currentStep < TOTAL_TUTORIAL_STEPS) {
-      setCurrentStep(prev => prev + 1);
+      const nextStep = currentStep + 1;
+      
+      // Special setup when entering step 17 - place Festival chain for merger demo
+      if (nextStep === 17) {
+        setTutorialGameState(prev => {
+          const newState = { ...prev };
+          newState.board = new Map(prev.board);
+          newState.chains = { ...prev.chains };
+          newState.playerStocks = { ...prev.playerStocks };
+          newState.stockBank = { ...prev.stockBank };
+          
+          // Place Festival chain at 6G, 6H, 6I (same row as Sackson, with gap at 6F)
+          const festivalTiles = ['6G', '6H', '6I'] as TileId[];
+          festivalTiles.forEach(tid => {
+            const tile = newState.board.get(tid);
+            if (tile) {
+              newState.board.set(tid, { ...tile, placed: true, chain: 'festival' });
+            }
+          });
+          
+          newState.chains.festival = {
+            name: 'festival',
+            tiles: festivalTiles,
+            isActive: true,
+            isSafe: false,
+          };
+          
+          // Give player some Festival stock for the merger demo
+          newState.playerStocks.festival = 2;
+          newState.stockBank.festival = 23;
+          
+          return newState;
+        });
+      }
+      
+      setCurrentStep(nextStep);
       setValidationError(null);
       setValidationSuccess(null);
       setInteractiveCompleted(false);
@@ -131,12 +166,12 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
           tile5E.chain = 'sackson';
         }
         newState.chains.sackson.tiles = ['6E', '6D', '6C', '5E'] as TileId[];
-        newState.playerTiles = ['4B', '5D'] as TileId[];
+        newState.playerTiles = ['4B', '6F'] as TileId[];
       }
       
       if (targetStep >= 17) {
-        // Set up Festival chain for merger demo
-        const festivalTiles = ['4D', '4E', '4F'] as TileId[];
+        // Set up Festival chain for merger demo - place directly next to Sackson on same row
+        const festivalTiles = ['6G', '6H', '6I'] as TileId[];
         festivalTiles.forEach(tid => {
           const tile = newState.board.get(tid);
           if (tile) {
@@ -151,20 +186,20 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
       }
       
       if (targetStep >= 19) {
-        // Step 18: Merger executed
-        const tile5D = newState.board.get('5D' as TileId);
-        if (tile5D) {
-          tile5D.placed = true;
-          tile5D.chain = 'sackson';
+        // Step 18: Merger executed - 6F connects Sackson and Festival
+        const tile6F = newState.board.get('6F' as TileId);
+        if (tile6F) {
+          tile6F.placed = true;
+          tile6F.chain = 'sackson';
         }
         // Festival absorbed into Sackson
-        ['4D', '4E', '4F'].forEach(tid => {
+        ['6G', '6H', '6I'].forEach(tid => {
           const tile = newState.board.get(tid as TileId);
           if (tile) {
             tile.chain = 'sackson';
           }
         });
-        newState.chains.sackson.tiles = ['6E', '6D', '6C', '5E', '5D', '4D', '4E', '4F'] as TileId[];
+        newState.chains.sackson.tiles = ['6E', '6D', '6C', '5E', '6F', '6G', '6H', '6I'] as TileId[];
         newState.chains.festival.isActive = false;
         newState.chains.festival.tiles = [];
         newState.playerTiles = ['4B'] as TileId[];
@@ -220,6 +255,9 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
   const getSuccessMessage = (type: string, value?: string | number): string => {
     switch (type) {
       case 'place_tile':
+        if (value === '6F') {
+          return `Merger triggered! Sackson absorbs Festival!`;
+        }
         return `Perfect! You placed the ${value} tile correctly.`;
       case 'select_chain':
         return `Great! You founded the Sackson chain!`;
@@ -236,6 +274,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
       newState.board = new Map(prev.board);
       newState.chains = { ...prev.chains };
       newState.playerStocks = { ...prev.playerStocks };
+      newState.stockBank = { ...prev.stockBank };
       
       if (actionType === 'place_tile' && typeof value === 'string') {
         const tileId = value as TileId;
@@ -245,17 +284,50 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         }
         newState.playerTiles = prev.playerTiles.filter(t => t !== tileId);
         
-        // Check if this connects to an existing chain
-        const adjacentChain = getAdjacentChain(newState.board, tileId);
-        if (adjacentChain) {
-          const updatedTile = newState.board.get(tileId);
-          if (updatedTile) {
-            updatedTile.chain = adjacentChain;
+        // Special case: 6F triggers a merger between Sackson and Festival
+        if (tileId === '6F') {
+          // Place the tile as part of the surviving chain (Sackson)
+          const mergerTile = newState.board.get(tileId);
+          if (mergerTile) {
+            mergerTile.chain = 'sackson';
           }
-          newState.chains[adjacentChain] = {
-            ...newState.chains[adjacentChain],
-            tiles: [...newState.chains[adjacentChain].tiles, tileId],
+          
+          // Convert all Festival tiles to Sackson
+          const festivalTiles = newState.chains.festival.tiles;
+          festivalTiles.forEach(ftid => {
+            const ftile = newState.board.get(ftid);
+            if (ftile) {
+              ftile.chain = 'sackson';
+            }
+          });
+          
+          // Update chain states
+          newState.chains.sackson = {
+            ...newState.chains.sackson,
+            tiles: [...newState.chains.sackson.tiles, tileId, ...festivalTiles],
           };
+          newState.chains.festival = {
+            name: 'festival',
+            tiles: [],
+            isActive: false,
+            isSafe: false,
+          };
+          
+          // Merger bonus (majority holder gets bonus)
+          newState.playerCash += 1500; // Majority bonus for Festival
+        } else {
+          // Check if this connects to an existing chain
+          const adjacentChain = getAdjacentChain(newState.board, tileId);
+          if (adjacentChain) {
+            const updatedTile = newState.board.get(tileId);
+            if (updatedTile) {
+              updatedTile.chain = adjacentChain;
+            }
+            newState.chains[adjacentChain] = {
+              ...newState.chains[adjacentChain],
+              tiles: [...newState.chains[adjacentChain].tiles, tileId],
+            };
+          }
         }
       }
       
