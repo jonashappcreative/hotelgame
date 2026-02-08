@@ -51,10 +51,25 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     onExit();
   };
 
+  // Position classes - use calc to ensure tooltip fits within viewport
   const positionClasses = {
-    'center': 'fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-lg max-h-[85vh]',
-    'bottom-right': 'fixed bottom-4 right-4 max-w-sm max-h-[80vh]',
-    'top-right': 'fixed top-4 right-4 max-w-sm max-h-[80vh]',
+    'center': 'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-lg w-[calc(100%-2rem)]',
+    'bottom-right': 'fixed right-4 bottom-4 max-w-sm w-[calc(100%-2rem)] sm:w-auto',
+    'top-right': 'fixed right-4 top-4 max-w-sm w-[calc(100%-2rem)] sm:w-auto',
+  };
+
+  // Calculate safe max height based on position
+  const getMaxHeightStyle = () => {
+    switch (position) {
+      case 'center':
+        return { maxHeight: 'calc(100vh - 4rem)' };
+      case 'bottom-right':
+        return { maxHeight: 'calc(100vh - 2rem)' }; // 1rem top margin + 1rem bottom
+      case 'top-right':
+        return { maxHeight: 'calc(100vh - 2rem)' };
+      default:
+        return { maxHeight: 'calc(100vh - 4rem)' };
+    }
   };
 
   // Parse content for markdown-like formatting
@@ -91,9 +106,10 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
           exit={{ opacity: 0, y: 20, scale: 0.95 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={cn(
-            "z-50 bg-card border border-border rounded-xl shadow-lg p-5 w-full flex flex-col overflow-hidden",
+            "z-50 bg-card border border-border rounded-xl shadow-lg p-5 flex flex-col overflow-hidden",
             positionClasses[position]
           )}
+          style={getMaxHeightStyle()}
         >
           {/* Header */}
           <div className="flex items-start justify-between mb-3">
