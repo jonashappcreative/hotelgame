@@ -6,5 +6,6 @@ export { TutorialTooltip } from './TutorialTooltip';
 export { TutorialProgress } from './TutorialProgress';
 export { TutorialNavigation } from './TutorialNavigation';
 export { ExitTutorialDialog } from './ExitTutorialDialog';
+export { TutorialInfoCard } from './TutorialInfoCard';
 export * from './types';
 export { tutorialSteps } from './tutorialSteps';

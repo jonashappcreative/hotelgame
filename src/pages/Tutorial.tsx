@@ -7,6 +7,7 @@ import { TutorialPlayerHand } from '@/components/Tutorial/TutorialPlayerHand';
 import { TutorialPlayerInfo } from '@/components/Tutorial/TutorialPlayerInfo';
 import { TutorialChainSelector } from '@/components/Tutorial/TutorialChainSelector';
 import { TutorialStockPurchase } from '@/components/Tutorial/TutorialStockPurchase';
+import { TutorialInfoCard } from '@/components/Tutorial/TutorialInfoCard';
 import { TileId, ChainName } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -209,6 +210,11 @@ const TutorialPage: React.FC = () => {
             {/* Sidebar */}
             <div className="space-y-4">
               <TutorialPlayerInfo gameState={tutorialGameState} />
+              
+              {/* Show Info Card from step 15 onwards */}
+              {currentStep >= 15 && (
+                <TutorialInfoCard gameState={tutorialGameState} />
+              )}
               
               {showStockPurchase ? (
                 <TutorialStockPurchase
