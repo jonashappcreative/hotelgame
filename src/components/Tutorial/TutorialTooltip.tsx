@@ -22,7 +22,7 @@ interface TutorialTooltipProps {
   validationError?: string | null;
   validationSuccess?: string | null;
   isInteractive?: boolean;
-  position?: 'center' | 'bottom-right' | 'top-right';
+  position?: 'center' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 }
 
 export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
@@ -145,16 +145,18 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     );
   }
 
-  // Render corner-positioned tooltip (bottom-right or top-right)
+  // Render corner-positioned tooltip
   // Use a flex container anchored to the corner
-  const isBottom = position === 'bottom-right';
+  const isBottom = position === 'bottom-right' || position === 'bottom-left';
+  const isLeft = position === 'bottom-left' || position === 'top-left';
 
   return (
     <>
       <div 
         className={cn(
-          "fixed z-50 right-4 flex flex-col max-w-sm w-[calc(100%-2rem)] sm:w-96",
-          isBottom ? "bottom-4 top-4" : "top-4 bottom-4"
+          "fixed z-50 flex flex-col max-w-sm w-[calc(100%-2rem)] sm:w-96",
+          isLeft ? "left-4" : "right-4",
+          "top-4 bottom-4"
         )}
         style={{ pointerEvents: 'none' }}
       >
