@@ -140,7 +140,7 @@ const Index = () => {
               variant="ghost"
               size="sm"
               className="w-full text-xs"
-              onClick={() => {}}
+              onClick={() => navigate('/tutorial')}
             >
               Tutorial
             </Button>
