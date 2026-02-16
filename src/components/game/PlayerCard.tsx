@@ -38,12 +38,15 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
   // Keep active player expanded
   const effectiveExpanded = isCurrentTurn || isExpanded;
 
+  const isDisconnected = player.isConnected === false;
+
   return (
     <Collapsible open={effectiveExpanded} onOpenChange={setIsExpanded}>
       <div className={cn(
-        "player-card",
+        "player-card relative",
         isCurrentTurn && "player-card-active",
-        isYou && "ring-1 ring-primary/30"
+        isYou && "ring-1 ring-primary/30",
+        isDisconnected && "opacity-60 border-destructive/50"
       )}>
         {/* Header - Always visible */}
         <CollapsibleTrigger className="w-full" disabled={isCurrentTurn}>
@@ -58,14 +61,20 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
               <div className="text-left">
                 <p className={cn(
                   "font-semibold text-sm",
-                  isCurrentTurn && "text-primary"
+                  isCurrentTurn && "text-primary",
+                  isDisconnected && "text-muted-foreground"
                 )}>
                   {player.name}
                   {isYou && <span className="text-muted-foreground ml-1 text-xs">(You)</span>}
                 </p>
-                {isCurrentTurn && (
+                {isDisconnected ? (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <WifiOff className="w-3 h-3" />
+                    Disconnected
+                  </p>
+                ) : isCurrentTurn ? (
                   <p className="text-xs text-primary animate-pulse">Current Turn</p>
-                )}
+                ) : null}
               </div>
             </div>
             

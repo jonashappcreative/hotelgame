@@ -16,7 +16,7 @@ import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock } from 'lucide-react';
+import { Clock, WifiOff } from 'lucide-react';
 
 interface GameContainerProps {
   gameState: GameState;
@@ -312,13 +312,25 @@ export const GameContainer = ({
             {/* Turn Status Notification - Mobile */}
             {isOnlineMode && !isMyTurn && gameState.phase !== 'game_over' && !isMyMergerTurn && (
               <div className="lg:hidden mt-4">
-                <div className="bg-card rounded-xl p-4 shadow-md border border-primary/20">
+                <div className={`bg-card rounded-xl p-4 shadow-md border ${
+                  currentPlayer.isConnected === false ? 'border-destructive/40' : 'border-primary/20'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    {currentPlayer.isConnected === false ? (
+                      <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    )}
                     <div>
-                      <p className="font-semibold text-sm">Waiting for {currentPlayer.name}</p>
+                      <p className="font-semibold text-sm">
+                        {currentPlayer.isConnected === false
+                          ? `Waiting for ${currentPlayer.name} to reconnect...`
+                          : `Waiting for ${currentPlayer.name}`}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        It's their turn to play
+                        {currentPlayer.isConnected === false
+                          ? 'They appear to be disconnected'
+                          : "It's their turn to play"}
                       </p>
                     </div>
                   </div>
@@ -371,13 +383,25 @@ export const GameContainer = ({
             {/* Turn Status Notification - Desktop */}
             {isOnlineMode && !isMyTurn && gameState.phase !== 'game_over' && !isMyMergerTurn && (
               <div className="hidden lg:block mt-4">
-                <div className="bg-card rounded-xl p-4 shadow-md border border-primary/20">
+                <div className={`bg-card rounded-xl p-4 shadow-md border ${
+                  currentPlayer.isConnected === false ? 'border-destructive/40' : 'border-primary/20'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    {currentPlayer.isConnected === false ? (
+                      <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    )}
                     <div>
-                      <p className="font-semibold text-sm">Waiting for {currentPlayer.name}</p>
+                      <p className="font-semibold text-sm">
+                        {currentPlayer.isConnected === false
+                          ? `Waiting for ${currentPlayer.name} to reconnect...`
+                          : `Waiting for ${currentPlayer.name}`}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        It's their turn to play
+                        {currentPlayer.isConnected === false
+                          ? 'They appear to be disconnected'
+                          : "It's their turn to play"}
                       </p>
                     </div>
                   </div>

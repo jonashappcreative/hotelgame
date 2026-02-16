@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Users, Copy, Loader2, ArrowLeft, Check } from 'lucide-react';
+import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface OnlineLobbyProps {
@@ -16,10 +16,19 @@ interface OnlineLobbyProps {
   myPlayerIndex: number | null;
   maxPlayers: number;
   isLoading: boolean;
+  isCheckingActiveGame?: boolean;
+  activeGameInfo?: {
+    roomCode: string;
+    roomId: string;
+    playerName: string;
+    roomStatus: string;
+  } | null;
   onCreateRoom: (playerName: string, maxPlayers: number) => void;
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
   onToggleReady: () => void;
+  onRejoinGame?: () => void;
+  onDismissActiveGame?: () => void;
 }
 
 export const OnlineLobby = ({
@@ -28,10 +37,14 @@ export const OnlineLobby = ({
   myPlayerIndex,
   maxPlayers,
   isLoading,
+  isCheckingActiveGame,
+  activeGameInfo,
   onCreateRoom,
   onJoinRoom,
   onLeaveRoom,
   onToggleReady,
+  onRejoinGame,
+  onDismissActiveGame,
 }: OnlineLobbyProps) => {
   const navigate = useNavigate();
   const [playerName, setPlayerName] = useState('');
@@ -182,20 +195,76 @@ export const OnlineLobby = ({
     );
   }
 
+  // Show loading state while checking for active game
+  if (isCheckingActiveGame) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Checking for active games...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Main menu
   if (mode === 'menu') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className="mb-4"
             onClick={() => navigate('/')}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
+
+          {/* Active Game Reconnection Banner */}
+          {activeGameInfo && (
+            <Card className="mb-4 border-primary/50 bg-primary/5">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <RefreshCw className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm">Active Game Found</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      You have an {activeGameInfo.roomStatus === 'playing' ? 'ongoing' : 'active'} game in room{' '}
+                      <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
+                    </p>
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        onClick={onRejoinGame}
+                        disabled={isLoading}
+                        className="flex-1"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1.5" />
+                        )}
+                        Rejoin Game
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={onDismissActiveGame}
+                        disabled={isLoading}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="text-center">
               <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
@@ -205,13 +274,13 @@ export const OnlineLobby = ({
               <p className="text-muted-foreground">Online Multiplayer</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button 
+              <Button
                 className="w-full h-14 text-lg"
                 onClick={() => setMode('create')}
               >
                 Create Room
               </Button>
-              <Button 
+              <Button
                 variant="outline"
                 className="w-full h-14 text-lg"
                 onClick={() => setMode('join')}
@@ -243,6 +312,44 @@ export const OnlineLobby = ({
             <CardTitle>Create a Room</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Active Game Reconnection Banner */}
+            {activeGameInfo && (
+              <div className="p-3 rounded-lg border border-primary/50 bg-primary/5 mb-2">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <RefreshCw className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm">Active Game Found</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Room <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                      <Button
+                        size="sm"
+                        onClick={onRejoinGame}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? (
+                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1.5" />
+                        )}
+                        Rejoin
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={onDismissActiveGame}
+                        disabled={isLoading}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Your Name</label>
               <Input
@@ -309,6 +416,44 @@ export const OnlineLobby = ({
           <CardTitle>Join a Room</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Active Game Reconnection Banner */}
+          {activeGameInfo && (
+            <div className="p-3 rounded-lg border border-primary/50 bg-primary/5 mb-2">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                  <RefreshCw className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm">Active Game Found</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Room <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      size="sm"
+                      onClick={onRejoinGame}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3 mr-1.5" />
+                      )}
+                      Rejoin
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={onDismissActiveGame}
+                      disabled={isLoading}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Your Name</label>
             <Input

@@ -12,10 +12,14 @@ const OnlineGame = () => {
     maxPlayers,
     roomStatus,
     isLoading,
+    isCheckingActiveGame,
+    activeGameInfo,
     handleCreateRoom,
     handleJoinRoom,
     handleLeaveRoom,
     handleToggleReady,
+    handleRejoinGame,
+    dismissActiveGame,
     handleTilePlacement,
     handleDiscardTile,
     handleFoundChain,
@@ -37,10 +41,14 @@ const OnlineGame = () => {
         myPlayerIndex={myPlayerIndex}
         maxPlayers={maxPlayers}
         isLoading={isLoading}
+        isCheckingActiveGame={isCheckingActiveGame}
+        activeGameInfo={activeGameInfo}
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
         onLeaveRoom={handleLeaveRoom}
         onToggleReady={handleToggleReady}
+        onRejoinGame={handleRejoinGame}
+        onDismissActiveGame={dismissActiveGame}
       />
     );
   }
