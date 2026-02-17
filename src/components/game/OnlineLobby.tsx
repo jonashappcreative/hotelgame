@@ -50,7 +50,7 @@ const DEFAULT_RULES: CustomRules = {
   turnTimer: '60',
   disableTimerFirstRounds: true,
   chainSafetyEnabled: false,
-  chainSafetyThreshold: '11',
+  chainSafetyThreshold: 'none',
   cashVisibilityEnabled: false,
   cashVisibility: 'hidden',
   bonusTierEnabled: false,
