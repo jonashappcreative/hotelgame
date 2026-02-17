@@ -448,7 +448,7 @@ export const OnlineLobby = ({
               <RadioGroup 
                 value={selectedPlayerCount} 
                 onValueChange={setSelectedPlayerCount}
-                className="flex flex-wrap gap-2"
+                className="grid grid-cols-5 gap-2 w-full"
               >
                 {[2, 3, 4, 5, 6].map((count) => (
                   <div key={count} className="flex items-center">
@@ -459,7 +459,7 @@ export const OnlineLobby = ({
                     />
                     <Label
                       htmlFor={`player-count-${count}`}
-                      className="flex items-center justify-center w-12 h-10 rounded-lg border-2 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 hover:bg-muted/50 transition-colors"
+                      className="flex items-center justify-center w-full h-10 rounded-lg border-2 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 hover:bg-muted/50 transition-colors"
                     >
                       {count}
                     </Label>
