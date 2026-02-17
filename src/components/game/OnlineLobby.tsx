@@ -804,7 +804,7 @@ export const OnlineLobby = ({
               </div>
 
               <Button 
-                className="w-full mt-4 flex-shrink-0"
+                className="w-full mt-6 flex-shrink-0"
                 onClick={() => {
                   setConfirmedRules({ ...draftRules });
                   setMode('create');
