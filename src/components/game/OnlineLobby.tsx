@@ -7,8 +7,53 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+interface CustomRules {
+  startWithTileOnBoard: boolean;
+  turnTimer: string;
+  chainSafetyThreshold: string;
+  cashVisibility: string;
+}
+
+const DEFAULT_RULES: CustomRules = {
+  startWithTileOnBoard: true,
+  turnTimer: 'none',
+  chainSafetyThreshold: '11',
+  cashVisibility: 'hidden',
+};
+
+const hasCustomRulesChanged = (rules: CustomRules): boolean => {
+  return (
+    rules.startWithTileOnBoard !== DEFAULT_RULES.startWithTileOnBoard ||
+    rules.turnTimer !== DEFAULT_RULES.turnTimer ||
+    rules.chainSafetyThreshold !== DEFAULT_RULES.chainSafetyThreshold ||
+    rules.cashVisibility !== DEFAULT_RULES.cashVisibility
+  );
+};
+
+const getActiveRulesSummary = (rules: CustomRules): string[] => {
+  const summary: string[] = [];
+  if (!rules.startWithTileOnBoard) summary.push('🎲 No starting tile on board');
+  if (rules.startWithTileOnBoard) summary.push('🎲 Start with tile on board');
+  if (rules.turnTimer !== 'none') summary.push(`⏱️ Turn timer: ${rules.turnTimer}s`);
+  if (rules.chainSafetyThreshold !== '11') summary.push(`🛡️ Chain safety: ${rules.chainSafetyThreshold === 'none' ? 'None' : rules.chainSafetyThreshold}`);
+  if (rules.cashVisibility !== 'hidden') summary.push(`💰 Cash: ${rules.cashVisibility === 'visible' ? 'Visible' : 'Aggregate'}`);
+  return summary;
+};
 
 interface OnlineLobbyProps {
   roomCode: string | null;
@@ -50,7 +95,10 @@ export const OnlineLobby = ({
   const [playerName, setPlayerName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [selectedPlayerCount, setSelectedPlayerCount] = useState('4');
-  const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
+  const [mode, setMode] = useState<'menu' | 'create' | 'join' | 'customRules'>('menu');
+  const [confirmedRules, setConfirmedRules] = useState<CustomRules | null>(null);
+  const [draftRules, setDraftRules] = useState<CustomRules>({ ...DEFAULT_RULES });
+  const [showBackWarning, setShowBackWarning] = useState(false);
 
   const handleCopyCode = () => {
     if (roomCode) {
@@ -393,13 +441,182 @@ export const OnlineLobby = ({
               ) : null}
               Create Room
             </Button>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                setDraftRules(confirmedRules ? { ...confirmedRules } : { ...DEFAULT_RULES });
+                setMode('customRules');
+              }}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Set Custom Rules
+            </Button>
+
+            {/* Custom Rules Summary */}
+            {confirmedRules && (
+              <div className="p-3 rounded-lg border border-accent bg-accent/10 space-y-2">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Custom Rules
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {getActiveRulesSummary(confirmedRules).map((rule, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">
+                      {rule}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  // Join room form
+  // Custom Rules form
+  if (mode === 'customRules') {
+    const handleBackFromRules = () => {
+      if (hasCustomRulesChanged(draftRules)) {
+        setShowBackWarning(true);
+      } else {
+        setMode('create');
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="w-fit mb-2"
+              onClick={handleBackFromRules}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <CardTitle>Set Custom Rules</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Starting Tile */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="start-tile" className="text-sm font-medium">
+                Start with tile on board
+              </Label>
+              <Switch
+                id="start-tile"
+                checked={draftRules.startWithTileOnBoard}
+                onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startWithTileOnBoard: val }))}
+              />
+            </div>
+
+            <Separator />
+
+            {/* Turn Timer */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Turn Timer</Label>
+              <Select
+                value={draftRules.turnTimer}
+                onValueChange={(val) => setDraftRules(prev => ({ ...prev, turnTimer: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No timer</SelectItem>
+                  <SelectItem value="30">30 seconds</SelectItem>
+                  <SelectItem value="60">60 seconds</SelectItem>
+                  <SelectItem value="90">90 seconds</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator />
+
+            {/* Chain Safety Threshold */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Chain Safety Threshold</Label>
+              <Select
+                value={draftRules.chainSafetyThreshold}
+                onValueChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyThreshold: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="9">9 tiles</SelectItem>
+                  <SelectItem value="11">11 tiles (default)</SelectItem>
+                  <SelectItem value="13">13 tiles</SelectItem>
+                  <SelectItem value="15">15 tiles</SelectItem>
+                  <SelectItem value="none">No safety</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator />
+
+            {/* Cash Visibility */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Cash Visibility</Label>
+              <Select
+                value={draftRules.cashVisibility}
+                onValueChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibility: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hidden">Hidden (default)</SelectItem>
+                  <SelectItem value="visible">Visible</SelectItem>
+                  <SelectItem value="aggregate">Aggregate only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button 
+              className="w-full"
+              onClick={() => {
+                setConfirmedRules({ ...draftRules });
+                setMode('create');
+                toast({ title: 'Custom rules confirmed!' });
+              }}
+            >
+              Confirm Rules
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Back Warning Dialog */}
+        <AlertDialog open={showBackWarning} onOpenChange={setShowBackWarning}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Discard Custom Rules?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                You have unsaved custom rules. Going back will discard your changes.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Stay</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowBackWarning(false);
+                  setMode('create');
+                }}
+              >
+                Discard & Go Back
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
