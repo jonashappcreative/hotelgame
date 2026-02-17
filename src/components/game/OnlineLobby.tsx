@@ -539,7 +539,8 @@ export const OnlineLobby = ({
               <CardTitle className="text-2xl font-bold">Set Custom Rules</CardTitle>
               <p className="text-sm text-muted-foreground">Configure game rules before creating your room</p>
             </CardHeader>
-            <CardContent className="space-y-1">
+            <CardContent className="space-y-0 flex flex-col">
+              <div className="space-y-1 overflow-y-auto max-h-[420px] pr-1">
               {/* Turn Timer */}
               <div className="py-3">
                 <div className="flex items-center justify-between">
@@ -800,8 +801,10 @@ export const OnlineLobby = ({
                 )}
               </div>
 
+              </div>
+
               <Button 
-                className="w-full mt-4"
+                className="w-full mt-4 flex-shrink-0"
                 onClick={() => {
                   setConfirmedRules({ ...draftRules });
                   setMode('create');
