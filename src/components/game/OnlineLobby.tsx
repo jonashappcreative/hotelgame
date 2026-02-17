@@ -525,7 +525,7 @@ export const OnlineLobby = ({
     return (
       <TooltipProvider delayDuration={300}>
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
+          <Card className="w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
             <CardHeader>
               <Button 
                 variant="ghost" 
@@ -539,8 +539,8 @@ export const OnlineLobby = ({
               <CardTitle className="text-2xl font-bold">Set Custom Rules</CardTitle>
               <p className="text-sm text-muted-foreground">Configure game rules before creating your room</p>
             </CardHeader>
-            <CardContent className="space-y-0 flex flex-col">
-              <div className="space-y-1 overflow-y-auto max-h-[420px] pr-1">
+            <CardContent className="space-y-0 flex flex-col overflow-hidden flex-1 min-h-0">
+              <div className="space-y-1 overflow-y-auto flex-1 min-h-0 scrollbar-none">
               {/* Turn Timer */}
               <div className="py-3">
                 <div className="flex items-center justify-between">
