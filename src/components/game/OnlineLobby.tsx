@@ -9,7 +9,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -24,26 +25,42 @@ import {
 
 interface CustomRules {
   startWithTileOnBoard: boolean;
+  turnTimerEnabled: boolean;
   turnTimer: string;
-  turnTimerGracePeriod: boolean;
+  disableTimerFirstRounds: boolean;
+  chainSafetyEnabled: boolean;
   chainSafetyThreshold: string;
+  cashVisibilityEnabled: boolean;
   cashVisibility: string;
+  bonusTierEnabled: boolean;
   bonusTier: string;
+  boardSizeEnabled: boolean;
   boardSize: string;
+  chainFoundingEnabled: boolean;
   maxChains: string;
+  founderFreeStock: boolean;
+  startingConditionsEnabled: boolean;
   startingCash: string;
   startingTiles: string;
 }
 
 const DEFAULT_RULES: CustomRules = {
   startWithTileOnBoard: true,
-  turnTimer: 'none',
-  turnTimerGracePeriod: false,
+  turnTimerEnabled: false,
+  turnTimer: '60',
+  disableTimerFirstRounds: true,
+  chainSafetyEnabled: false,
   chainSafetyThreshold: '11',
+  cashVisibilityEnabled: false,
   cashVisibility: 'hidden',
+  bonusTierEnabled: false,
   bonusTier: 'standard',
+  boardSizeEnabled: false,
   boardSize: '9x12',
+  chainFoundingEnabled: false,
   maxChains: '7',
+  founderFreeStock: true,
+  startingConditionsEnabled: false,
   startingCash: '6000',
   startingTiles: '6',
 };
@@ -54,25 +71,25 @@ const hasCustomRulesChanged = (rules: CustomRules): boolean => {
 
 const getActiveRulesSummary = (rules: CustomRules): string[] => {
   const summary: string[] = [];
-  if (!rules.startWithTileOnBoard) summary.push('🎲 No starting tile');
-  if (rules.startWithTileOnBoard) summary.push('🎲 Starting tile on board');
-  if (rules.turnTimer !== 'none') {
-    let timerText = `⏱️ ${rules.turnTimer}s timer`;
-    if (rules.turnTimerGracePeriod) timerText += ' + grace';
-    summary.push(timerText);
-  }
-  if (rules.chainSafetyThreshold !== '11') {
-    const label = rules.chainSafetyThreshold === 'none' ? 'No safety' : `Safety at ${rules.chainSafetyThreshold}`;
-    summary.push(`🛡️ ${label}`);
-  }
-  if (rules.cashVisibility !== 'hidden') summary.push(`💰 Cash: ${rules.cashVisibility === 'visible' ? 'Visible' : 'Aggregate'}`);
-  if (rules.bonusTier !== 'standard') summary.push(`🏆 ${rules.bonusTier === 'flat' ? 'Flat' : 'Aggressive'} bonus`);
-  if (rules.boardSize !== '9x12') summary.push(`📐 Board: ${rules.boardSize}`);
-  if (rules.maxChains !== '7') summary.push(`🔗 Max ${rules.maxChains} chains`);
-  if (rules.startingCash !== '6000') summary.push(`💵 $${Number(rules.startingCash).toLocaleString()} start`);
-  if (rules.startingTiles !== '6') summary.push(`🃏 ${rules.startingTiles} tiles`);
+  if (rules.turnTimerEnabled) summary.push(`⏱ Turn timer: ${rules.turnTimer}s`);
+  summary.push(`🛡 Safe at ${rules.chainSafetyEnabled ? (rules.chainSafetyThreshold === 'none' ? '—' : rules.chainSafetyThreshold + '+') : '11+'}`);
+  summary.push(`👁 Cash ${rules.cashVisibilityEnabled ? (rules.cashVisibility === 'visible' ? 'visible' : rules.cashVisibility === 'aggregate' ? 'aggregate' : 'hidden') : 'hidden'}`);
+  summary.push(`🏆 Bonus: ${rules.bonusTierEnabled ? (rules.bonusTier === 'flat' ? 'Flat' : rules.bonusTier === 'aggressive' ? '15x/5x' : '10x/5x') : '10x/5x'}`);
+  summary.push(`📐 Board: ${rules.boardSizeEnabled ? rules.boardSize.replace('x', '×') : '9×12'}`);
+  summary.push(`🔗 Max ${rules.chainFoundingEnabled ? rules.maxChains : '7'} chains`);
   return summary;
 };
+
+const InfoTooltip = ({ text }: { text: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-[220px] text-xs">
+      {text}
+    </TooltipContent>
+  </Tooltip>
+);
 
 interface OnlineLobbyProps {
   roomCode: string | null;
@@ -469,21 +486,22 @@ export const OnlineLobby = ({
               }}
             >
               <Settings className="h-4 w-4 mr-2" />
-              Set Custom Rules
+              {confirmedRules && hasCustomRulesChanged(confirmedRules) ? (
+                <><Check className="h-4 w-4 mr-1" /> Edit Custom Rules</>
+              ) : (
+                'Set Custom Rules'
+              )}
             </Button>
 
             {/* Custom Rules Summary */}
             {confirmedRules && (
-              <div className="p-3 rounded-lg border border-accent bg-accent/10 space-y-2">
-                <h4 className="text-sm font-semibold flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  Custom Rules
+              <div className="p-3 rounded-lg border border-muted bg-muted/30 space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Active Custom Rules
                 </h4>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-1">
                   {getActiveRulesSummary(confirmedRules).map((rule, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {rule}
-                    </Badge>
+                    <p key={i} className="text-sm text-foreground">{rule}</p>
                   ))}
                 </div>
               </div>
@@ -505,236 +523,323 @@ export const OnlineLobby = ({
     };
 
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="w-fit mb-2"
-              onClick={handleBackFromRules}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <CardTitle>Set Custom Rules</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Starting Conditions Section */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Starting Conditions</p>
-              <div className="space-y-4">
+      <TooltipProvider delayDuration={300}>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-fit mb-2"
+                onClick={handleBackFromRules}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+              <CardTitle className="text-2xl font-bold">Set Custom Rules</CardTitle>
+              <p className="text-sm text-muted-foreground">Configure game rules before creating your room</p>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              {/* Turn Timer */}
+              <div className="py-3">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="start-tile" className="text-sm font-medium">
-                    Start with tile on board
-                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Timer className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Turn Timer</span>
+                    <InfoTooltip text="Add time pressure to each turn. When the timer expires, the turn auto-ends. You can disable it for the first 2 rounds to let players learn." />
+                  </div>
                   <Switch
-                    id="start-tile"
-                    checked={draftRules.startWithTileOnBoard}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startWithTileOnBoard: val }))}
+                    checked={draftRules.turnTimerEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, turnTimerEnabled: val }))}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Starting Cash</Label>
-                  <Select
-                    value={draftRules.startingCash}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingCash: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="4000">$4,000 (tight)</SelectItem>
-                      <SelectItem value="6000">$6,000 (standard)</SelectItem>
-                      <SelectItem value="8000">$8,000 (loose)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Starting Tiles</Label>
-                  <Select
-                    value={draftRules.startingTiles}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingTiles: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="5">5 tiles</SelectItem>
-                      <SelectItem value="6">6 tiles (standard)</SelectItem>
-                      <SelectItem value="7">7 tiles</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Turn Timer Section */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Turn Timer</p>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Timer Duration</Label>
-                  <Select
-                    value={draftRules.turnTimer}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, turnTimer: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No timer</SelectItem>
-                      <SelectItem value="30">30 seconds</SelectItem>
-                      <SelectItem value="60">60 seconds</SelectItem>
-                      <SelectItem value="90">90 seconds</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {draftRules.turnTimer !== 'none' && (
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="grace-period" className="text-sm font-medium">
-                      Grace period on expiry
-                    </Label>
-                    <Switch
-                      id="grace-period"
-                      checked={draftRules.turnTimerGracePeriod}
-                      onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, turnTimerGracePeriod: val }))}
-                    />
+                {draftRules.turnTimerEnabled && (
+                  <div className="mt-3 space-y-3 pl-6">
+                    <Select
+                      value={draftRules.turnTimer}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, turnTimer: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="30">30 Seconds</SelectItem>
+                        <SelectItem value="60">60 Seconds</SelectItem>
+                        <SelectItem value="90">90 Seconds</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Disable timer for first 2 rounds</span>
+                      <Switch
+                        checked={draftRules.disableTimerFirstRounds}
+                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, disableTimerFirstRounds: val }))}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Chain & Merger Rules */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Chain & Merger Rules</p>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Chain Safety Threshold</Label>
-                  <Select
-                    value={draftRules.chainSafetyThreshold}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyThreshold: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No safety (aggressive)</SelectItem>
-                      <SelectItem value="9">9 tiles</SelectItem>
-                      <SelectItem value="11">11 tiles (default)</SelectItem>
-                      <SelectItem value="13">13 tiles (fortress)</SelectItem>
-                      <SelectItem value="15">15 tiles</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Chain Safety Threshold */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Chain Safety Threshold</span>
+                    <InfoTooltip text="Chains that reach this size become 'safe' and cannot be acquired in mergers. Lower = easier to protect, higher = more aggressive mergers." />
+                  </div>
+                  <Switch
+                    checked={draftRules.chainSafetyEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyEnabled: val }))}
+                  />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Max Chains on Board</Label>
-                  <Select
-                    value={draftRules.maxChains}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, maxChains: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="5">5 chains (limited)</SelectItem>
-                      <SelectItem value="7">7 chains (standard)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {draftRules.chainSafetyEnabled && (
+                  <div className="mt-3 pl-6">
+                    <Select
+                      value={draftRules.chainSafetyThreshold}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyThreshold: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Aggressive — No safe chains</SelectItem>
+                        <SelectItem value="9">9 tiles</SelectItem>
+                        <SelectItem value="11">Defensive — Safe at 11+ (Default)</SelectItem>
+                        <SelectItem value="13">Fortress — Safe at 13+</SelectItem>
+                        <SelectItem value="15">15 tiles</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Economy */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Economy</p>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Cash Visibility</Label>
-                  <Select
-                    value={draftRules.cashVisibility}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibility: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hidden">Hidden (default)</SelectItem>
-                      <SelectItem value="visible">Visible to all</SelectItem>
-                      <SelectItem value="aggregate">Aggregate only</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Cash Visibility */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Cash Visibility</span>
+                    <InfoTooltip text="Control whether players can see each other's cash. Hidden adds mystery; visible increases negotiation. Aggregate shows total cash in game but not individual amounts." />
+                  </div>
+                  <Switch
+                    checked={draftRules.cashVisibilityEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibilityEnabled: val }))}
+                  />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Bonus Payment Tier</Label>
-                  <Select
-                    value={draftRules.bonusTier}
-                    onValueChange={(val) => setDraftRules(prev => ({ ...prev, bonusTier: val }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard (10x / 5x)</SelectItem>
-                      <SelectItem value="flat">Flat (equal payout)</SelectItem>
-                      <SelectItem value="aggressive">Aggressive (15x / 5x)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                {draftRules.cashVisibilityEnabled && (
+                  <div className="mt-3 pl-6">
+                    <Select
+                      value={draftRules.cashVisibility}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibility: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hidden">Cash hidden from opponents (Default)</SelectItem>
+                        <SelectItem value="visible">Cash visible to all players</SelectItem>
+                        <SelectItem value="aggregate">Show aggregate total only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Bonus Payment Tiers */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Bonus Payment Tiers</span>
+                    <InfoTooltip text="Control merger bonus payouts. Standard: 10x majority / 5x minority. Flat: equal payout to all stockholders. Aggressive: 15x majority / 5x minority — makes majority position crucial." />
+                  </div>
+                  <Switch
+                    checked={draftRules.bonusTierEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, bonusTierEnabled: val }))}
+                  />
                 </div>
+                {draftRules.bonusTierEnabled && (
+                  <div className="mt-3 pl-6">
+                    <Select
+                      value={draftRules.bonusTier}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, bonusTier: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard — 10x / 5x (Default)</SelectItem>
+                        <SelectItem value="flat">Flat — Equal payout</SelectItem>
+                        <SelectItem value="aggressive">Aggressive — 15x / 5x</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Board */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Board</p>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Board Size</Label>
-                <Select
-                  value={draftRules.boardSize}
-                  onValueChange={(val) => setDraftRules(prev => ({ ...prev, boardSize: val }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="6x10">6×10 (small / fast)</SelectItem>
-                    <SelectItem value="9x12">9×12 (standard)</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Board Size */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Grid3X3 className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Board Size</span>
+                    <InfoTooltip text="The standard 9×12 board is balanced for most games. A smaller 6×10 board makes for faster, more intense games with quicker mergers." />
+                  </div>
+                  <Switch
+                    checked={draftRules.boardSizeEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, boardSizeEnabled: val }))}
+                  />
+                </div>
+                {draftRules.boardSizeEnabled && (
+                  <div className="mt-3 pl-6">
+                    <Select
+                      value={draftRules.boardSize}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, boardSize: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="9x12">Standard — 9×12 (Default)</SelectItem>
+                        <SelectItem value="6x10">Small — 6×10 (Fast)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <Button 
-              className="w-full"
-              onClick={() => {
-                setConfirmedRules({ ...draftRules });
-                setMode('create');
-                toast({ title: 'Custom rules confirmed!' });
-              }}
-            >
-              Confirm Rules
-            </Button>
-          </CardContent>
-        </Card>
+              <Separator />
 
-        {/* Back Warning Dialog */}
-        <AlertDialog open={showBackWarning} onOpenChange={setShowBackWarning}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                Discard Custom Rules?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                You have unsaved custom rules. Going back will discard your changes.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Stay</AlertDialogCancel>
-              <AlertDialogAction
+              {/* Chain Founding Rules */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Link className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Chain Founding Rules</span>
+                    <InfoTooltip text="Control how many hotel chains can exist on the board. Limiting to 5 forces earlier mergers. The founder free stock toggle determines if the player who founds a chain gets a free stock." />
+                  </div>
+                  <Switch
+                    checked={draftRules.chainFoundingEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, chainFoundingEnabled: val }))}
+                  />
+                </div>
+                {draftRules.chainFoundingEnabled && (
+                  <div className="mt-3 space-y-3 pl-6">
+                    <Select
+                      value={draftRules.maxChains}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, maxChains: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="7">Standard — Max 7 chains (Default)</SelectItem>
+                        <SelectItem value="5">Limited — Max 5 chains</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Founder receives free stock</span>
+                      <Switch
+                        checked={draftRules.founderFreeStock}
+                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, founderFreeStock: val }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Starting Conditions */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Starting Conditions</span>
+                    <InfoTooltip text="Adjust how much cash and how many tiles each player starts with. Lower cash = tighter economy, more tiles = more early options." />
+                  </div>
+                  <Switch
+                    checked={draftRules.startingConditionsEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startingConditionsEnabled: val }))}
+                  />
+                </div>
+                {draftRules.startingConditionsEnabled && (
+                  <div className="mt-3 space-y-3 pl-6">
+                    <div className="space-y-1.5">
+                      <span className="text-sm text-muted-foreground">Starting Cash</span>
+                      <Select
+                        value={draftRules.startingCash}
+                        onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingCash: val }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="4000">$4,000 — Tight</SelectItem>
+                          <SelectItem value="6000">$6,000 — Standard (Default)</SelectItem>
+                          <SelectItem value="8000">$8,000 — Loose</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-sm text-muted-foreground">Starting Tiles</span>
+                      <Select
+                        value={draftRules.startingTiles}
+                        onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingTiles: val }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5">5 Tiles</SelectItem>
+                          <SelectItem value="6">6 Tiles (Default)</SelectItem>
+                          <SelectItem value="7">7 Tiles</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Start with tile on board</span>
+                      <Switch
+                        checked={draftRules.startWithTileOnBoard}
+                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startWithTileOnBoard: val }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Button 
+                className="w-full mt-4"
                 onClick={() => {
-                  setShowBackWarning(false);
+                  setConfirmedRules({ ...draftRules });
                   setMode('create');
+                  toast({ title: 'Custom rules confirmed!' });
                 }}
               >
-                Discard & Go Back
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+                Confirm Rules
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Back Warning Dialog */}
+          <AlertDialog open={showBackWarning} onOpenChange={setShowBackWarning}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  Discard Custom Rules?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  You have unsaved custom rules. Going back will discard your changes.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Stay</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setShowBackWarning(false);
+                    setMode('create');
+                  }}
+                >
+                  Discard & Go Back
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </TooltipProvider>
     );
   }
   return (
