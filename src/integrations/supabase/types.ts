@@ -108,6 +108,7 @@ export type Database = {
       game_rooms: {
         Row: {
           created_at: string
+          custom_rules: Json | null
           id: string
           max_players: number
           room_code: string
@@ -116,6 +117,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          custom_rules?: Json | null
           id?: string
           max_players?: number
           room_code: string
@@ -124,6 +126,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          custom_rules?: Json | null
           id?: string
           max_players?: number
           room_code?: string
@@ -145,9 +148,11 @@ export type Database = {
           pending_chain_foundation: string[] | null
           phase: string
           room_id: string
+          rules_snapshot: Json | null
           stock_bank: Json
           stocks_purchased_this_turn: number
           tile_bag: string[] | null
+          turn_deadline_epoch: number | null
           updated_at: string
           winner: string | null
         }
@@ -163,9 +168,11 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string
           room_id: string
+          rules_snapshot?: Json | null
           stock_bank?: Json
           stocks_purchased_this_turn?: number
           tile_bag?: string[] | null
+          turn_deadline_epoch?: number | null
           updated_at?: string
           winner?: string | null
         }
@@ -181,9 +188,11 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string
           room_id?: string
+          rules_snapshot?: Json | null
           stock_bank?: Json
           stocks_purchased_this_turn?: number
           tile_bag?: string[] | null
+          turn_deadline_epoch?: number | null
           updated_at?: string
           winner?: string | null
         }
@@ -277,8 +286,10 @@ export type Database = {
           pending_chain_foundation: string[] | null
           phase: string | null
           room_id: string | null
+          rules_snapshot: Json | null
           stock_bank: Json | null
           stocks_purchased_this_turn: number | null
+          turn_deadline_epoch: number | null
           updated_at: string | null
           winner: string | null
         }
@@ -294,8 +305,10 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string | null
           room_id?: string | null
+          rules_snapshot?: Json | null
           stock_bank?: Json | null
           stocks_purchased_this_turn?: number | null
+          turn_deadline_epoch?: number | null
           updated_at?: string | null
           winner?: string | null
         }
@@ -311,8 +324,10 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string | null
           room_id?: string | null
+          rules_snapshot?: Json | null
           stock_bank?: Json | null
           stocks_purchased_this_turn?: number | null
+          turn_deadline_epoch?: number | null
           updated_at?: string | null
           winner?: string | null
         }
