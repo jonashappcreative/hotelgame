@@ -9,6 +9,47 @@ const corsHeaders = {
 type ChainName = 'sackson' | 'tower' | 'worldwide' | 'american' | 'festival' | 'continental' | 'imperial';
 type TileId = string;
 
+// Mirror of src/types/game.ts CustomRules — keep in sync (founderFreeStock intentionally excluded)
+interface CustomRules {
+  startWithTileOnBoard: boolean;
+  turnTimerEnabled: boolean;
+  turnTimer: string;
+  disableTimerFirstRounds: boolean;
+  chainSafetyEnabled: boolean;
+  chainSafetyThreshold: string;
+  cashVisibilityEnabled: boolean;
+  cashVisibility: string;
+  bonusTierEnabled: boolean;
+  bonusTier: string;
+  boardSizeEnabled: boolean;
+  boardSize: string;
+  chainFoundingEnabled: boolean;
+  maxChains: string;
+  startingConditionsEnabled: boolean;
+  startingCash: string;
+  startingTiles: string;
+}
+
+const DEFAULT_RULES: CustomRules = {
+  startWithTileOnBoard: true,
+  turnTimerEnabled: false,
+  turnTimer: '60',
+  disableTimerFirstRounds: true,
+  chainSafetyEnabled: false,
+  chainSafetyThreshold: 'none',
+  cashVisibilityEnabled: false,
+  cashVisibility: 'hidden',
+  bonusTierEnabled: false,
+  bonusTier: 'standard',
+  boardSizeEnabled: false,
+  boardSize: '9x12',
+  chainFoundingEnabled: false,
+  maxChains: '7',
+  startingConditionsEnabled: false,
+  startingCash: '6000',
+  startingTiles: '6',
+};
+
 interface MergerStockDecision {
   sell: number;
   trade: number;

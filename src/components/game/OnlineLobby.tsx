@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { CustomRules, DEFAULT_RULES } from '@/types/game';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,48 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-
-interface CustomRules {
-  startWithTileOnBoard: boolean;
-  turnTimerEnabled: boolean;
-  turnTimer: string;
-  disableTimerFirstRounds: boolean;
-  chainSafetyEnabled: boolean;
-  chainSafetyThreshold: string;
-  cashVisibilityEnabled: boolean;
-  cashVisibility: string;
-  bonusTierEnabled: boolean;
-  bonusTier: string;
-  boardSizeEnabled: boolean;
-  boardSize: string;
-  chainFoundingEnabled: boolean;
-  maxChains: string;
-  founderFreeStock: boolean;
-  startingConditionsEnabled: boolean;
-  startingCash: string;
-  startingTiles: string;
-}
-
-const DEFAULT_RULES: CustomRules = {
-  startWithTileOnBoard: true,
-  turnTimerEnabled: false,
-  turnTimer: '60',
-  disableTimerFirstRounds: true,
-  chainSafetyEnabled: false,
-  chainSafetyThreshold: 'none',
-  cashVisibilityEnabled: false,
-  cashVisibility: 'hidden',
-  bonusTierEnabled: false,
-  bonusTier: 'standard',
-  boardSizeEnabled: false,
-  boardSize: '9x12',
-  chainFoundingEnabled: false,
-  maxChains: '7',
-  founderFreeStock: true,
-  startingConditionsEnabled: false,
-  startingCash: '6000',
-  startingTiles: '6',
-};
 
 const hasCustomRulesChanged = (rules: CustomRules): boolean => {
   return JSON.stringify(rules) !== JSON.stringify(DEFAULT_RULES);
@@ -695,7 +654,13 @@ export const OnlineLobby = ({
                   <div className="mt-3 pl-6">
                     <Select
                       value={draftRules.boardSize}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, boardSize: val }))}
+                      onValueChange={(val) => {
+                        const updates: Partial<CustomRules> = { boardSize: val };
+                        if (val === '6x10' && draftRules.chainFoundingEnabled) {
+                          updates.maxChains = '5';
+                        }
+                        setDraftRules(prev => ({ ...prev, ...updates }));
+                      }}
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -731,16 +696,10 @@ export const OnlineLobby = ({
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="7">Standard — Max 7 chains (Default)</SelectItem>
+                        <SelectItem value="6">Extended — Max 6 chains</SelectItem>
                         <SelectItem value="5">Limited — Max 5 chains</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Founder receives free stock</span>
-                      <Switch
-                        checked={draftRules.founderFreeStock}
-                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, founderFreeStock: val }))}
-                      />
-                    </div>
                   </div>
                 )}
               </div>

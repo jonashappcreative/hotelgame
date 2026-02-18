@@ -23,6 +23,7 @@ import {
   hasPlayableTiles,
 } from './gameLogic';
 import type { GameState, PlayerState, ChainName, TileId } from '@/types/game';
+import { DEFAULT_RULES } from '@/types/game';
 
 describe('gameLogic', () => {
   describe('generateAllTiles', () => {
@@ -1086,6 +1087,32 @@ describe('gameLogic', () => {
       gameState.players[0].tiles = ['9B' as TileId];
 
       expect(hasPlayableTiles(gameState, 0)).toBe(false);
+    });
+  });
+
+  describe('DEFAULT_RULES', () => {
+    it('should contain all required CustomRules fields with correct default values', () => {
+      expect(DEFAULT_RULES.startWithTileOnBoard).toBe(true);
+      expect(DEFAULT_RULES.turnTimerEnabled).toBe(false);
+      expect(DEFAULT_RULES.turnTimer).toBe('60');
+      expect(DEFAULT_RULES.disableTimerFirstRounds).toBe(true);
+      expect(DEFAULT_RULES.chainSafetyEnabled).toBe(false);
+      expect(DEFAULT_RULES.chainSafetyThreshold).toBe('none');
+      expect(DEFAULT_RULES.cashVisibilityEnabled).toBe(false);
+      expect(DEFAULT_RULES.cashVisibility).toBe('hidden');
+      expect(DEFAULT_RULES.bonusTierEnabled).toBe(false);
+      expect(DEFAULT_RULES.bonusTier).toBe('standard');
+      expect(DEFAULT_RULES.boardSizeEnabled).toBe(false);
+      expect(DEFAULT_RULES.boardSize).toBe('9x12');
+      expect(DEFAULT_RULES.chainFoundingEnabled).toBe(false);
+      expect(DEFAULT_RULES.maxChains).toBe('7');
+      expect(DEFAULT_RULES.startingConditionsEnabled).toBe(false);
+      expect(DEFAULT_RULES.startingCash).toBe('6000');
+      expect(DEFAULT_RULES.startingTiles).toBe('6');
+    });
+
+    it('should not contain a founderFreeStock field', () => {
+      expect('founderFreeStock' in DEFAULT_RULES).toBe(false);
     });
   });
 });
