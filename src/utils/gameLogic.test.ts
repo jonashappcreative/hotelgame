@@ -880,6 +880,24 @@ describe('gameLogic', () => {
 
       expect(newState.players[0].tiles).toHaveLength(initialTileCount + 1);
     });
+
+    it('should increment roundNumber when the last player ends their turn', () => {
+      gameState.currentPlayerIndex = 3;
+      gameState.roundNumber = 0;
+
+      const newState = endTurn(gameState);
+
+      expect(newState.roundNumber).toBe(1);
+    });
+
+    it('should not increment roundNumber when a non-last player ends their turn', () => {
+      gameState.currentPlayerIndex = 1;
+      gameState.roundNumber = 2;
+
+      const newState = endTurn(gameState);
+
+      expect(newState.roundNumber).toBe(2);
+    });
   });
 
   describe('checkGameEnd', () => {

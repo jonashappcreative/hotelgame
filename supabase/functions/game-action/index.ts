@@ -59,7 +59,7 @@ interface MergerStockDecision {
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
           'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'skip_buy' |
-          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status';
+          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn';
   roomId: string;
   payload?: any;
 }
@@ -426,6 +426,12 @@ Deno.serve(async (req) => {
           details: startingTile ? `Starting tile ${startingTile} placed on board` : 'Board starts empty',
         };
 
+        // Compute turn deadline for the first turn
+        const firstTurnDeadline: number | null =
+          rules.turnTimerEnabled && !rules.disableTimerFirstRounds
+            ? Math.floor(Date.now() / 1000) + parseInt(rules.turnTimer)
+            : null;
+
         // Create game state with rules_snapshot
         const { error: insertError } = await adminClient
           .from('game_states')
@@ -440,6 +446,8 @@ Deno.serve(async (req) => {
             last_placed_tile: startingTile,
             rules_snapshot: rules as unknown as any,
             game_log: [gameLogEntry],
+            round_number: 0,
+            turn_deadline_epoch: firstTurnDeadline,
           });
 
         if (insertError) {
@@ -1253,6 +1261,13 @@ Deno.serve(async (req) => {
         }
 
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
+        const currentRoundNumber = gameState.round_number ?? 0;
+        const newRoundNumber = currentRoundNumber + (nextPlayerIndex === 0 ? 1 : 0);
+        const rulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const newDeadline: number | null =
+          rulesSnap.turnTimerEnabled && !(rulesSnap.disableTimerFirstRounds && newRoundNumber < 2)
+            ? Math.floor(Date.now() / 1000) + parseInt(rulesSnap.turnTimer)
+            : null;
 
         let newPhase = 'place_tile';
         let winner = null;
@@ -1279,6 +1294,8 @@ Deno.serve(async (req) => {
             last_placed_tile: null,
             game_log: gameLog,
             winner,
+            round_number: newRoundNumber,
+            turn_deadline_epoch: newPhase === 'game_over' ? null : newDeadline,
           })
           .eq('room_id', roomId);
 
@@ -1307,6 +1324,13 @@ Deno.serve(async (req) => {
         }
 
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
+        const skipCurrentRound = gameState.round_number ?? 0;
+        const skipNewRound = skipCurrentRound + (nextPlayerIndex === 0 ? 1 : 0);
+        const skipRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const skipNewDeadline: number | null =
+          skipRulesSnap.turnTimerEnabled && !(skipRulesSnap.disableTimerFirstRounds && skipNewRound < 2)
+            ? Math.floor(Date.now() / 1000) + parseInt(skipRulesSnap.turnTimer)
+            : null;
 
         let newPhase = 'place_tile';
         let winner = null;
@@ -1331,6 +1355,8 @@ Deno.serve(async (req) => {
             stocks_purchased_this_turn: 0,
             last_placed_tile: null,
             winner,
+            round_number: skipNewRound,
+            turn_deadline_epoch: newPhase === 'game_over' ? null : skipNewDeadline,
           })
           .eq('room_id', roomId);
 
@@ -1488,6 +1514,284 @@ Deno.serve(async (req) => {
             .update({ status: newStatus })
             .eq('id', roomId);
         }
+        result = { success: true };
+        break;
+      }
+
+      case 'auto_end_turn': {
+        if (!gameState) {
+          return new Response(JSON.stringify({ error: 'Game not started' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'place_tile') {
+          return new Response(JSON.stringify({ error: 'Not in place_tile phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const autoDeadline = gameState.turn_deadline_epoch;
+        if (!autoDeadline || Math.floor(Date.now() / 1000) < autoDeadline) {
+          return new Response(JSON.stringify({ error: 'Timer has not expired' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const autoRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const autoBoard = { ...gameState.board };
+        const autoChains = { ...gameState.chains };
+        let autoStockBank = { ...gameState.stock_bank };
+        let autoTileBag = [...gameState.tile_bag];
+        const autoPlayerTiles: string[] = playerData.tiles || [];
+
+        const autoGameLog = [...gameState.game_log, {
+          timestamp: Date.now(),
+          playerId: `player-${myPlayerIndex}`,
+          playerName: playerData.player_name,
+          action: 'Turn auto-ended (timer expired)',
+        }];
+
+        // Find playable tiles (same validity checks as place_tile handler)
+        const autoPlayableTiles = autoPlayerTiles.filter(tileId => {
+          const adjTiles = getAdjacentTiles(tileId);
+          const adjChainsSet = new Set<ChainName>();
+          const adjUnincorpTiles: string[] = [];
+          for (const a of adjTiles) {
+            const t = autoBoard[a];
+            if (t?.placed) {
+              if (t.chain) adjChainsSet.add(t.chain as ChainName);
+              else adjUnincorpTiles.push(a);
+            }
+          }
+          const ca = Array.from(adjChainsSet);
+          if (ca.length >= 2 && ca.filter(c => autoChains[c].isSafe).length >= 2) return false;
+          if (ca.length === 0 && adjUnincorpTiles.length > 0 &&
+              Object.values(autoChains).filter((c: any) => c.isActive).length >= 7) return false;
+          return true;
+        });
+
+        // Helper: compute next turn index, round number, and timer deadline
+        const computeAutoNextTurn = (chains: Record<ChainName, any>) => {
+          const npi = (myPlayerIndex + 1) % allPlayers.length;
+          const curRound = gameState.round_number ?? 0;
+          const nrn = curRound + (npi === 0 ? 1 : 0);
+          const nd: number | null =
+            autoRules.turnTimerEnabled && !(autoRules.disableTimerFirstRounds && nrn < 2)
+              ? Math.floor(Date.now() / 1000) + parseInt(autoRules.turnTimer)
+              : null;
+          let phase = 'place_tile';
+          let autoWinner: string | null = null;
+          if (checkGameEnd(chains)) {
+            phase = 'game_over';
+            const scored = allPlayers.map(p => ({
+              id: `player-${p.player_index}`,
+              name: p.player_name,
+              cash: p.cash,
+              stocks: p.stocks,
+            }));
+            autoWinner = calculateFinalScores(scored, chains)[0].name;
+          }
+          return { nextPlayerIndex: npi, newRoundNumber: nrn, newDeadline: phase === 'game_over' ? null : nd, newPhase: phase, winner: autoWinner };
+        };
+
+        let autoNewPlayerTiles = [...autoPlayerTiles];
+
+        if (autoPlayableTiles.length === 0) {
+          // No playable tile: discard a random tile, draw a replacement, end turn
+          const discardIdx = Math.floor(Math.random() * autoPlayerTiles.length);
+          const tileToDiscard = autoPlayerTiles[discardIdx];
+          const bagInsertPos = Math.floor(Math.random() * (autoTileBag.length + 1));
+          autoTileBag.splice(bagInsertPos, 0, tileToDiscard);
+          const replaceTile = autoTileBag.pop();
+          autoNewPlayerTiles = autoPlayerTiles.filter(t => t !== tileToDiscard);
+          if (replaceTile) autoNewPlayerTiles.push(replaceTile);
+
+          await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
+
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(autoChains);
+          await adminClient.from('game_states').update({
+            current_player_index: nextPlayerIndex,
+            phase: newPhase,
+            tile_bag: autoTileBag,
+            stocks_purchased_this_turn: 0,
+            last_placed_tile: null,
+            round_number: newRoundNumber,
+            turn_deadline_epoch: newDeadline,
+            game_log: autoGameLog,
+            winner,
+          }).eq('room_id', roomId);
+
+          result = { success: true };
+          break;
+        }
+
+        // Pick a random playable tile
+        const tileToPlay = autoPlayableTiles[Math.floor(Math.random() * autoPlayableTiles.length)];
+        autoNewPlayerTiles = autoPlayerTiles.filter(t => t !== tileToPlay);
+
+        // Analyze placement
+        const autoAdjTiles = getAdjacentTiles(tileToPlay);
+        const autoChainsSet = new Set<ChainName>();
+        const autoUnincorp: string[] = [];
+        for (const a of autoAdjTiles) {
+          const t = autoBoard[a];
+          if (t?.placed) {
+            if (t.chain) autoChainsSet.add(t.chain as ChainName);
+            else autoUnincorp.push(a);
+          }
+        }
+        const autoChainArray = Array.from(autoChainsSet);
+
+        // Place tile on board
+        autoBoard[tileToPlay] = { id: tileToPlay, placed: true, chain: null };
+        const autoNewChains = { ...autoChains };
+
+        // Helper: draw tile and advance turn
+        const advanceTurn = async (chains: Record<ChainName, any>) => {
+          const drawn = autoTileBag.pop();
+          if (drawn) autoNewPlayerTiles.push(drawn);
+          await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(chains);
+          await adminClient.from('game_states').update({
+            board: autoBoard,
+            chains,
+            stock_bank: autoStockBank,
+            current_player_index: nextPlayerIndex,
+            phase: newPhase,
+            tile_bag: autoTileBag,
+            stocks_purchased_this_turn: 0,
+            last_placed_tile: null,
+            merger: null,
+            pending_chain_foundation: null,
+            round_number: newRoundNumber,
+            turn_deadline_epoch: newDeadline,
+            game_log: autoGameLog,
+            winner,
+          }).eq('room_id', roomId);
+        };
+
+        if (autoChainArray.length >= 2) {
+          // Merger: auto-resolve — all players keep their stock
+          const sortedBySize = autoChainArray
+            .map(c => ({ chain: c, size: autoChains[c].tiles.length }))
+            .sort((a, b) => b.size - a.size);
+          const biggestSize = sortedBySize[0].size;
+          const tiedChains = sortedBySize.filter(c => c.size === biggestSize);
+          const survivingChain = tiedChains[Math.floor(Math.random() * tiedChains.length)].chain;
+          const defunctList = autoChainArray.filter(c => c !== survivingChain);
+
+          // Fetch fresh player data for accurate cash
+          const { data: freshAutoPlayers } = await adminClient
+            .from('game_players').select('*').eq('room_id', roomId).order('player_index');
+          const freshAutoStates = (freshAutoPlayers || []).map((p: any) => ({
+            id: `player-${p.player_index}`,
+            name: p.player_name,
+            cash: p.cash,
+            stocks: p.stocks,
+          }));
+
+          // Pay bonuses for each defunct chain
+          for (const defunctC of defunctList) {
+            const dSize = autoChains[defunctC].tiles.length;
+            const dBonuses = getBonuses(defunctC, dSize);
+            const { majority: dMaj, minority: dMin } = getStockholderRankings(freshAutoStates, defunctC);
+            if (dMaj.length > 0) {
+              const payments: { pi: number; amount: number }[] = [];
+              if (dMin.length === 0) {
+                const each = Math.floor((dBonuses.majority + dBonuses.minority) / dMaj.length);
+                dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: each }));
+              } else {
+                const majEach = Math.floor(dBonuses.majority / dMaj.length);
+                const minEach = Math.floor(dBonuses.minority / dMin.length);
+                dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: majEach }));
+                dMin.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: minEach }));
+              }
+              for (const { pi, amount } of payments) {
+                const dbP = (freshAutoPlayers || []).find((p: any) => p.player_index === pi);
+                if (dbP) await adminClient.from('game_players').update({ cash: dbP.cash + amount }).eq('id', dbP.id);
+              }
+              autoGameLog.push({
+                timestamp: Date.now(),
+                playerId: 'system',
+                playerName: 'System',
+                action: `${CHAINS[defunctC].displayName} bonuses paid (auto)`,
+              });
+            }
+          }
+
+          // Transfer all defunct tiles to surviving chain
+          const mergerTilesToAdd = [tileToPlay, ...autoUnincorp];
+          for (const dc of defunctList) mergerTilesToAdd.push(...autoChains[dc].tiles);
+          for (const tid of mergerTilesToAdd) autoBoard[tid] = { ...autoBoard[tid], chain: survivingChain };
+          const survivorExisting = autoChains[survivingChain].tiles;
+          const survivorAll = [...new Set([...survivorExisting, ...mergerTilesToAdd])];
+          autoNewChains[survivingChain] = { ...autoNewChains[survivingChain], tiles: survivorAll, isSafe: survivorAll.length >= SAFE_CHAIN_SIZE };
+          for (const dc of defunctList) {
+            autoNewChains[dc] = { ...autoNewChains[dc], tiles: [], isActive: false, isSafe: false };
+          }
+
+          autoGameLog.push({
+            timestamp: Date.now(),
+            playerId: 'system',
+            playerName: 'System',
+            action: 'Merger auto-resolved',
+            details: `${CHAINS[survivingChain].displayName} absorbed ${defunctList.map(c => CHAINS[c].displayName).join(', ')}`,
+          });
+
+          await advanceTurn(autoNewChains);
+
+        } else if (autoChainArray.length === 1) {
+          // Grow existing chain
+          const growTarget = autoChainArray[0];
+          const growTiles = [tileToPlay, ...autoUnincorp];
+          for (const tid of growTiles) autoBoard[tid] = { ...autoBoard[tid], chain: growTarget };
+          const growExisting = autoChains[growTarget].tiles;
+          const growAll = [...growExisting, ...growTiles];
+          autoNewChains[growTarget] = { ...autoNewChains[growTarget], tiles: growAll, isSafe: growAll.length >= SAFE_CHAIN_SIZE };
+
+          await advanceTurn(autoNewChains);
+
+        } else if (autoUnincorp.length > 0) {
+          // Found a new chain: pick random available
+          const availableForAuto = (Object.keys(autoChains) as ChainName[]).filter(c => !autoChains[c].isActive);
+          const newAutoChain = availableForAuto[Math.floor(Math.random() * availableForAuto.length)];
+          const foundTiles = [tileToPlay, ...autoUnincorp];
+          for (const tid of foundTiles) autoBoard[tid] = { ...autoBoard[tid], chain: newAutoChain };
+          autoNewChains[newAutoChain] = { ...autoNewChains[newAutoChain], tiles: foundTiles, isActive: true, isSafe: foundTiles.length >= SAFE_CHAIN_SIZE };
+
+          // Founding bonus
+          if (autoStockBank[newAutoChain] > 0) {
+            const founderStocks = { ...playerData.stocks };
+            founderStocks[newAutoChain] = (founderStocks[newAutoChain] || 0) + 1;
+            autoStockBank[newAutoChain]--;
+            await adminClient.from('game_players').update({ stocks: founderStocks }).eq('id', playerData.id);
+          }
+
+          autoGameLog.push({
+            timestamp: Date.now(),
+            playerId: `player-${myPlayerIndex}`,
+            playerName: playerData.player_name,
+            action: `Auto-founded ${CHAINS[newAutoChain].displayName}`,
+          });
+
+          await advanceTurn(autoNewChains);
+
+        } else {
+          // Place only — skip buy, advance turn
+          await advanceTurn(autoNewChains);
+        }
+
         result = { success: true };
         break;
       }

@@ -83,6 +83,9 @@ export interface GameState {
   gameLog: GameLogEntry[];
   winner: string | null;
   endGameVotes: string[];
+  roundNumber: number;
+  rulesSnapshot: CustomRules | null;
+  turnDeadlineEpoch: number | null;
 }
 
 export interface GameLogEntry {

@@ -539,6 +539,21 @@ export const useOnlineGame = () => {
     setRoomStatus('waiting');
   }, [roomId]);
 
+  const handleAutoEndTurn = useCallback(async () => {
+    if (!gameState || !roomId) return;
+
+    if (gameState.currentPlayerIndex !== myPlayerIndex) return;
+
+    const result = await executeGameAction('auto_end_turn', roomId);
+
+    if (!result.success) {
+      console.warn('[useOnlineGame] auto_end_turn failed:', result.error);
+      return;
+    }
+
+    await refreshGameState();
+  }, [gameState, roomId, myPlayerIndex, refreshGameState]);
+
   // Rejoin an active game
   const handleRejoinGame = useCallback(async () => {
     if (!activeGameInfo) return;
@@ -636,6 +651,7 @@ export const useOnlineGame = () => {
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
+    handleAutoEndTurn,
 
     getAvailableChains: gameState ? () => getAvailableChainsForFoundation(gameState) : () => [],
   };

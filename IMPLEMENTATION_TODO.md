@@ -275,25 +275,25 @@ In `src/utils/multiplayerService.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] When `turnTimerEnabled = true`, a visible countdown timer is displayed in the active player's game UI.
-- [ ] The timer counts down from the configured duration (30 / 60 / 90 seconds).
-- [ ] When `disableTimerFirstRounds = true`, the timer does not activate for the first 2 complete rounds (each player taking 2 turns).
-- [ ] The timer resets at the start of each new turn.
-- [ ] The timer is not displayed to non-active players.
-- [ ] When the timer expires, the **frontend** calls an `auto_end_turn` action on the edge function.
-- [ ] The edge function validates that `turn_deadline_epoch` has passed before executing auto-play.
-- [ ] **Auto-play sequence** (server-side, deterministic):
+- [x] When `turnTimerEnabled = true`, a visible countdown timer is displayed in the active player's game UI.
+- [x] The timer counts down from the configured duration (30 / 60 / 90 seconds).
+- [x] When `disableTimerFirstRounds = true`, the timer does not activate for the first 2 complete rounds (each player taking 2 turns).
+- [x] The timer resets at the start of each new turn.
+- [x] The timer is not displayed to non-active players.
+- [x] When the timer expires, the **frontend** calls an `auto_end_turn` action on the edge function.
+- [x] The edge function validates that `turn_deadline_epoch` has passed before executing auto-play.
+- [x] **Auto-play sequence** (server-side, deterministic):
   - Pick a random playable tile from the current player's hand. If no tile is playable, discard one and draw.
   - If the tile would found a chain: pick a random chain from the available options.
   - Skip the buy-stock phase entirely (purchase nothing).
   - If the tile triggers a merger: keep all of the current player's stock in the defunct chain.
-- [ ] After auto-play, the turn advances normally to the next player.
-- [ ] When `turnTimerEnabled = false` (default), no timer runs and no `turn_deadline_epoch` is set.
+- [x] After auto-play, the turn advances normally to the next player.
+- [x] When `turnTimerEnabled = false` (default), no timer runs and no `turn_deadline_epoch` is set.
 
 #### Implementation Tasks
 
-- [ ] **`src/types/game.ts`**: Add `roundNumber: number` to `GameState`.
-- [ ] **`supabase/functions/game-action/index.ts`**:
+- [x] **`src/types/game.ts`**: Add `roundNumber: number` to `GameState`.
+- [x] **`supabase/functions/game-action/index.ts`**:
   - In `endTurn` logic (end of `buy_stocks`/`skip_buy` handlers): increment `roundNumber` when `currentPlayerIndex` wraps to 0.
   - At the start of each turn (after incrementing `currentPlayerIndex`): if `rules_snapshot.turnTimerEnabled`, set `turn_deadline_epoch = Math.floor(Date.now() / 1000) + parseInt(rules_snapshot.turnTimer)`, unless we are in the grace period (`rules_snapshot.disableTimerFirstRounds && roundNumber < 2`), in which case set `turn_deadline_epoch = NULL`.
   - Add a new action type `auto_end_turn` to `GameActionRequest`.
@@ -302,12 +302,12 @@ In `src/utils/multiplayerService.test.ts`:
     2. Execute the auto-play sequence (random tile → optional random chain → skip buy / keep merger stock).
     3. Advance to the next player's turn.
     4. Set `turn_deadline_epoch` for the new turn (or NULL if grace period).
-- [ ] **`src/utils/gameLogic.ts`**: Mirror `roundNumber` increment in the `endTurn` function.
-- [ ] **New component `src/components/game/TurnTimer.tsx`**:
+- [x] **`src/utils/gameLogic.ts`**: Mirror `roundNumber` increment in the `endTurn` function.
+- [x] **New component `src/components/game/TurnTimer.tsx`**:
   - Props: `durationSeconds: number`, `isActive: boolean`, `onExpire: () => void`.
   - `useEffect`-based `setInterval` countdown. Calls `onExpire` at zero and clears the interval.
   - Renders a numeric countdown and a visual progress bar/ring.
-- [ ] **`src/components/game/GameContainer.tsx`**:
+- [x] **`src/components/game/GameContainer.tsx`**:
   - Receive `customRules: CustomRules` and `roundNumber: number` as props.
   - Mount `TurnTimer` when `isMyTurn && rules.turnTimerEnabled && !(rules.disableTimerFirstRounds && roundNumber < 2)`.
   - `onExpire` callback: call `executeGameAction('auto_end_turn', roomId)`.
@@ -315,14 +315,14 @@ In `src/utils/multiplayerService.test.ts`:
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `endTurn` called for the last player in a round (wraps to player 0) increments `roundNumber` by 1.
-- [ ] `endTurn` called for a non-last player leaves `roundNumber` unchanged.
+- [x] `endTurn` called for the last player in a round (wraps to player 0) increments `roundNumber` by 1.
+- [x] `endTurn` called for a non-last player leaves `roundNumber` unchanged.
 
 In new file `src/components/game/TurnTimer.test.tsx`:
-- [ ] Timer counts down from the given duration.
-- [ ] `onExpire` is called exactly once when the countdown reaches zero.
-- [ ] Timer does not start when `isActive = false`.
-- [ ] Timer resets when the component re-mounts with a new `durationSeconds` value.
+- [x] Timer counts down from the given duration.
+- [x] `onExpire` is called exactly once when the countdown reaches zero.
+- [x] Timer does not start when `isActive = false`.
+- [x] Timer resets when the component re-mounts with a new `durationSeconds` value.
 
 #### Dependencies
 

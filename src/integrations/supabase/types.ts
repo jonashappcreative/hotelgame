@@ -148,6 +148,7 @@ export type Database = {
           pending_chain_foundation: string[] | null
           phase: string
           room_id: string
+          round_number: number
           rules_snapshot: Json | null
           stock_bank: Json
           stocks_purchased_this_turn: number
@@ -168,6 +169,7 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string
           room_id: string
+          round_number?: number
           rules_snapshot?: Json | null
           stock_bank?: Json
           stocks_purchased_this_turn?: number
@@ -188,6 +190,7 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string
           room_id?: string
+          round_number?: number
           rules_snapshot?: Json | null
           stock_bank?: Json
           stocks_purchased_this_turn?: number
@@ -286,6 +289,7 @@ export type Database = {
           pending_chain_foundation: string[] | null
           phase: string | null
           room_id: string | null
+          round_number: number | null
           rules_snapshot: Json | null
           stock_bank: Json | null
           stocks_purchased_this_turn: number | null
@@ -305,6 +309,7 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string | null
           room_id?: string | null
+          round_number?: number | null
           rules_snapshot?: Json | null
           stock_bank?: Json | null
           stocks_purchased_this_turn?: number | null
@@ -324,6 +329,7 @@ export type Database = {
           pending_chain_foundation?: string[] | null
           phase?: string | null
           room_id?: string | null
+          round_number?: number | null
           rules_snapshot?: Json | null
           stock_bank?: Json | null
           stocks_purchased_this_turn?: number | null

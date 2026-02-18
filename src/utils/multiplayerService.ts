@@ -569,6 +569,9 @@ export const dbToGameState = (
     gameLog: dbState.game_log || [],
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
+    roundNumber: dbState.round_number ?? 0,
+    rulesSnapshot: (dbState.rules_snapshot as import('@/types/game').CustomRules) ?? null,
+    turnDeadlineEpoch: dbState.turn_deadline_epoch ?? null,
   };
 };
 

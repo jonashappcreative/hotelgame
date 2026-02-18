@@ -14,6 +14,7 @@ import { MergerStockDecision as MergerStockDecisionComponent } from './MergerSto
 import { EndGameVote } from './EndGameVote';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
+import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
 import { Clock, WifiOff } from 'lucide-react';
@@ -31,6 +32,7 @@ interface GameContainerProps {
   onEndGameVote: (vote: boolean) => void;
   onNewGame: () => void;
   onDiscardTile?: (tileId: TileId) => void;
+  onAutoEndTurn?: () => void;
 }
 
 export const GameContainer = ({
@@ -46,6 +48,7 @@ export const GameContainer = ({
   onEndGameVote,
   onNewGame,
   onDiscardTile,
+  onAutoEndTurn,
 }: GameContainerProps) => {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   
@@ -224,6 +227,29 @@ export const GameContainer = ({
               onTileClick={handleTileSelect}
               selectedTile={selectedTile}
             />
+
+            {/* Turn Timer — shown only to the active player when timer is enabled */}
+            {(() => {
+              const rules = gameState.rulesSnapshot;
+              const roundNumber = gameState.roundNumber ?? 0;
+              const showTimer =
+                isMyTurn &&
+                isOnlineMode &&
+                gameState.phase === 'place_tile' &&
+                rules?.turnTimerEnabled === true &&
+                !(rules.disableTimerFirstRounds && roundNumber < 2) &&
+                onAutoEndTurn !== undefined;
+              if (!showTimer) return null;
+              const durationSecs = parseInt(rules!.turnTimer ?? '60');
+              return (
+                <TurnTimer
+                  key={gameState.currentPlayerIndex}
+                  durationSeconds={durationSecs}
+                  isActive={true}
+                  onExpire={onAutoEndTurn!}
+                />
+              );
+            })()}
 
             {/* Action Area */}
             <div>

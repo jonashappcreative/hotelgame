@@ -31,6 +31,7 @@ const OnlineGame = () => {
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
+    handleAutoEndTurn,
   } = useOnlineGame();
 
   // Show lobby if not in a game
@@ -69,6 +70,7 @@ const OnlineGame = () => {
       onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
       onNewGame={handleNewGame}
+      onAutoEndTurn={handleAutoEndTurn}
     />
   );
 };

@@ -202,6 +202,9 @@ export const initializeGame = (playerNames: string[]): GameState => {
     }],
     winner: null,
     endGameVotes: [],
+    roundNumber: 0,
+    rulesSnapshot: null,
+    turnDeadlineEpoch: null,
   };
 };
 
@@ -520,11 +523,13 @@ export const discardTile = (state: GameState, tileId: TileId): GameState => {
 // End turn and advance to next player
 export const endTurn = (state: GameState): GameState => {
   const newState = drawTile(state);
-  newState.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+  const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+  newState.currentPlayerIndex = nextPlayerIndex;
+  newState.roundNumber = nextPlayerIndex === 0 ? state.roundNumber + 1 : state.roundNumber;
   newState.phase = 'place_tile';
   newState.stocksPurchasedThisTurn = 0;
   newState.lastPlacedTile = null;
-  
+
   return newState;
 };
 
