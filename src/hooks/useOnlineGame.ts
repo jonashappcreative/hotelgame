@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  GameState, 
-  TileId, 
+import {
+  GameState,
+  TileId,
   ChainName,
   MergerStockDecision,
+  CustomRules,
+  DEFAULT_RULES,
 } from '@/types/game';
 import {
   initializeGame,
@@ -173,10 +175,10 @@ export const useOnlineGame = () => {
     return await getSecurePlayerData(rId);
   };
 
-  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4) => {
+  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4, rules: CustomRules = DEFAULT_RULES) => {
     setIsLoading(true);
     try {
-      const result = await createRoom(playerCount);
+      const result = await createRoom(playerCount, rules);
       if (!result) {
         toast({ title: 'Error', description: 'Failed to create room', variant: 'destructive' });
         return;

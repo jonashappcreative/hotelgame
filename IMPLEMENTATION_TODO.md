@@ -224,25 +224,25 @@ In `src/utils/gameLogic.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] `OnlineLobby.tsx` passes `confirmedRules ?? DEFAULT_RULES` when calling `onCreateRoom`.
-- [ ] `createRoom` in `src/utils/multiplayerService.ts` accepts `customRules: CustomRules` and writes it to `game_rooms.custom_rules`.
-- [ ] A new `fetchRoomRules(roomId: string): Promise<CustomRules>` function exists in `multiplayerService.ts`. Returns the room's rules or `DEFAULT_RULES` if none are set.
-- [ ] The lobby waiting screen (when `roomCode` is set) displays the active custom rules to all players — both the creator and joiners.
-- [ ] All players can see the rules summary **before** they mark themselves as ready.
-- [ ] The edge function reads `custom_rules` from `game_rooms` when `toggle_ready` triggers game initialisation, resolves it against `DEFAULT_RULES` for any missing fields, and stores the resolved object in `game_states.rules_snapshot`.
-- [ ] If `custom_rules` is `NULL`, the edge function uses `DEFAULT_RULES` and stores that as `rules_snapshot`.
+- [x] `OnlineLobby.tsx` passes `confirmedRules ?? DEFAULT_RULES` when calling `onCreateRoom`.
+- [x] `createRoom` in `src/utils/multiplayerService.ts` accepts `customRules: CustomRules` and writes it to `game_rooms.custom_rules`.
+- [x] A new `fetchRoomRules(roomId: string): Promise<CustomRules>` function exists in `multiplayerService.ts`. Returns the room's rules or `DEFAULT_RULES` if none are set.
+- [x] The lobby waiting screen (when `roomCode` is set) displays the active custom rules to all players — both the creator and joiners.
+- [x] All players can see the rules summary **before** they mark themselves as ready.
+- [x] The edge function reads `custom_rules` from `game_rooms` when `toggle_ready` triggers game initialisation, resolves it against `DEFAULT_RULES` for any missing fields, and stores the resolved object in `game_states.rules_snapshot`.
+- [x] If `custom_rules` is `NULL`, the edge function uses `DEFAULT_RULES` and stores that as `rules_snapshot`.
 
 #### Implementation Tasks
 
-- [ ] **`src/components/game/OnlineLobby.tsx`**:
+- [x] **`src/components/game/OnlineLobby.tsx`**:
   - Update `onCreateRoom` prop type to `(playerName: string, maxPlayers: number, rules: CustomRules) => void`.
   - Pass `confirmedRules ?? DEFAULT_RULES` when calling `onCreateRoom`.
   - In the lobby waiting screen (`roomCode` branch), call `fetchRoomRules(roomId)` on mount and display a rules summary card visible to all players.
-- [ ] **Parent page/hook** that renders `OnlineLobby`: update `handleCreateRoom` to accept and forward the `rules` argument.
-- [ ] **`src/utils/multiplayerService.ts`**:
+- [x] **Parent page/hook** that renders `OnlineLobby`: update `handleCreateRoom` to accept and forward the `rules` argument.
+- [x] **`src/utils/multiplayerService.ts`**:
   - Update `createRoom(maxPlayers, customRules)` to include `custom_rules: customRules` in the insert payload.
   - Add `fetchRoomRules(roomId: string): Promise<CustomRules>` — selects `custom_rules` from `game_rooms` and returns `data.custom_rules ?? DEFAULT_RULES`.
-- [ ] **`supabase/functions/game-action/index.ts` — `toggle_ready` handler**:
+- [x] **`supabase/functions/game-action/index.ts` — `toggle_ready` handler**:
   - After all players are ready, fetch `custom_rules` from `game_rooms`.
   - Merge with `DEFAULT_RULES` to fill in any missing fields: `const rules = { ...DEFAULT_RULES, ...(room.custom_rules ?? {}) }`.
   - Apply the board-size coupling: if `rules.boardSize === '6x10'` and `rules.chainFoundingEnabled` and `rules.maxChains === '7'`, override `rules.maxChains` to `'5'`.
@@ -252,10 +252,10 @@ In `src/utils/gameLogic.test.ts`:
 #### Test Cases
 
 In `src/utils/multiplayerService.test.ts`:
-- [ ] `createRoom` with explicit `CustomRules` inserts `custom_rules` correctly.
-- [ ] `createRoom` with `DEFAULT_RULES` stores the full default rule set.
-- [ ] `fetchRoomRules` returns the stored rules when they exist.
-- [ ] `fetchRoomRules` returns `DEFAULT_RULES` when `custom_rules` is `NULL`.
+- [x] `createRoom` with explicit `CustomRules` inserts `custom_rules` correctly.
+- [x] `createRoom` with `DEFAULT_RULES` stores the full default rule set.
+- [x] `fetchRoomRules` returns the stored rules when they exist.
+- [x] `fetchRoomRules` returns `DEFAULT_RULES` when `custom_rules` is `NULL`.
 
 #### Dependencies
 

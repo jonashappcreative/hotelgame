@@ -6,6 +6,7 @@ import { TileId, ChainName } from '@/types/game';
 const OnlineGame = () => {
   const {
     gameState,
+    roomId,
     roomCode,
     players,
     myPlayerIndex,
@@ -37,6 +38,7 @@ const OnlineGame = () => {
     return (
       <OnlineLobby
         roomCode={roomCode}
+        roomId={roomId}
         players={players}
         myPlayerIndex={myPlayerIndex}
         maxPlayers={maxPlayers}

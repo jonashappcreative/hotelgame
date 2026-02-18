@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { CustomRules, DEFAULT_RULES } from '@/types/game';
+import { fetchRoomRules } from '@/utils/multiplayerService';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +53,7 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 interface OnlineLobbyProps {
   roomCode: string | null;
+  roomId: string | null;
   players: { id: string; player_name: string; player_index: number; is_ready: boolean }[];
   myPlayerIndex: number | null;
   maxPlayers: number;
@@ -63,7 +65,7 @@ interface OnlineLobbyProps {
     playerName: string;
     roomStatus: string;
   } | null;
-  onCreateRoom: (playerName: string, maxPlayers: number) => void;
+  onCreateRoom: (playerName: string, maxPlayers: number, rules: CustomRules) => void;
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
   onToggleReady: () => void;
@@ -73,6 +75,7 @@ interface OnlineLobbyProps {
 
 export const OnlineLobby = ({
   roomCode,
+  roomId,
   players,
   myPlayerIndex,
   maxPlayers,
@@ -94,6 +97,13 @@ export const OnlineLobby = ({
   const [confirmedRules, setConfirmedRules] = useState<CustomRules | null>(null);
   const [draftRules, setDraftRules] = useState<CustomRules>({ ...DEFAULT_RULES });
   const [showBackWarning, setShowBackWarning] = useState(false);
+  const [roomRules, setRoomRules] = useState<CustomRules | null>(null);
+
+  // Fetch rules for the waiting room so all players (including joiners) can see them
+  useEffect(() => {
+    if (!roomId) return;
+    fetchRoomRules(roomId).then(setRoomRules);
+  }, [roomId]);
 
   const handleCopyCode = () => {
     if (roomCode) {
@@ -107,7 +117,7 @@ export const OnlineLobby = ({
       toast({ title: 'Enter your name', variant: 'destructive' });
       return;
     }
-    onCreateRoom(playerName.trim(), parseInt(selectedPlayerCount));
+    onCreateRoom(playerName.trim(), parseInt(selectedPlayerCount), confirmedRules ?? DEFAULT_RULES);
   };
 
   const handleJoin = () => {
@@ -188,6 +198,20 @@ export const OnlineLobby = ({
                 );
               })}
             </div>
+
+            {/* Room Rules Summary — visible to all players before ready-up */}
+            {roomRules && (
+              <div className="p-3 rounded-lg border border-muted bg-muted/30 space-y-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Room Rules
+                </h4>
+                <div className="space-y-1">
+                  {getActiveRulesSummary(roomRules).map((rule, i) => (
+                    <p key={i} className="text-sm text-foreground">{rule}</p>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <Separator />
 

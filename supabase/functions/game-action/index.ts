@@ -331,7 +331,7 @@ Deno.serve(async (req) => {
         // Check if all players are ready and room is full
         const { data: room } = await adminClient
           .from('game_rooms')
-          .select('max_players')
+          .select('max_players, custom_rules')
           .eq('id', roomId)
           .single();
 
@@ -358,6 +358,18 @@ Deno.serve(async (req) => {
         // All players ready — start the game!
         console.log('All players ready, starting game for room:', roomId);
 
+        // Resolve custom rules: merge room's custom_rules over DEFAULT_RULES
+        const rules: CustomRules = { ...DEFAULT_RULES, ...(room.custom_rules as Partial<CustomRules> ?? {}) };
+
+        // Board-size coupling: small board forces maxChains to 5 when chain founding is enabled
+        if (rules.boardSize === '6x10' && rules.chainFoundingEnabled && rules.maxChains === '7') {
+          rules.maxChains = '5';
+        }
+
+        // Derive starting parameters from rules
+        const startingCash = parseInt(rules.startingCash);
+        const startingTiles = parseInt(rules.startingTiles);
+
         // Initialize tile bag
         let tileBag = shuffle(generateAllTiles());
 
@@ -367,9 +379,12 @@ Deno.serve(async (req) => {
           board[tileId] = { id: tileId, placed: false, chain: null };
         }
 
-        // Place starting tile
-        const startingTile = tileBag.pop()!;
-        board[startingTile] = { id: startingTile, placed: true, chain: null };
+        // Conditionally place starting tile
+        let startingTile: string | null = null;
+        if (rules.startWithTileOnBoard) {
+          startingTile = tileBag.pop()!;
+          board[startingTile] = { id: startingTile, placed: true, chain: null };
+        }
 
         // Initialize chains
         const chains: Record<ChainName, any> = {
@@ -390,19 +405,28 @@ Deno.serve(async (req) => {
 
         // Deal tiles to players and reset ready state
         for (const player of freshPlayers) {
-          const playerTiles = tileBag.splice(0, 6);
+          const playerTiles = tileBag.splice(0, startingTiles);
           await adminClient
             .from('game_players')
             .update({
               tiles: playerTiles,
-              cash: 6000,
+              cash: startingCash,
               stocks: { sackson: 0, tower: 0, worldwide: 0, american: 0, festival: 0, continental: 0, imperial: 0 },
               is_ready: false,
             })
             .eq('id', player.id);
         }
 
-        // Create game state
+        // Build game log entry
+        const gameLogEntry = {
+          timestamp: Date.now(),
+          playerId: 'system',
+          playerName: 'System',
+          action: 'Game started',
+          details: startingTile ? `Starting tile ${startingTile} placed on board` : 'Board starts empty',
+        };
+
+        // Create game state with rules_snapshot
         const { error: insertError } = await adminClient
           .from('game_states')
           .insert({
@@ -414,13 +438,8 @@ Deno.serve(async (req) => {
             stock_bank: stockBank,
             tile_bag: tileBag,
             last_placed_tile: startingTile,
-            game_log: [{
-              timestamp: Date.now(),
-              playerId: 'system',
-              playerName: 'System',
-              action: 'Game started',
-              details: `Starting tile ${startingTile} placed on board`,
-            }],
+            rules_snapshot: rules as unknown as any,
+            game_log: [gameLogEntry],
           });
 
         if (insertError) {

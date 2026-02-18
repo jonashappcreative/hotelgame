@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { TileId, TileState, ChainName, ChainState } from '@/types/game';
+import { DEFAULT_RULES } from '@/types/game';
+import type { CustomRules } from '@/types/game';
 
 // Use vi.hoisted to create mock functions that are available during mock hoisting
 const { mockGetUser, mockSignInAnonymously, mockFrom, mockFunctionsInvoke, mockChannel, mockRemoveChannel } = vi.hoisted(() => ({
@@ -33,6 +35,7 @@ import {
   getCurrentUserId,
   getSessionId,
   createRoom,
+  fetchRoomRules,
   joinRoom,
   leaveRoom,
   getRoomPlayers,
@@ -216,6 +219,111 @@ describe('multiplayerService', () => {
       const result = await createRoom();
 
       expect(result).toBeNull();
+    });
+
+    it('should insert custom_rules when explicit CustomRules provided', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } } });
+
+      const customRules: CustomRules = {
+        ...DEFAULT_RULES,
+        turnTimerEnabled: true,
+        turnTimer: '30',
+      };
+
+      let capturedPayload: any;
+      const mockInsert = vi.fn().mockImplementation((payload: any) => {
+        capturedPayload = payload;
+        return {
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { id: 'room-id', room_code: 'XYZ789', max_players: 4 },
+              error: null,
+            }),
+          }),
+        };
+      });
+      mockFrom.mockReturnValue({ insert: mockInsert });
+
+      await createRoom(4, customRules);
+
+      expect(capturedPayload.custom_rules).toEqual(customRules);
+    });
+
+    it('should insert DEFAULT_RULES as custom_rules when called with DEFAULT_RULES', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } } });
+
+      let capturedPayload: any;
+      const mockInsert = vi.fn().mockImplementation((payload: any) => {
+        capturedPayload = payload;
+        return {
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { id: 'room-id', room_code: 'DEF456', max_players: 2 },
+              error: null,
+            }),
+          }),
+        };
+      });
+      mockFrom.mockReturnValue({ insert: mockInsert });
+
+      await createRoom(2, DEFAULT_RULES);
+
+      expect(capturedPayload.custom_rules).toEqual(DEFAULT_RULES);
+    });
+  });
+
+  describe('fetchRoomRules', () => {
+    it('should return stored rules when custom_rules exists', async () => {
+      const storedRules: CustomRules = { ...DEFAULT_RULES, turnTimerEnabled: true };
+
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { custom_rules: storedRules },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('room-id-123');
+
+      expect(result).toEqual(storedRules);
+    });
+
+    it('should return DEFAULT_RULES when custom_rules is NULL', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { custom_rules: null },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('room-id-456');
+
+      expect(result).toEqual(DEFAULT_RULES);
+    });
+
+    it('should return DEFAULT_RULES when the database query fails', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'Not found' },
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('nonexistent-room');
+
+      expect(result).toEqual(DEFAULT_RULES);
     });
   });
 

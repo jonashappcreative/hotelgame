@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { GameState, ChainName, TileId, TileState, PlayerState, ChainState } from '@/types/game';
+import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES } from '@/types/game';
 import type { Json } from '@/integrations/supabase/types';
 
 // Get or create an authenticated session (anonymous or existing user)
@@ -83,7 +83,7 @@ export const clearActiveGameFromStorage = (): void => {
 };
 
 // Create a new game room
-export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
+export const createRoom = async (maxPlayers: number = 4, customRules: CustomRules = DEFAULT_RULES): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
   // Ensure we're authenticated
   const userId = await getOrCreateAuthSession();
   if (!userId) {
@@ -92,10 +92,10 @@ export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: st
   }
 
   const roomCode = generateRoomCode();
-  
+
   const { data, error } = await supabase
     .from('game_rooms')
-    .insert({ room_code: roomCode, max_players: maxPlayers })
+    .insert({ room_code: roomCode, max_players: maxPlayers, custom_rules: customRules as unknown as Json })
     .select()
     .single();
 
@@ -105,6 +105,21 @@ export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: st
   }
 
   return { roomCode: data.room_code, roomId: data.id, maxPlayers: data.max_players };
+};
+
+// Fetch the custom rules for a room (returns DEFAULT_RULES if none are set)
+export const fetchRoomRules = async (roomId: string): Promise<CustomRules> => {
+  const { data, error } = await supabase
+    .from('game_rooms')
+    .select('custom_rules')
+    .eq('id', roomId)
+    .single();
+
+  if (error || !data) {
+    return DEFAULT_RULES;
+  }
+
+  return (data.custom_rules as unknown as CustomRules) ?? DEFAULT_RULES;
 };
 
 // Check for active games the current user is participating in
