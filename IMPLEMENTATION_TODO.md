@@ -188,27 +188,27 @@ STORY 0 (DB Migration)
 
 #### Acceptance Criteria
 
-- [ ] `CustomRules` interface is exported from `src/types/game.ts`. It does **not** include `founderFreeStock` (removed by product decision — founder always receives a free stock).
-- [ ] `DEFAULT_RULES` constant is exported from `src/types/game.ts`.
-- [ ] The local `interface CustomRules` and `const DEFAULT_RULES` inside `OnlineLobby.tsx` are removed and replaced with the import.
-- [ ] `OnlineLobby.tsx` removes the `founderFreeStock` toggle from its UI entirely.
-- [ ] The edge function (`supabase/functions/game-action/index.ts`) contains a local mirror of `CustomRules` (it cannot import from `src/` — this is the established pattern for all types there). The mirror also omits `founderFreeStock`.
+- [x] `CustomRules` interface is exported from `src/types/game.ts`. It does **not** include `founderFreeStock` (removed by product decision — founder always receives a free stock).
+- [x] `DEFAULT_RULES` constant is exported from `src/types/game.ts`.
+- [x] The local `interface CustomRules` and `const DEFAULT_RULES` inside `OnlineLobby.tsx` are removed and replaced with the import.
+- [x] `OnlineLobby.tsx` removes the `founderFreeStock` toggle from its UI entirely.
+- [x] The edge function (`supabase/functions/game-action/index.ts`) contains a local mirror of `CustomRules` (it cannot import from `src/` — this is the established pattern for all types there). The mirror also omits `founderFreeStock`.
 
 #### Implementation Tasks
 
-- [ ] Add `CustomRules` interface (without `founderFreeStock`) and `DEFAULT_RULES` to `src/types/game.ts`.
-- [ ] Update `src/components/game/OnlineLobby.tsx`:
+- [x] Add `CustomRules` interface (without `founderFreeStock`) and `DEFAULT_RULES` to `src/types/game.ts`.
+- [x] Update `src/components/game/OnlineLobby.tsx`:
   - Import `CustomRules` and `DEFAULT_RULES` from `@/types/game`.
   - Remove the `founderFreeStock` toggle from the Chain Founding Rules section.
   - Update `maxChains` options to `"5"` · `"6"` · `"7"`.
   - Add UI coupling: when `boardSize` changes to `"6x10"` and `chainFoundingEnabled = true`, set `maxChains` to `"5"`.
-- [ ] Add a `CustomRules` interface block to `supabase/functions/game-action/index.ts` marked as a mirror of the frontend type.
+- [x] Add a `CustomRules` interface block to `supabase/functions/game-action/index.ts` marked as a mirror of the frontend type.
 
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `DEFAULT_RULES` contains all required `CustomRules` fields with their correct default values.
-- [ ] `DEFAULT_RULES` does not contain a `founderFreeStock` field.
+- [x] `DEFAULT_RULES` contains all required `CustomRules` fields with their correct default values.
+- [x] `DEFAULT_RULES` does not contain a `founderFreeStock` field.
 
 #### Dependencies
 
