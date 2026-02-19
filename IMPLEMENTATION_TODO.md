@@ -379,29 +379,29 @@ In `src/utils/gameLogic.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] When `cashVisibilityEnabled = false` (default), opponents' cash is hidden — other players see `—` instead of a number.
-- [ ] When `cashVisibility = "visible"`, all players see every other player's exact cash balance.
-- [ ] When `cashVisibility = "aggregate"`, players see a single total representing the sum of all players' cash, not individual amounts.
-- [ ] The current player always sees their own exact cash regardless of mode.
-- [ ] Cash visibility is a display-only concern — the DB continues to store all cash values. No server-side filtering is required for this game's trust model.
-- [ ] Both `PlayerCard` and `InfoCard` respect the visibility setting.
+- [x] When `cashVisibilityEnabled = false` (default), opponents' cash is hidden — other players see `—` instead of a number.
+- [x] When `cashVisibility = "visible"`, all players see every other player's exact cash balance.
+- [x] When `cashVisibility = "aggregate"`, players see a single total representing the sum of all players' cash, not individual amounts.
+- [x] The current player always sees their own exact cash regardless of mode.
+- [x] Cash visibility is a display-only concern — the DB continues to store all cash values. No server-side filtering is required for this game's trust model.
+- [x] Both `PlayerCard` and `InfoCard` respect the visibility setting.
 
 #### Implementation Tasks
 
-- [ ] **Thread `customRules` to game UI**: the parent page/hook that renders `GameContainer` passes `customRules` as a prop. `GameContainer` forwards them to child components as needed.
-- [ ] **`src/components/game/PlayerCard.tsx`**:
+- [x] **Thread `customRules` to game UI**: the parent page/hook that renders `GameContainer` passes `customRules` as a prop. `GameContainer` forwards them to child components as needed.
+- [x] **`src/components/game/PlayerCard.tsx`**:
   - Accept `cashVisibility: 'hidden' | 'visible' | 'aggregate'` and `myPlayerIndex: number` props.
   - Render `—` for opponent cash when `cashVisibility = 'hidden'`.
   - Render an aggregate total (one value for the whole board, not per card) when `cashVisibility = 'aggregate'`.
-- [ ] **`src/components/game/InfoCard.tsx`**: Apply the same hide/aggregate logic to cash and net-worth figures.
+- [x] **`src/components/game/InfoCard.tsx`**: Apply the same hide/aggregate logic to cash and net-worth figures.
 
 #### Test Cases
 
 In new file `src/components/game/PlayerCard.test.tsx`:
-- [ ] Renders opponent's cash as `—` when `cashVisibility = 'hidden'`.
-- [ ] Renders opponent's exact cash when `cashVisibility = 'visible'`.
-- [ ] Always renders the current player's own cash regardless of visibility mode.
-- [ ] Renders an aggregate total (not individual values) when `cashVisibility = 'aggregate'`.
+- [x] Renders opponent's cash as `—` when `cashVisibility = 'hidden'`.
+- [x] Renders opponent's exact cash when `cashVisibility = 'visible'`.
+- [x] Always renders the current player's own cash regardless of visibility mode.
+- [x] Renders an aggregate total (not individual values) when `cashVisibility = 'aggregate'`.
 
 #### Dependencies
 
