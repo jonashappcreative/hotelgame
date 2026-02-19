@@ -1535,4 +1535,54 @@ describe('gameLogic', () => {
       expect(state.bonusTier).toBe('standard');
     });
   });
+
+  describe('initializeGame — starting conditions', () => {
+    it('with startingCash="4000" gives each player $4,000', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '4000' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.cash).toBe(4000));
+    });
+
+    it('with startingCash="8000" gives each player $8,000', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '8000' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.cash).toBe(8000));
+    });
+
+    it('with startingTiles="5" gives each player exactly 5 tiles', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '5' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.tiles).toHaveLength(5));
+    });
+
+    it('with startingTiles="7" gives each player exactly 7 tiles', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '7' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.tiles).toHaveLength(7));
+    });
+
+    it('with startWithTileOnBoard=false results in zero tiles with placed: true', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: false };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(0);
+    });
+
+    it('with startWithTileOnBoard=true results in exactly 1 tile with placed: true', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: true };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(1);
+    });
+
+    it('with no rules argument behaves identically to default (regression)', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      state.players.forEach(p => {
+        expect(p.cash).toBe(6000);
+        expect(p.tiles).toHaveLength(6);
+      });
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(1);
+    });
+  });
 });

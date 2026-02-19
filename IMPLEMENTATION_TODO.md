@@ -553,22 +553,22 @@ In `src/utils/gameLogic.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] When `startingCash = "4000"`, each player starts with $4,000.
-- [ ] When `startingCash = "6000"` (default), each player starts with $6,000 — existing behaviour.
-- [ ] When `startingCash = "8000"`, each player starts with $8,000.
-- [ ] When `startingTiles = "5"`, each player receives 5 tiles; `"6"` gives 6 (default); `"7"` gives 7.
-- [ ] When `startWithTileOnBoard = true` (default), one random tile is placed on the board before tiles are dealt.
-- [ ] When `startWithTileOnBoard = false`, the board starts completely empty.
-- [ ] All values are applied in both the edge function's game init handler and the frontend's `initializeGame`.
+- [x] When `startingCash = "4000"`, each player starts with $4,000.
+- [x] When `startingCash = "6000"` (default), each player starts with $6,000 — existing behaviour.
+- [x] When `startingCash = "8000"`, each player starts with $8,000.
+- [x] When `startingTiles = "5"`, each player receives 5 tiles; `"6"` gives 6 (default); `"7"` gives 7.
+- [x] When `startWithTileOnBoard = true` (default), one random tile is placed on the board before tiles are dealt.
+- [x] When `startWithTileOnBoard = false`, the board starts completely empty.
+- [x] All values are applied in both the edge function's game init handler and the frontend's `initializeGame`.
 
 #### Implementation Tasks
 
-- [ ] **`supabase/functions/game-action/index.ts` — `toggle_ready` / `start_game` handler**:
+- [x] **`supabase/functions/game-action/index.ts` — `toggle_ready` / `start_game` handler**:
   - Replace hardcoded `cash: 6000` with `parseInt(rules.startingCash)`.
   - Replace hardcoded `tileBag.splice(0, 6)` with `tileBag.splice(0, parseInt(rules.startingTiles))`.
   - Make starting-tile placement conditional on `rules.startWithTileOnBoard`.
   - Ensure the `game_players` update uses the rule-derived cash value, not the DB column default.
-- [ ] **`src/utils/gameLogic.ts` — `initializeGame`**:
+- [x] **`src/utils/gameLogic.ts` — `initializeGame`**:
   - Accept an optional `rules: CustomRules` parameter (default to `DEFAULT_RULES`).
   - Apply `startingCash`, `startingTiles`, and `startWithTileOnBoard` from the rules object.
   - Existing calls with no `rules` argument continue to work unchanged.
@@ -576,13 +576,13 @@ In `src/utils/gameLogic.test.ts`:
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `initializeGame` with `startingCash = "4000"` gives each player $4,000.
-- [ ] `initializeGame` with `startingCash = "8000"` gives each player $8,000.
-- [ ] `initializeGame` with `startingTiles = "5"` gives each player exactly 5 tiles.
-- [ ] `initializeGame` with `startingTiles = "7"` gives each player exactly 7 tiles.
-- [ ] `initializeGame` with `startWithTileOnBoard = false` results in zero tiles with `placed: true`.
-- [ ] `initializeGame` with `startWithTileOnBoard = true` results in exactly 1 tile with `placed: true`.
-- [ ] `initializeGame` with no `rules` argument behaves identically to current behaviour (regression).
+- [x] `initializeGame` with `startingCash = "4000"` gives each player $4,000.
+- [x] `initializeGame` with `startingCash = "8000"` gives each player $8,000.
+- [x] `initializeGame` with `startingTiles = "5"` gives each player exactly 5 tiles.
+- [x] `initializeGame` with `startingTiles = "7"` gives each player exactly 7 tiles.
+- [x] `initializeGame` with `startWithTileOnBoard = false` results in zero tiles with `placed: true`.
+- [x] `initializeGame` with `startWithTileOnBoard = true` results in exactly 1 tile with `placed: true`.
+- [x] `initializeGame` with no `rules` argument behaves identically to current behaviour (regression).
 
 #### Dependencies
 

@@ -8,12 +8,9 @@ import {
   CHAINS,
   BASE_PRICES,
   CHAIN_SIZE_BRACKETS,
-  INITIAL_CASH,
-  INITIAL_TILES_PER_PLAYER,
   STOCKS_PER_CHAIN,
   SAFE_CHAIN_SIZE,
   END_GAME_CHAIN_SIZE,
-  ChainInfo,
   CustomRules,
   DEFAULT_RULES,
   ELIGIBLE_CHAINS_5,
@@ -166,17 +163,24 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     board.set(tileId, { id: tileId, placed: false, chain: null });
   }
 
-  // Place one random starting tile
-  const startingTile = tileBag.pop()!;
-  board.set(startingTile, { id: startingTile, placed: true, chain: null });
+  // Conditionally place one random starting tile
+  let startingTile: TileId | null = null;
+  if (rules.startWithTileOnBoard) {
+    startingTile = tileBag.pop()!;
+    board.set(startingTile, { id: startingTile, placed: true, chain: null });
+  }
+
+  // Derive starting cash and tile count from rules
+  const startingCash = parseInt(rules.startingCash);
+  const startingTilesCount = parseInt(rules.startingTiles);
 
   // Initialize players
   const players: PlayerState[] = playerNames.map((name, index) => {
-    const tiles = tileBag.splice(0, INITIAL_TILES_PER_PLAYER);
+    const tiles = tileBag.splice(0, startingTilesCount);
     return {
       id: `player-${index}`,
       name,
-      cash: INITIAL_CASH,
+      cash: startingCash,
       tiles,
       stocks: {
         sackson: 0,
@@ -232,7 +236,7 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
       playerId: 'system',
       playerName: 'System',
       action: 'Game started',
-      details: `Starting tile ${startingTile} placed on board`,
+      details: startingTile ? `Starting tile ${startingTile} placed on board` : 'Board starts empty',
     }],
     winner: null,
     endGameVotes: [],
