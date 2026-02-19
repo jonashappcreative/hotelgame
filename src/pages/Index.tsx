@@ -145,7 +145,7 @@ const Index = () => {
             </CardContent>
           </Card>
 
-          {/* Game Info */}
+          {/* Game Info - commented out
           <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
             <h3 className="font-medium mb-2 text-sm">How to Play</h3>
             <p className="text-xs text-muted-foreground mb-3">
@@ -161,6 +161,7 @@ const Index = () => {
               Tutorial
             </Button>
           </div>
+          */}
         </div>
       </div>
     );
