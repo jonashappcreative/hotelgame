@@ -572,6 +572,12 @@ export const dbToGameState = (
     roundNumber: dbState.round_number ?? 0,
     rulesSnapshot: (dbState.rules_snapshot as import('@/types/game').CustomRules) ?? null,
     turnDeadlineEpoch: dbState.turn_deadline_epoch ?? null,
+    safeChainSize: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      if (!rs || !rs.chainSafetyEnabled) return 11;
+      if (rs.chainSafetyThreshold === 'none') return null;
+      return parseInt(rs.chainSafetyThreshold);
+    })(),
   };
 };
 

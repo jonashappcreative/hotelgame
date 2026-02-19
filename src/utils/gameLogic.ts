@@ -205,6 +205,7 @@ export const initializeGame = (playerNames: string[]): GameState => {
     roundNumber: 0,
     rulesSnapshot: null,
     turnDeadlineEpoch: null,
+    safeChainSize: SAFE_CHAIN_SIZE,
   };
 };
 
@@ -343,11 +344,12 @@ export const foundChain = (state: GameState, chainName: ChainName): GameState =>
 
   // Update chain
   const newChains = { ...state.chains };
+  const safeSize = state.safeChainSize;
   newChains[chainName] = {
     ...newChains[chainName],
     tiles: tilesToAdd,
     isActive: true,
-    isSafe: tilesToAdd.length >= SAFE_CHAIN_SIZE,
+    isSafe: safeSize !== null && tilesToAdd.length >= safeSize,
   };
   newState.chains = newChains;
 
@@ -402,10 +404,11 @@ export const growChain = (state: GameState, chainName: ChainName): GameState => 
   const newChains = { ...state.chains };
   const existingTiles = newChains[chainName].tiles;
   const allTiles = [...existingTiles, ...tilesToAdd];
+  const growSafeSize = state.safeChainSize;
   newChains[chainName] = {
     ...newChains[chainName],
     tiles: allTiles,
-    isSafe: allTiles.length >= SAFE_CHAIN_SIZE,
+    isSafe: growSafeSize !== null && allTiles.length >= growSafeSize,
   };
   newState.chains = newChains;
 

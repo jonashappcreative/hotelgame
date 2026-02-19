@@ -75,7 +75,6 @@ const CHAINS: Record<ChainName, { displayName: string; tier: 'budget' | 'midrang
   imperial: { displayName: 'Imperial', tier: 'premium' },
 };
 
-const SAFE_CHAIN_SIZE = 11;
 const END_GAME_CHAIN_SIZE = 41;
 const CHAIN_SIZE_BRACKETS = [2, 3, 5, 10, 20, 30, 40, Infinity] as const;
 const BASE_PRICES: Record<'budget' | 'midrange' | 'premium', number[]> = {
@@ -85,6 +84,12 @@ const BASE_PRICES: Record<'budget' | 'midrange' | 'premium', number[]> = {
 };
 const MAJORITY_BONUS_MULTIPLIER = 10;
 const MINORITY_BONUS_MULTIPLIER = 5;
+
+function getSafeChainSize(rules: CustomRules): number | null {
+  if (!rules.chainSafetyEnabled) return 11;
+  if (rules.chainSafetyThreshold === 'none') return null;
+  return parseInt(rules.chainSafetyThreshold);
+}
 
 // Helper functions
 function getStockPrice(chainName: ChainName, size: number): number {
@@ -308,6 +313,10 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       });
     }
+
+    // Derive safe chain size from rules snapshot (null = no chain is ever safe)
+    const globalRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState?.rules_snapshot as Partial<CustomRules> ?? {}) };
+    const safeChainSize: number | null = getSafeChainSize(globalRulesSnap);
 
     // Handle different actions
     let result: { success: boolean; error?: string; data?: any } = { success: false };
@@ -697,7 +706,7 @@ Deno.serve(async (req) => {
           newChains[chainToGrow] = {
             ...newChains[chainToGrow],
             tiles: allTiles,
-            isSafe: allTiles.length >= SAFE_CHAIN_SIZE,
+            isSafe: safeChainSize !== null && allTiles.length >= safeChainSize,
           };
           
           gameLog.push({
@@ -812,7 +821,7 @@ Deno.serve(async (req) => {
           ...newChains[chainName],
           tiles: tilesToAdd,
           isActive: true,
-          isSafe: tilesToAdd.length >= SAFE_CHAIN_SIZE,
+          isSafe: safeChainSize !== null && tilesToAdd.length >= safeChainSize,
         };
 
         // Give founding bonus
@@ -1549,6 +1558,7 @@ Deno.serve(async (req) => {
         }
 
         const autoRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const autoSafeChainSize: number | null = getSafeChainSize(autoRules);
         const autoBoard = { ...gameState.board };
         const autoChains = { ...gameState.chains };
         let autoStockBank = { ...gameState.stock_bank };
@@ -1736,7 +1746,7 @@ Deno.serve(async (req) => {
           for (const tid of mergerTilesToAdd) autoBoard[tid] = { ...autoBoard[tid], chain: survivingChain };
           const survivorExisting = autoChains[survivingChain].tiles;
           const survivorAll = [...new Set([...survivorExisting, ...mergerTilesToAdd])];
-          autoNewChains[survivingChain] = { ...autoNewChains[survivingChain], tiles: survivorAll, isSafe: survivorAll.length >= SAFE_CHAIN_SIZE };
+          autoNewChains[survivingChain] = { ...autoNewChains[survivingChain], tiles: survivorAll, isSafe: autoSafeChainSize !== null && survivorAll.length >= autoSafeChainSize };
           for (const dc of defunctList) {
             autoNewChains[dc] = { ...autoNewChains[dc], tiles: [], isActive: false, isSafe: false };
           }
@@ -1758,7 +1768,7 @@ Deno.serve(async (req) => {
           for (const tid of growTiles) autoBoard[tid] = { ...autoBoard[tid], chain: growTarget };
           const growExisting = autoChains[growTarget].tiles;
           const growAll = [...growExisting, ...growTiles];
-          autoNewChains[growTarget] = { ...autoNewChains[growTarget], tiles: growAll, isSafe: growAll.length >= SAFE_CHAIN_SIZE };
+          autoNewChains[growTarget] = { ...autoNewChains[growTarget], tiles: growAll, isSafe: autoSafeChainSize !== null && growAll.length >= autoSafeChainSize };
 
           await advanceTurn(autoNewChains);
 
@@ -1768,7 +1778,7 @@ Deno.serve(async (req) => {
           const newAutoChain = availableForAuto[Math.floor(Math.random() * availableForAuto.length)];
           const foundTiles = [tileToPlay, ...autoUnincorp];
           for (const tid of foundTiles) autoBoard[tid] = { ...autoBoard[tid], chain: newAutoChain };
-          autoNewChains[newAutoChain] = { ...autoNewChains[newAutoChain], tiles: foundTiles, isActive: true, isSafe: foundTiles.length >= SAFE_CHAIN_SIZE };
+          autoNewChains[newAutoChain] = { ...autoNewChains[newAutoChain], tiles: foundTiles, isActive: true, isSafe: autoSafeChainSize !== null && foundTiles.length >= autoSafeChainSize };
 
           // Founding bonus
           if (autoStockBank[newAutoChain] > 0) {
@@ -1851,14 +1861,16 @@ async function completeMergerInDb(
   }
 
   // Update chains
+  const completeMergerRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const completeMergerSafeSize: number | null = getSafeChainSize(completeMergerRules);
   const newChains = { ...gameState.chains };
   const existingTiles = newChains[survivingChain].tiles;
   const allTiles = [...new Set([...existingTiles, ...tilesToAdd])];
-  
+
   newChains[survivingChain] = {
     ...newChains[survivingChain],
     tiles: allTiles,
-    isSafe: allTiles.length >= SAFE_CHAIN_SIZE,
+    isSafe: completeMergerSafeSize !== null && allTiles.length >= completeMergerSafeSize,
   };
 
   for (const defunctChain of merger.defunctChains) {

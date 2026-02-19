@@ -338,32 +338,32 @@ In new file `src/components/game/TurnTimer.test.tsx`:
 
 #### Acceptance Criteria
 
-- [ ] When `chainSafetyEnabled = true` and `chainSafetyThreshold = "none"`, no chain is ever marked `isSafe`, regardless of size.
-- [ ] When `chainSafetyEnabled = true` and a numeric threshold is chosen (9 / 11 / 13 / 15), chains become safe at that tile count.
-- [ ] When `chainSafetyEnabled = false`, the game uses the existing default of 11 tiles (unchanged behaviour).
-- [ ] The `isSafe` field on `ChainState` is correctly set in `foundChain`, `growChain`, and merger evaluation in both the frontend and the edge function.
-- [ ] The merger UI correctly reflects whether a chain is safe based on the dynamic threshold.
+- [x] When `chainSafetyEnabled = true` and `chainSafetyThreshold = "none"`, no chain is ever marked `isSafe`, regardless of size.
+- [x] When `chainSafetyEnabled = true` and a numeric threshold is chosen (9 / 11 / 13 / 15), chains become safe at that tile count.
+- [x] When `chainSafetyEnabled = false`, the game uses the existing default of 11 tiles (unchanged behaviour).
+- [x] The `isSafe` field on `ChainState` is correctly set in `foundChain`, `growChain`, and merger evaluation in both the frontend and the edge function.
+- [x] The merger UI correctly reflects whether a chain is safe based on the dynamic threshold.
 
 #### Implementation Tasks
 
-- [ ] **`src/types/game.ts`**: Add `safeChainSize: number | null` to `GameState`. `null` = no chains ever safe; a number = the tile threshold. Populated at game init from `rules_snapshot`.
-- [ ] **`supabase/functions/game-action/index.ts`**:
+- [x] **`src/types/game.ts`**: Add `safeChainSize: number | null` to `GameState`. `null` = no chains ever safe; a number = the tile threshold. Populated at game init from `rules_snapshot`.
+- [x] **`supabase/functions/game-action/index.ts`**:
   - Remove the module-level `const SAFE_CHAIN_SIZE = 11`.
   - At game init (`toggle_ready`), derive and store in `game_states`: `safeChainSize = rules.chainSafetyEnabled ? (rules.chainSafetyThreshold === 'none' ? null : parseInt(rules.chainSafetyThreshold)) : 11`.
   - On every action, read `safeChainSize` from `rules_snapshot` in the fetched game state.
   - Update every usage of `SAFE_CHAIN_SIZE` to use the value from `rules_snapshot`.
-- [ ] **`src/utils/gameLogic.ts`**:
+- [x] **`src/utils/gameLogic.ts`**:
   - Replace `SAFE_CHAIN_SIZE` usages in `foundChain` and `growChain` with `state.safeChainSize`.
   - If `safeChainSize === null`, always set `isSafe: false`.
 
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `foundChain` sets `isSafe = true` when chain size meets `safeChainSize`.
-- [ ] `foundChain` sets `isSafe = false` when `safeChainSize = null`, even for a large chain.
-- [ ] `growChain` sets `isSafe = true` exactly at the custom threshold.
-- [ ] A chain with 9 tiles is safe when `safeChainSize = 9` and not safe when `safeChainSize = 11`.
-- [ ] A chain with 11 tiles is safe when `safeChainSize = 11` (regression).
+- [x] `foundChain` sets `isSafe = true` when chain size meets `safeChainSize`.
+- [x] `foundChain` sets `isSafe = false` when `safeChainSize = null`, even for a large chain.
+- [x] `growChain` sets `isSafe = true` exactly at the custom threshold.
+- [x] A chain with 9 tiles is safe when `safeChainSize = 9` and not safe when `safeChainSize = 11`.
+- [x] A chain with 11 tiles is safe when `safeChainSize = 11` (regression).
 
 #### Dependencies
 

@@ -628,6 +628,38 @@ describe('gameLogic', () => {
 
       expect(newState.phase).toBe('buy_stock');
     });
+
+    it('should set isSafe = true when chain size meets safeChainSize', () => {
+      // foundChain collects lastTile + directly adjacent unincorporated tiles.
+      // Place the last tile at 5E with all 4 neighbours unincorporated → 5-tile chain.
+      // Set safeChainSize = 5 so the newly founded chain is immediately safe.
+      gameState.board.set('4E' as TileId, { id: '4E' as TileId, placed: true, chain: null });
+      gameState.board.set('6E' as TileId, { id: '6E' as TileId, placed: true, chain: null });
+      gameState.board.set('5D' as TileId, { id: '5D' as TileId, placed: true, chain: null });
+      gameState.board.set('5E' as TileId, { id: '5E' as TileId, placed: true, chain: null });
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5E' as TileId;
+      gameState.safeChainSize = 5;
+
+      const newState = foundChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(5);
+      expect(newState.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should set isSafe = false when safeChainSize = null, even for a large chain', () => {
+      // Same 5-tile setup but safeChainSize = null → isSafe must remain false.
+      gameState.board.set('4E' as TileId, { id: '4E' as TileId, placed: true, chain: null });
+      gameState.board.set('6E' as TileId, { id: '6E' as TileId, placed: true, chain: null });
+      gameState.board.set('5D' as TileId, { id: '5D' as TileId, placed: true, chain: null });
+      gameState.board.set('5E' as TileId, { id: '5E' as TileId, placed: true, chain: null });
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5E' as TileId;
+      gameState.safeChainSize = null;
+
+      const newState = foundChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(5);
+      expect(newState.chains.sackson.isSafe).toBe(false);
+    });
   });
 
   describe('growChain', () => {
@@ -694,6 +726,56 @@ describe('gameLogic', () => {
 
       expect(newState.chains.sackson.tiles).toHaveLength(11);
       expect(newState.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should mark chain safe at custom threshold (safeChainSize = 9)', () => {
+      // Chain already has 2 tiles; add 6 more to reach 8
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      // Set custom threshold
+      gameState.safeChainSize = 9;
+
+      // Chain has 8 tiles — not safe yet
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const stateAt9 = growChain(gameState, 'sackson');
+      expect(stateAt9.chains.sackson.tiles).toHaveLength(9);
+      expect(stateAt9.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should not be safe at 9 tiles when safeChainSize = 11', () => {
+      // Chain has 2 tiles; add 6 more → 8 total
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      gameState.safeChainSize = 11;
+
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const stateAt9 = growChain(gameState, 'sackson');
+      expect(stateAt9.chains.sackson.tiles).toHaveLength(9);
+      expect(stateAt9.chains.sackson.isSafe).toBe(false);
+    });
+
+    it('should never be safe when safeChainSize = null', () => {
+      // Build a chain of 10 tiles then grow to 11
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C', '4D', '4E'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      gameState.safeChainSize = null;
+
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const newState = growChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(11);
+      expect(newState.chains.sackson.isSafe).toBe(false);
     });
   });
 

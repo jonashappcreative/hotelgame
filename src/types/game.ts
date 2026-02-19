@@ -86,6 +86,7 @@ export interface GameState {
   roundNumber: number;
   rulesSnapshot: CustomRules | null;
   turnDeadlineEpoch: number | null;
+  safeChainSize: number | null;
 }
 
 export interface GameLogEntry {
