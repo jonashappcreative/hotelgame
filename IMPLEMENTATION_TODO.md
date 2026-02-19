@@ -417,19 +417,19 @@ In new file `src/components/game/PlayerCard.test.tsx`:
 
 #### Acceptance Criteria
 
-- [ ] When `bonusTier = "standard"` (default), majority bonus = 10x stock price, minority bonus = 5x stock price — existing behaviour.
-- [ ] When `bonusTier = "aggressive"`, majority bonus = 15x stock price, minority bonus = 5x stock price.
-- [ ] When `bonusTier = "flat"`, the combined bonus pool (majority + minority) is split equally among **all** stockholders of the acquired chain, regardless of how many shares each holds.
-- [ ] The bonus tier applies both to in-game merger bonuses and to end-of-game payouts in `calculateFinalScores`.
+- [x] When `bonusTier = "standard"` (default), majority bonus = 10x stock price, minority bonus = 5x stock price — existing behaviour.
+- [x] When `bonusTier = "aggressive"`, majority bonus = 15x stock price, minority bonus = 5x stock price.
+- [x] When `bonusTier = "flat"`, the combined bonus pool (majority + minority) is split equally among **all** stockholders of the acquired chain, regardless of how many shares each holds.
+- [x] The bonus tier applies both to in-game merger bonuses and to end-of-game payouts in `calculateFinalScores`.
 
 #### Implementation Tasks
 
-- [ ] **`supabase/functions/game-action/index.ts`**:
+- [x] **`supabase/functions/game-action/index.ts`**:
   - Remove module-level `const MAJORITY_BONUS_MULTIPLIER = 10` and `const MINORITY_BONUS_MULTIPLIER = 5`.
   - Update `getBonuses(chainName, size, bonusTier)` to accept the tier as a third argument and return values for each tier.
   - For `flat`: the function returns a `flatPool` value. All callers split `flatPool` equally across every player who holds at least 1 share of the chain.
   - Apply the same logic to the end-of-game score calculation.
-- [ ] **`src/utils/gameLogic.ts`**:
+- [x] **`src/utils/gameLogic.ts`**:
   - Update `getBonuses` with the same three-tier logic.
   - Update `calculateFinalScores` to handle flat distribution.
   - `GameState` carries `bonusTier: 'standard' | 'flat' | 'aggressive'` populated at init from `rules_snapshot`.
@@ -437,11 +437,11 @@ In new file `src/components/game/PlayerCard.test.tsx`:
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `getBonuses` with `standard` returns `{ majority: price * 10, minority: price * 5 }`.
-- [ ] `getBonuses` with `aggressive` returns `{ majority: price * 15, minority: price * 5 }`.
-- [ ] Flat distribution with 3 stockholders gives each player `Math.floor((majority + minority) / 3)`.
-- [ ] `calculateFinalScores` pays out correctly under all three tiers.
-- [ ] With one stockholder, all three tiers pay the full combined bonus to that player.
+- [x] `getBonuses` with `standard` returns `{ majority: price * 10, minority: price * 5 }`.
+- [x] `getBonuses` with `aggressive` returns `{ majority: price * 15, minority: price * 5 }`.
+- [x] Flat distribution with 3 stockholders gives each player `Math.floor((majority + minority) / 3)`.
+- [x] `calculateFinalScores` pays out correctly under all three tiers.
+- [x] With one stockholder, all three tiers pay the full combined bonus to that player.
 
 #### Dependencies
 
@@ -457,36 +457,36 @@ In `src/utils/gameLogic.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] When `boardSize = "9x12"` (default), the board is 9 rows × 12 columns (A-L), 108 tiles — identical to current behaviour.
-- [ ] When `boardSize = "6x10"`, the board is 6 rows × 10 columns (A-J), 60 tiles.
-- [ ] `generateAllTiles` accepts board dimensions and produces the correct tile set.
-- [ ] `getAdjacentTiles` respects board boundaries dynamically — no hard-coded `row < 9` or `colIndex < 11`.
-- [ ] `GameBoard.tsx` renders the correct grid for the chosen board size.
-- [ ] The tile bag contains only tiles valid for the chosen board.
-- [ ] **Inter-rule coupling**: when `boardSize = "6x10"` and `chainFoundingEnabled = true`, `maxChains` is automatically set to `"5"` in the UI (and enforced at game init in the edge function). See Story 8.
+- [x] When `boardSize = "9x12"` (default), the board is 9 rows × 12 columns (A-L), 108 tiles — identical to current behaviour.
+- [x] When `boardSize = "6x10"`, the board is 6 rows × 10 columns (A-J), 60 tiles.
+- [x] `generateAllTiles` accepts board dimensions and produces the correct tile set.
+- [x] `getAdjacentTiles` respects board boundaries dynamically — no hard-coded `row < 9` or `colIndex < 11`.
+- [x] `GameBoard.tsx` renders the correct grid for the chosen board size.
+- [x] The tile bag contains only tiles valid for the chosen board.
+- [x] **Inter-rule coupling**: when `boardSize = "6x10"` and `chainFoundingEnabled = true`, `maxChains` is automatically set to `"5"` in the UI (and enforced at game init in the edge function). See Story 8.
 
 #### Implementation Tasks
 
-- [ ] **`src/types/game.ts`**: Add `boardRows: number` and `boardCols: string[]` to `GameState`.
-- [ ] **`src/utils/gameLogic.ts`**:
+- [x] **`src/types/game.ts`**: Add `boardRows: number` and `boardCols: string[]` to `GameState`.
+- [x] **`src/utils/gameLogic.ts`**:
   - Update `generateAllTiles(rows?: number, cols?: number)` (default 9, 12).
   - Update `getAdjacentTiles(tileId, boardRows, boardCols)` with dynamic boundary checks.
   - Update `initializeGame` to derive `boardRows`/`boardCols` from `customRules.boardSize`.
-- [ ] **`supabase/functions/game-action/index.ts`**:
+- [x] **`supabase/functions/game-action/index.ts`**:
   - Apply identical changes to `generateAllTiles`, `getAdjacentTiles`, and `parseTileId`.
   - Derive and store `boardRows`/`boardCols` in `rules_snapshot` at game start.
   - On every action that checks adjacency, read board dimensions from `rules_snapshot`.
-- [ ] **`src/components/game/GameBoard.tsx`**: Replace `const COLS` and `const ROWS` literals with values from `gameState.boardCols` and `gameState.boardRows`.
+- [x] **`src/components/game/GameBoard.tsx`**: Replace `const COLS` and `const ROWS` literals with values from `gameState.boardCols` and `gameState.boardRows`.
 
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `generateAllTiles(9, 12)` returns exactly 108 unique tiles.
-- [ ] `generateAllTiles(6, 10)` returns exactly 60 unique tiles.
-- [ ] `generateAllTiles(6, 10)` contains no tile with row > 6 or column after J.
-- [ ] `getAdjacentTiles('1A', 6, 10)` returns only `['2A', '1B']`.
-- [ ] `getAdjacentTiles('6J', 6, 10)` returns only `['5J', '6I']`.
-- [ ] `initializeGame` with `boardSize = "6x10"` produces a tile bag of 60 tiles.
+- [x] `generateAllTiles(9, 12)` returns exactly 108 unique tiles.
+- [x] `generateAllTiles(6, 10)` returns exactly 60 unique tiles.
+- [x] `generateAllTiles(6, 10)` contains no tile with row > 6 or column after J.
+- [x] `getAdjacentTiles('1A', 6, 10)` returns only `['2A', '1B']`.
+- [x] `getAdjacentTiles('6J', 6, 10)` returns only `['5J', '6I']`.
+- [x] `initializeGame` with `boardSize = "6x10"` produces a tile bag of 60 tiles.
 
 #### Dependencies
 
@@ -503,40 +503,40 @@ In `src/utils/gameLogic.test.ts`:
 
 #### Acceptance Criteria
 
-- [ ] When `maxChains = "5"`, only the 5 eligible chains (sackson, tower, worldwide, american, continental) can be founded. The other 2 (festival, imperial) never appear as founding options.
-- [ ] When `maxChains = "6"`, only the 6 eligible chains (sackson, tower, worldwide, american, continental, imperial) can be founded. Festival is excluded.
-- [ ] When `maxChains = "7"` (default), all chains are eligible.
-- [ ] `getAvailableChainsForFoundation` only returns chains from the eligible set that are not yet active.
-- [ ] When all eligible chains are active, a tile that would ordinarily found a new chain is treated as **unplayable** via the existing unplayable-tile logic: if the player has another playable tile they must use it; if no tile is playable, they discard and redraw.
-- [ ] The founder always receives 1 free stock — this is not configurable.
-- [ ] **Board size coupling**: when `boardSize = "6x10"` is selected in the UI, `maxChains` defaults to `"5"`. The edge function enforces this coupling at game init regardless of what the UI sent.
+- [x] When `maxChains = "5"`, only the 5 eligible chains (sackson, tower, worldwide, american, continental) can be founded. The other 2 (festival, imperial) never appear as founding options.
+- [x] When `maxChains = "6"`, only the 6 eligible chains (sackson, tower, worldwide, american, continental, imperial) can be founded. Festival is excluded.
+- [x] When `maxChains = "7"` (default), all chains are eligible.
+- [x] `getAvailableChainsForFoundation` only returns chains from the eligible set that are not yet active.
+- [x] When all eligible chains are active, a tile that would ordinarily found a new chain is treated as **unplayable** via the existing unplayable-tile logic: if the player has another playable tile they must use it; if no tile is playable, they discard and redraw.
+- [x] The founder always receives 1 free stock — this is not configurable.
+- [x] **Board size coupling**: when `boardSize = "6x10"` is selected in the UI, `maxChains` defaults to `"5"`. The edge function enforces this coupling at game init regardless of what the UI sent.
 
 #### Implementation Tasks
 
-- [ ] **`src/types/game.ts`**: Add `maxChains: number` and `eligibleChains: ChainName[]` to `GameState`. Populated at init.
-- [ ] **Define the eligible chain sets** as a constant in both `src/types/game.ts` and the edge function:
+- [x] **`src/types/game.ts`**: Add `maxChains: number` and `eligibleChains: ChainName[]` to `GameState`. Populated at init.
+- [x] **Define the eligible chain sets** as a constant in both `src/types/game.ts` and the edge function:
   ```
   ELIGIBLE_CHAINS_5 = ['sackson', 'tower', 'worldwide', 'american', 'continental']
   ELIGIBLE_CHAINS_6 = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial']
   ELIGIBLE_CHAINS_7 = all 7 chains
   ```
-- [ ] **`src/utils/gameLogic.ts`**:
+- [x] **`src/utils/gameLogic.ts`**:
   - Update `getAvailableChainsForFoundation(state)` to filter by `state.eligibleChains` (not just `isActive`).
   - Update `analyzeTilePlacement` so that a tile creating a new chain when all `eligibleChains` are already active results in `valid: false`.
-- [ ] **`supabase/functions/game-action/index.ts`**:
+- [x] **`supabase/functions/game-action/index.ts`**:
   - Apply identical changes to `foundChain`, `getAvailableChainsForFoundation`, and tile analysis.
   - At game init: apply board-size coupling — if `rules.boardSize === '6x10'` and `rules.chainFoundingEnabled` and `rules.maxChains === '7'`, override `maxChains` to `5`.
   - Store `eligibleChains` in `rules_snapshot`.
-- [ ] **`src/components/game/OnlineLobby.tsx`**: When `boardSize` changes to `"6x10"`, automatically set `draftRules.maxChains` to `"5"` (only if `chainFoundingEnabled` is true or if the user subsequently enables it).
+- [x] **`src/components/game/OnlineLobby.tsx`**: When `boardSize` changes to `"6x10"`, automatically set `draftRules.maxChains` to `"5"` (only if `chainFoundingEnabled` is true or if the user subsequently enables it).
 
 #### Test Cases
 
 In `src/utils/gameLogic.test.ts`:
-- [ ] `getAvailableChainsForFoundation` with `eligibleChains = ELIGIBLE_CHAINS_5` never returns festival or imperial.
-- [ ] `getAvailableChainsForFoundation` returns 0 options when all 5 eligible chains (maxChains = 5) are active.
-- [ ] `analyzeTilePlacement` marks a tile as unplayable when it would found a chain but all eligible chains are already active.
-- [ ] `foundChain` always grants 1 free stock (regression — verifies it is unconditional).
-- [ ] `getAvailableChainsForFoundation` with `eligibleChains = ELIGIBLE_CHAINS_6` never returns festival.
+- [x] `getAvailableChainsForFoundation` with `eligibleChains = ELIGIBLE_CHAINS_5` never returns festival or imperial.
+- [x] `getAvailableChainsForFoundation` returns 0 options when all 5 eligible chains (maxChains = 5) are active.
+- [x] `analyzeTilePlacement` marks a tile as unplayable when it would found a chain but all eligible chains are already active.
+- [x] `foundChain` always grants 1 free stock (regression — verifies it is unconditional).
+- [x] `getAvailableChainsForFoundation` with `eligibleChains = ELIGIBLE_CHAINS_6` never returns festival.
 
 #### Dependencies
 

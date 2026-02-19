@@ -13,16 +13,21 @@ import {
   STOCKS_PER_CHAIN,
   SAFE_CHAIN_SIZE,
   END_GAME_CHAIN_SIZE,
-  MAJORITY_BONUS_MULTIPLIER,
-  MINORITY_BONUS_MULTIPLIER,
   ChainInfo,
+  CustomRules,
+  DEFAULT_RULES,
+  ELIGIBLE_CHAINS_5,
+  ELIGIBLE_CHAINS_6,
+  ELIGIBLE_CHAINS_7,
 } from '@/types/game';
 
-// Generate all tile IDs
-export const generateAllTiles = (): TileId[] => {
+const ALL_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+
+// Generate all tile IDs for a given board size (default 9x12)
+export const generateAllTiles = (rows: number = 9, colsCount: number = 12): TileId[] => {
   const tiles: TileId[] = [];
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-  for (let row = 1; row <= 9; row++) {
+  const cols = ALL_COLS.slice(0, colsCount);
+  for (let row = 1; row <= rows; row++) {
     for (const col of cols) {
       tiles.push(`${row}${col}` as TileId);
     }
@@ -47,17 +52,21 @@ export const parseTileId = (tileId: TileId): { row: number; col: string } => {
   return { row: parseInt(match[1]), col: match[2] };
 };
 
-// Get adjacent tiles
-export const getAdjacentTiles = (tileId: TileId): TileId[] => {
+// Get adjacent tiles, respecting board boundaries (default 9 rows, 12 cols)
+export const getAdjacentTiles = (
+  tileId: TileId,
+  boardRows: number = 9,
+  boardCols: string[] | number = 12
+): TileId[] => {
   const { row, col } = parseTileId(tileId);
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+  const cols = typeof boardCols === 'number' ? ALL_COLS.slice(0, boardCols) : boardCols;
   const colIndex = cols.indexOf(col);
   const adjacent: TileId[] = [];
 
   if (row > 1) adjacent.push(`${row - 1}${col}` as TileId);
-  if (row < 9) adjacent.push(`${row + 1}${col}` as TileId);
+  if (row < boardRows) adjacent.push(`${row + 1}${col}` as TileId);
   if (colIndex > 0) adjacent.push(`${row}${cols[colIndex - 1]}` as TileId);
-  if (colIndex < 11) adjacent.push(`${row}${cols[colIndex + 1]}` as TileId);
+  if (colIndex < cols.length - 1) adjacent.push(`${row}${cols[colIndex + 1]}` as TileId);
 
   return adjacent;
 };
@@ -76,12 +85,20 @@ export const getStockPrice = (chainName: ChainName, size: number): number => {
   return prices[prices.length - 1];
 };
 
-// Get majority and minority bonuses
-export const getBonuses = (chainName: ChainName, size: number): { majority: number; minority: number } => {
+// Get majority and minority bonuses based on tier
+// standard: 10x majority / 5x minority
+// aggressive: 15x majority / 5x minority
+// flat: same pool as standard (10+5=15x), distributed equally by callers
+export const getBonuses = (
+  chainName: ChainName,
+  size: number,
+  bonusTier: 'standard' | 'flat' | 'aggressive' = 'standard'
+): { majority: number; minority: number } => {
   const price = getStockPrice(chainName, size);
+  const majorityMult = bonusTier === 'aggressive' ? 15 : 10;
   return {
-    majority: price * MAJORITY_BONUS_MULTIPLIER,
-    minority: price * MINORITY_BONUS_MULTIPLIER,
+    majority: price * majorityMult,
+    minority: price * 5,
   };
 };
 
@@ -118,17 +135,34 @@ export const getStockholderRankings = (
 };
 
 // Initialize game state
-export const initializeGame = (playerNames: string[]): GameState => {
+export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAULT_RULES): GameState => {
   if (playerNames.length !== 4) {
     throw new Error('Game requires exactly 4 players');
   }
 
+  // Derive board dimensions from rules (Story 7)
+  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
+  const colsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
+  const boardCols = ALL_COLS.slice(0, colsCount);
+
+  // Derive eligible chains from rules (Story 8)
+  const maxChainsNum = rules.chainFoundingEnabled ? parseInt(rules.maxChains) : 7;
+  const eligibleChains: ChainName[] =
+    maxChainsNum === 5 ? ELIGIBLE_CHAINS_5 :
+    maxChainsNum === 6 ? ELIGIBLE_CHAINS_6 :
+    ELIGIBLE_CHAINS_7;
+
+  // Derive bonus tier from rules (Story 6)
+  const bonusTier = (rules.bonusTierEnabled
+    ? rules.bonusTier
+    : 'standard') as 'standard' | 'flat' | 'aggressive';
+
   // Initialize tile bag
-  let tileBag = shuffle(generateAllTiles());
+  let tileBag = shuffle(generateAllTiles(boardRows, colsCount));
 
   // Initialize board
   const board = new Map<TileId, TileState>();
-  for (const tileId of generateAllTiles()) {
+  for (const tileId of generateAllTiles(boardRows, colsCount)) {
     board.set(tileId, { id: tileId, placed: false, chain: null });
   }
 
@@ -206,6 +240,11 @@ export const initializeGame = (playerNames: string[]): GameState => {
     rulesSnapshot: null,
     turnDeadlineEpoch: null,
     safeChainSize: SAFE_CHAIN_SIZE,
+    bonusTier,
+    boardRows,
+    boardCols,
+    maxChains: maxChainsNum,
+    eligibleChains,
   };
 };
 
@@ -229,7 +268,9 @@ export const analyzeTilePlacement = (
   adjacentChains: ChainName[];
   adjacentUnincorporated: TileId[];
 } => {
-  const adjacent = getAdjacentTiles(tileId);
+  const boardRows = state.boardRows || 9;
+  const boardCols: string[] | number = state.boardCols?.length ? state.boardCols : 12;
+  const adjacent = getAdjacentTiles(tileId, boardRows, boardCols);
   const adjacentChains = new Set<ChainName>();
   const adjacentUnincorporated: TileId[] = [];
 
@@ -260,13 +301,13 @@ export const analyzeTilePlacement = (
     }
   }
 
-  // Check if this would create an 8th chain
+  // Check if this would found a chain when no eligible chains are available
   if (chainArray.length === 0 && adjacentUnincorporated.length > 0) {
-    const activeChains = Object.values(state.chains).filter(c => c.isActive).length;
-    if (activeChains >= 7) {
+    const availableChains = getAvailableChainsForFoundation(state);
+    if (availableChains.length === 0) {
       return {
         valid: false,
-        reason: 'Cannot create an 8th hotel chain',
+        reason: 'Cannot create a new hotel chain — all eligible chains are already active',
         action: 'form_chain',
         adjacentChains: chainArray,
         adjacentUnincorporated,
@@ -552,35 +593,50 @@ export const checkGameEnd = (state: GameState): boolean => {
 // Calculate final scores
 export const calculateFinalScores = (state: GameState): PlayerState[] => {
   const players = state.players.map(p => ({ ...p }));
+  const bonusTier = state.bonusTier ?? 'standard';
 
   // Pay out bonuses for each active chain
   for (const chain of Object.values(state.chains)) {
     if (!chain.isActive) continue;
 
-    const { majority, minority } = getStockholderRankings(players, chain.name);
-    const bonuses = getBonuses(chain.name, chain.tiles.length);
+    const bonuses = getBonuses(chain.name, chain.tiles.length, bonusTier);
 
-    if (majority.length > 0) {
-      if (minority.length === 0) {
-        // Majority holders split both bonuses
-        const totalBonus = bonuses.majority + bonuses.minority;
-        const perPlayer = Math.floor(totalBonus / majority.length);
-        for (const player of majority) {
-          const p = players.find(pl => pl.id === player.id)!;
+    if (bonusTier === 'flat') {
+      // Flat: split combined pool equally among all stockholders
+      const allHolders = players.filter(p => p.stocks[chain.name] > 0);
+      if (allHolders.length > 0) {
+        const flatPool = bonuses.majority + bonuses.minority;
+        const perPlayer = Math.floor(flatPool / allHolders.length);
+        for (const holder of allHolders) {
+          const p = players.find(pl => pl.id === holder.id)!;
           p.cash += perPlayer;
         }
-      } else {
-        // Normal distribution
-        const majorityBonus = Math.floor(bonuses.majority / majority.length);
-        const minorityBonus = Math.floor(bonuses.minority / minority.length);
-        
-        for (const player of majority) {
-          const p = players.find(pl => pl.id === player.id)!;
-          p.cash += majorityBonus;
-        }
-        for (const player of minority) {
-          const p = players.find(pl => pl.id === player.id)!;
-          p.cash += minorityBonus;
+      }
+    } else {
+      const { majority, minority } = getStockholderRankings(players, chain.name);
+
+      if (majority.length > 0) {
+        if (minority.length === 0) {
+          // Majority holders split both bonuses
+          const totalBonus = bonuses.majority + bonuses.minority;
+          const perPlayer = Math.floor(totalBonus / majority.length);
+          for (const player of majority) {
+            const p = players.find(pl => pl.id === player.id)!;
+            p.cash += perPlayer;
+          }
+        } else {
+          // Normal distribution
+          const majorityBonus = Math.floor(bonuses.majority / majority.length);
+          const minorityBonus = Math.floor(bonuses.minority / minority.length);
+
+          for (const player of majority) {
+            const p = players.find(pl => pl.id === player.id)!;
+            p.cash += majorityBonus;
+          }
+          for (const player of minority) {
+            const p = players.find(pl => pl.id === player.id)!;
+            p.cash += minorityBonus;
+          }
         }
       }
     }
@@ -610,11 +666,12 @@ export const getPlayerNetWorth = (player: PlayerState, chains: Record<ChainName,
   return total;
 };
 
-// Get available chains for founding
+// Get available chains for founding (filtered by eligible chains if set)
 export const getAvailableChainsForFoundation = (state: GameState): ChainName[] => {
-  return (Object.keys(state.chains) as ChainName[]).filter(
-    name => !state.chains[name].isActive
-  );
+  const eligible: ChainName[] = state.eligibleChains?.length
+    ? state.eligibleChains
+    : (Object.keys(state.chains) as ChainName[]);
+  return eligible.filter(name => !state.chains[name].isActive);
 };
 
 // Check if player has any playable tiles

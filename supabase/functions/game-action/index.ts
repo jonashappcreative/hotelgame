@@ -82,13 +82,33 @@ const BASE_PRICES: Record<'budget' | 'midrange' | 'premium', number[]> = {
   midrange: [300, 400, 500, 600, 700, 800, 900, 1000],
   premium: [400, 500, 600, 700, 800, 900, 1000, 1100],
 };
-const MAJORITY_BONUS_MULTIPLIER = 10;
-const MINORITY_BONUS_MULTIPLIER = 5;
+const ALL_COLS_EF = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+
+// Eligible chain sets for Chain Founding Rules
+const ELIGIBLE_CHAINS_5_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental'];
+const ELIGIBLE_CHAINS_6_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
+const ELIGIBLE_CHAINS_7_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
 function getSafeChainSize(rules: CustomRules): number | null {
   if (!rules.chainSafetyEnabled) return 11;
   if (rules.chainSafetyThreshold === 'none') return null;
   return parseInt(rules.chainSafetyThreshold);
+}
+
+function getBoardDimensions(rules: CustomRules): { boardRows: number; boardColsCount: number } {
+  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
+  const boardColsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
+  return { boardRows, boardColsCount };
+}
+
+function getEligibleChains(rules: CustomRules): ChainName[] {
+  if (!rules.chainFoundingEnabled) return ELIGIBLE_CHAINS_7_EF;
+  const max = parseInt(rules.maxChains);
+  return max === 5 ? ELIGIBLE_CHAINS_5_EF : max === 6 ? ELIGIBLE_CHAINS_6_EF : ELIGIBLE_CHAINS_7_EF;
+}
+
+function getBonusTier(rules: CustomRules): string {
+  return rules.bonusTierEnabled ? rules.bonusTier : 'standard';
 }
 
 // Helper functions
@@ -105,11 +125,12 @@ function getStockPrice(chainName: ChainName, size: number): number {
   return prices[prices.length - 1];
 }
 
-function getBonuses(chainName: ChainName, size: number): { majority: number; minority: number } {
+function getBonuses(chainName: ChainName, size: number, bonusTier: string = 'standard'): { majority: number; minority: number } {
   const price = getStockPrice(chainName, size);
+  const majorityMult = bonusTier === 'aggressive' ? 15 : 10;
   return {
-    majority: price * MAJORITY_BONUS_MULTIPLIER,
-    minority: price * MINORITY_BONUS_MULTIPLIER,
+    majority: price * majorityMult,
+    minority: price * 5,
   };
 }
 
@@ -119,16 +140,16 @@ function parseTileId(tileId: TileId): { row: number; col: string } {
   return { row: parseInt(match[1]), col: match[2] };
 }
 
-function getAdjacentTiles(tileId: TileId): TileId[] {
+function getAdjacentTiles(tileId: TileId, boardRows: number = 9, boardColsCount: number = 12): TileId[] {
   const { row, col } = parseTileId(tileId);
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+  const cols = ALL_COLS_EF.slice(0, boardColsCount);
   const colIndex = cols.indexOf(col);
   const adjacent: TileId[] = [];
 
   if (row > 1) adjacent.push(`${row - 1}${col}`);
-  if (row < 9) adjacent.push(`${row + 1}${col}`);
+  if (row < boardRows) adjacent.push(`${row + 1}${col}`);
   if (colIndex > 0) adjacent.push(`${row}${cols[colIndex - 1]}`);
-  if (colIndex < 11) adjacent.push(`${row}${cols[colIndex + 1]}`);
+  if (colIndex < cols.length - 1) adjacent.push(`${row}${cols[colIndex + 1]}`);
 
   return adjacent;
 }
@@ -142,10 +163,10 @@ function shuffle<T>(array: T[]): T[] {
   return shuffled;
 }
 
-function generateAllTiles(): TileId[] {
+function generateAllTiles(boardRows: number = 9, boardColsCount: number = 12): TileId[] {
   const tiles: TileId[] = [];
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-  for (let row = 1; row <= 9; row++) {
+  const cols = ALL_COLS_EF.slice(0, boardColsCount);
+  for (let row = 1; row <= boardRows; row++) {
     for (const col of cols) {
       tiles.push(`${row}${col}`);
     }
@@ -185,34 +206,48 @@ function getStockholderRankings(players: any[], chainName: ChainName): { majorit
   return { majority, minority };
 }
 
-function calculateFinalScores(players: any[], chains: Record<ChainName, any>): any[] {
+function calculateFinalScores(players: any[], chains: Record<ChainName, any>, bonusTier: string = 'standard'): any[] {
   const scoredPlayers = players.map(p => ({ ...p }));
 
   for (const chain of Object.values(chains)) {
     if (!chain.isActive) continue;
 
-    const { majority, minority } = getStockholderRankings(scoredPlayers, chain.name);
-    const bonuses = getBonuses(chain.name, chain.tiles.length);
+    const bonuses = getBonuses(chain.name, chain.tiles.length, bonusTier);
 
-    if (majority.length > 0) {
-      if (minority.length === 0) {
-        const totalBonus = bonuses.majority + bonuses.minority;
-        const perPlayer = Math.floor(totalBonus / majority.length);
-        for (const player of majority) {
-          const p = scoredPlayers.find(pl => pl.id === player.id)!;
+    if (bonusTier === 'flat') {
+      // Flat: split combined pool equally among all stockholders
+      const allHolders = scoredPlayers.filter(p => p.stocks[chain.name] > 0);
+      if (allHolders.length > 0) {
+        const flatPool = bonuses.majority + bonuses.minority;
+        const perPlayer = Math.floor(flatPool / allHolders.length);
+        for (const holder of allHolders) {
+          const p = scoredPlayers.find(pl => pl.id === holder.id)!;
           p.cash += perPlayer;
         }
-      } else {
-        const majorityBonus = Math.floor(bonuses.majority / majority.length);
-        const minorityBonus = Math.floor(bonuses.minority / minority.length);
-        
-        for (const player of majority) {
-          const p = scoredPlayers.find(pl => pl.id === player.id)!;
-          p.cash += majorityBonus;
-        }
-        for (const player of minority) {
-          const p = scoredPlayers.find(pl => pl.id === player.id)!;
-          p.cash += minorityBonus;
+      }
+    } else {
+      const { majority, minority } = getStockholderRankings(scoredPlayers, chain.name);
+
+      if (majority.length > 0) {
+        if (minority.length === 0) {
+          const totalBonus = bonuses.majority + bonuses.minority;
+          const perPlayer = Math.floor(totalBonus / majority.length);
+          for (const player of majority) {
+            const p = scoredPlayers.find(pl => pl.id === player.id)!;
+            p.cash += perPlayer;
+          }
+        } else {
+          const majorityBonus = Math.floor(bonuses.majority / majority.length);
+          const minorityBonus = Math.floor(bonuses.minority / minority.length);
+
+          for (const player of majority) {
+            const p = scoredPlayers.find(pl => pl.id === player.id)!;
+            p.cash += majorityBonus;
+          }
+          for (const player of minority) {
+            const p = scoredPlayers.find(pl => pl.id === player.id)!;
+            p.cash += minorityBonus;
+          }
         }
       }
     }
@@ -314,9 +349,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Derive safe chain size from rules snapshot (null = no chain is ever safe)
+    // Derive rule-based values from rules snapshot
     const globalRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState?.rules_snapshot as Partial<CustomRules> ?? {}) };
     const safeChainSize: number | null = getSafeChainSize(globalRulesSnap);
+    const { boardRows: globalBoardRows, boardColsCount: globalBoardColsCount } = getBoardDimensions(globalRulesSnap);
+    const globalEligibleChains: ChainName[] = getEligibleChains(globalRulesSnap);
+    const globalBonusTier: string = getBonusTier(globalRulesSnap);
 
     // Handle different actions
     let result: { success: boolean; error?: string; data?: any } = { success: false };
@@ -378,13 +416,15 @@ Deno.serve(async (req) => {
         // Derive starting parameters from rules
         const startingCash = parseInt(rules.startingCash);
         const startingTiles = parseInt(rules.startingTiles);
+        const { boardRows: initBoardRows, boardColsCount: initBoardColsCount } = getBoardDimensions(rules);
+        const initEligibleChains = getEligibleChains(rules);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles());
+        let tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
 
         // Initialize board
         const board: Record<string, any> = {};
-        for (const tileId of generateAllTiles()) {
+        for (const tileId of generateAllTiles(initBoardRows, initBoardColsCount)) {
           board[tileId] = { id: tileId, placed: false, chain: null };
         }
 
@@ -605,7 +645,7 @@ Deno.serve(async (req) => {
         // Analyze placement
         const board = gameState.board;
         const chains = gameState.chains;
-        const adjacent = getAdjacentTiles(tileId);
+        const adjacent = getAdjacentTiles(tileId, globalBoardRows, globalBoardColsCount);
         const adjacentChains = new Set<ChainName>();
         const adjacentUnincorporated: TileId[] = [];
 
@@ -633,13 +673,13 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Check for 8th chain
+        // Check if tile would found a chain when no eligible chains are available
         if (chainArray.length === 0 && adjacentUnincorporated.length > 0) {
-          const activeChains = Object.values(chains).filter((c: any) => c.isActive).length;
-          if (activeChains >= 7) {
-            return new Response(JSON.stringify({ error: 'Cannot create an 8th hotel chain' }), { 
-              status: 400, 
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          const availableEligible = globalEligibleChains.filter(c => !chains[c].isActive);
+          if (availableEligible.length === 0) {
+            return new Response(JSON.stringify({ error: 'Cannot create a new hotel chain — all eligible chains are already active' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
         }
@@ -736,7 +776,7 @@ Deno.serve(async (req) => {
             cash: p.cash,
             stocks: p.stocks,
           }));
-          const winner = calculateFinalScores(scoredPlayers, newChains)[0].name;
+          const winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
           
           await adminClient
             .from('game_states')
@@ -793,17 +833,24 @@ Deno.serve(async (req) => {
 
         const chainName = payload?.chainName as ChainName;
         if (!chainName || !CHAINS[chainName]) {
-          return new Response(JSON.stringify({ error: 'Invalid chain name' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Invalid chain name' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         const chains = gameState.chains;
         if (chains[chainName].isActive) {
-          return new Response(JSON.stringify({ error: 'Chain already active' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Chain already active' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (!globalEligibleChains.includes(chainName)) {
+          return new Response(JSON.stringify({ error: 'Chain is not eligible for this game' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -852,7 +899,7 @@ Deno.serve(async (req) => {
             cash: p.player_index === myPlayerIndex ? playerData.cash : p.cash,
             stocks: p.player_index === myPlayerIndex ? playerStocks : p.stocks,
           }));
-          winner = calculateFinalScores(scoredPlayers, newChains)[0].name;
+          winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
         }
 
         await adminClient
@@ -937,7 +984,7 @@ Deno.serve(async (req) => {
         const defunctChain = merger.currentDefunctChain as ChainName;
         const chains = gameState.chains;
         const chainSize = chains[defunctChain].tiles.length;
-        const bonuses = getBonuses(defunctChain, chainSize);
+        const bonuses = getBonuses(defunctChain, chainSize, globalBonusTier);
 
         // Get stockholder rankings
         const playerStates = allPlayers.map(p => ({
@@ -946,18 +993,17 @@ Deno.serve(async (req) => {
           cash: p.cash,
           stocks: p.stocks,
         }));
-        
-        const { majority, minority } = getStockholderRankings(playerStates, defunctChain);
+
         const gameLog = [...gameState.game_log];
 
-        // Pay bonuses
-        if (majority.length > 0) {
-          if (minority.length === 0) {
-            const totalBonus = bonuses.majority + bonuses.minority;
-            const perPlayer = Math.floor(totalBonus / majority.length);
-            
-            for (const player of majority) {
-              const playerIndex = parseInt(player.id.split('-')[1]);
+        // Pay bonuses (flat tier splits pool equally among all stockholders)
+        if (globalBonusTier === 'flat') {
+          const allHolders = playerStates.filter(p => p.stocks[defunctChain] > 0);
+          if (allHolders.length > 0) {
+            const flatPool = bonuses.majority + bonuses.minority;
+            const perPlayer = Math.floor(flatPool / allHolders.length);
+            for (const holder of allHolders) {
+              const playerIndex = parseInt(holder.id.split('-')[1]);
               const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
               if (dbPlayer) {
                 await adminClient
@@ -966,49 +1012,76 @@ Deno.serve(async (req) => {
                   .eq('id', dbPlayer.id);
               }
             }
-
             gameLog.push({
               timestamp: Date.now(),
               playerId: 'system',
               playerName: 'System',
-              action: `${CHAINS[defunctChain].displayName} bonuses paid`,
-              details: majority.length > 1 
-                ? `${majority.map(p => p.name).join(', ')} split $${totalBonus}`
-                : `${majority[0].name} receives $${totalBonus}`,
+              action: `${CHAINS[defunctChain].displayName} bonuses paid (flat)`,
+              details: `${allHolders.map(p => p.name).join(', ')} each receive $${perPlayer}`,
             });
-          } else {
-            const majorityBonus = Math.floor(bonuses.majority / majority.length);
-            const minorityBonus = Math.floor(bonuses.minority / minority.length);
+          }
+        } else {
+          const { majority, minority } = getStockholderRankings(playerStates, defunctChain);
 
-            for (const player of majority) {
-              const playerIndex = parseInt(player.id.split('-')[1]);
-              const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
-              if (dbPlayer) {
-                await adminClient
-                  .from('game_players')
-                  .update({ cash: dbPlayer.cash + majorityBonus })
-                  .eq('id', dbPlayer.id);
+          if (majority.length > 0) {
+            if (minority.length === 0) {
+              const totalBonus = bonuses.majority + bonuses.minority;
+              const perPlayer = Math.floor(totalBonus / majority.length);
+
+              for (const player of majority) {
+                const playerIndex = parseInt(player.id.split('-')[1]);
+                const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
+                if (dbPlayer) {
+                  await adminClient
+                    .from('game_players')
+                    .update({ cash: dbPlayer.cash + perPlayer })
+                    .eq('id', dbPlayer.id);
+                }
               }
-            }
 
-            for (const player of minority) {
-              const playerIndex = parseInt(player.id.split('-')[1]);
-              const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
-              if (dbPlayer) {
-                await adminClient
-                  .from('game_players')
-                  .update({ cash: dbPlayer.cash + minorityBonus })
-                  .eq('id', dbPlayer.id);
+              gameLog.push({
+                timestamp: Date.now(),
+                playerId: 'system',
+                playerName: 'System',
+                action: `${CHAINS[defunctChain].displayName} bonuses paid`,
+                details: majority.length > 1
+                  ? `${majority.map(p => p.name).join(', ')} split $${totalBonus}`
+                  : `${majority[0].name} receives $${totalBonus}`,
+              });
+            } else {
+              const majorityBonus = Math.floor(bonuses.majority / majority.length);
+              const minorityBonus = Math.floor(bonuses.minority / minority.length);
+
+              for (const player of majority) {
+                const playerIndex = parseInt(player.id.split('-')[1]);
+                const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
+                if (dbPlayer) {
+                  await adminClient
+                    .from('game_players')
+                    .update({ cash: dbPlayer.cash + majorityBonus })
+                    .eq('id', dbPlayer.id);
+                }
               }
-            }
 
-            gameLog.push({
-              timestamp: Date.now(),
-              playerId: 'system',
-              playerName: 'System',
-              action: `${CHAINS[defunctChain].displayName} bonuses paid`,
-              details: `Majority: ${majority.map(p => p.name).join(', ')} ($${majorityBonus} each), Minority: ${minority.map(p => p.name).join(', ')} ($${minorityBonus} each)`,
-            });
+              for (const player of minority) {
+                const playerIndex = parseInt(player.id.split('-')[1]);
+                const dbPlayer = allPlayers.find(p => p.player_index === playerIndex);
+                if (dbPlayer) {
+                  await adminClient
+                    .from('game_players')
+                    .update({ cash: dbPlayer.cash + minorityBonus })
+                    .eq('id', dbPlayer.id);
+                }
+              }
+
+              gameLog.push({
+                timestamp: Date.now(),
+                playerId: 'system',
+                playerName: 'System',
+                action: `${CHAINS[defunctChain].displayName} bonuses paid`,
+                details: `Majority: ${majority.map(p => p.name).join(', ')} ($${majorityBonus} each), Minority: ${minority.map(p => p.name).join(', ')} ($${minorityBonus} each)`,
+              });
+            }
           }
         }
 
@@ -1289,7 +1362,7 @@ Deno.serve(async (req) => {
             cash: p.player_index === myPlayerIndex ? newCash : p.cash,
             stocks: p.player_index === myPlayerIndex ? newPlayerStocks : p.stocks,
           }));
-          winner = calculateFinalScores(scoredPlayers, gameState.chains)[0].name;
+          winner = calculateFinalScores(scoredPlayers, gameState.chains, globalBonusTier)[0].name;
         }
 
         await adminClient
@@ -1352,7 +1425,7 @@ Deno.serve(async (req) => {
             cash: p.cash,
             stocks: p.stocks,
           }));
-          winner = calculateFinalScores(scoredPlayers, gameState.chains)[0].name;
+          winner = calculateFinalScores(scoredPlayers, gameState.chains, globalBonusTier)[0].name;
         }
 
         await adminClient
@@ -1474,7 +1547,7 @@ Deno.serve(async (req) => {
               cash: p.cash,
               stocks: p.stocks,
             }));
-            winner = calculateFinalScores(scoredPlayers, gameState.chains)[0].name;
+            winner = calculateFinalScores(scoredPlayers, gameState.chains, globalBonusTier)[0].name;
           }
 
           await adminClient
@@ -1559,6 +1632,9 @@ Deno.serve(async (req) => {
 
         const autoRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
         const autoSafeChainSize: number | null = getSafeChainSize(autoRules);
+        const { boardRows: autoBoardRows, boardColsCount: autoBoardColsCount } = getBoardDimensions(autoRules);
+        const autoEligibleChains: ChainName[] = getEligibleChains(autoRules);
+        const autoBonusTier: string = getBonusTier(autoRules);
         const autoBoard = { ...gameState.board };
         const autoChains = { ...gameState.chains };
         let autoStockBank = { ...gameState.stock_bank };
@@ -1574,7 +1650,7 @@ Deno.serve(async (req) => {
 
         // Find playable tiles (same validity checks as place_tile handler)
         const autoPlayableTiles = autoPlayerTiles.filter(tileId => {
-          const adjTiles = getAdjacentTiles(tileId);
+          const adjTiles = getAdjacentTiles(tileId, autoBoardRows, autoBoardColsCount);
           const adjChainsSet = new Set<ChainName>();
           const adjUnincorpTiles: string[] = [];
           for (const a of adjTiles) {
@@ -1587,7 +1663,7 @@ Deno.serve(async (req) => {
           const ca = Array.from(adjChainsSet);
           if (ca.length >= 2 && ca.filter(c => autoChains[c].isSafe).length >= 2) return false;
           if (ca.length === 0 && adjUnincorpTiles.length > 0 &&
-              Object.values(autoChains).filter((c: any) => c.isActive).length >= 7) return false;
+              autoEligibleChains.filter(c => !autoChains[c].isActive).length === 0) return false;
           return true;
         });
 
@@ -1610,7 +1686,7 @@ Deno.serve(async (req) => {
               cash: p.cash,
               stocks: p.stocks,
             }));
-            autoWinner = calculateFinalScores(scored, chains)[0].name;
+            autoWinner = calculateFinalScores(scored, chains, autoBonusTier)[0].name;
           }
           return { nextPlayerIndex: npi, newRoundNumber: nrn, newDeadline: phase === 'game_over' ? null : nd, newPhase: phase, winner: autoWinner };
         };
@@ -1651,7 +1727,7 @@ Deno.serve(async (req) => {
         autoNewPlayerTiles = autoPlayerTiles.filter(t => t !== tileToPlay);
 
         // Analyze placement
-        const autoAdjTiles = getAdjacentTiles(tileToPlay);
+        const autoAdjTiles = getAdjacentTiles(tileToPlay, autoBoardRows, autoBoardColsCount);
         const autoChainsSet = new Set<ChainName>();
         const autoUnincorp: string[] = [];
         for (const a of autoAdjTiles) {
@@ -1714,19 +1790,32 @@ Deno.serve(async (req) => {
           // Pay bonuses for each defunct chain
           for (const defunctC of defunctList) {
             const dSize = autoChains[defunctC].tiles.length;
-            const dBonuses = getBonuses(defunctC, dSize);
-            const { majority: dMaj, minority: dMin } = getStockholderRankings(freshAutoStates, defunctC);
-            if (dMaj.length > 0) {
-              const payments: { pi: number; amount: number }[] = [];
-              if (dMin.length === 0) {
-                const each = Math.floor((dBonuses.majority + dBonuses.minority) / dMaj.length);
-                dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: each }));
-              } else {
-                const majEach = Math.floor(dBonuses.majority / dMaj.length);
-                const minEach = Math.floor(dBonuses.minority / dMin.length);
-                dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: majEach }));
-                dMin.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: minEach }));
+            const dBonuses = getBonuses(defunctC, dSize, autoBonusTier);
+            const payments: { pi: number; amount: number }[] = [];
+
+            if (autoBonusTier === 'flat') {
+              const allHolders = freshAutoStates.filter((p: any) => (p.stocks[defunctC] ?? 0) > 0);
+              if (allHolders.length > 0) {
+                const flatPool = dBonuses.majority + dBonuses.minority;
+                const perPlayer = Math.floor(flatPool / allHolders.length);
+                allHolders.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: perPlayer }));
               }
+            } else {
+              const { majority: dMaj, minority: dMin } = getStockholderRankings(freshAutoStates, defunctC);
+              if (dMaj.length > 0) {
+                if (dMin.length === 0) {
+                  const each = Math.floor((dBonuses.majority + dBonuses.minority) / dMaj.length);
+                  dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: each }));
+                } else {
+                  const majEach = Math.floor(dBonuses.majority / dMaj.length);
+                  const minEach = Math.floor(dBonuses.minority / dMin.length);
+                  dMaj.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: majEach }));
+                  dMin.forEach((p: any) => payments.push({ pi: parseInt(p.id.split('-')[1]), amount: minEach }));
+                }
+              }
+            }
+
+            if (payments.length > 0) {
               for (const { pi, amount } of payments) {
                 const dbP = (freshAutoPlayers || []).find((p: any) => p.player_index === pi);
                 if (dbP) await adminClient.from('game_players').update({ cash: dbP.cash + amount }).eq('id', dbP.id);
@@ -1773,8 +1862,8 @@ Deno.serve(async (req) => {
           await advanceTurn(autoNewChains);
 
         } else if (autoUnincorp.length > 0) {
-          // Found a new chain: pick random available
-          const availableForAuto = (Object.keys(autoChains) as ChainName[]).filter(c => !autoChains[c].isActive);
+          // Found a new chain: pick random from eligible available chains
+          const availableForAuto = autoEligibleChains.filter(c => !autoChains[c].isActive);
           const newAutoChain = availableForAuto[Math.floor(Math.random() * availableForAuto.length)];
           const foundTiles = [tileToPlay, ...autoUnincorp];
           for (const tid of foundTiles) autoBoard[tid] = { ...autoBoard[tid], chain: newAutoChain };
@@ -1839,10 +1928,14 @@ async function completeMergerInDb(
   const survivingChain = merger.survivingChain as ChainName;
   const lastTile = gameState.last_placed_tile;
 
+  // Derive board dimensions for adjacency calculation
+  const completeMergerRulesForBoard: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const { boardRows: cmBoardRows, boardColsCount: cmBoardColsCount } = getBoardDimensions(completeMergerRulesForBoard);
+
   // Collect all tiles to add
   const tilesToAdd: TileId[] = [lastTile];
-  
-  const adjacent = getAdjacentTiles(lastTile);
+
+  const adjacent = getAdjacentTiles(lastTile, cmBoardRows, cmBoardColsCount);
   for (const adjTile of adjacent) {
     const tile = gameState.board[adjTile];
     if (tile?.placed && !tile.chain) {
@@ -1863,6 +1956,7 @@ async function completeMergerInDb(
   // Update chains
   const completeMergerRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
   const completeMergerSafeSize: number | null = getSafeChainSize(completeMergerRules);
+  const completeMergerBonusTier: string = getBonusTier(completeMergerRules);
   const newChains = { ...gameState.chains };
   const existingTiles = newChains[survivingChain].tiles;
   const allTiles = [...new Set([...existingTiles, ...tilesToAdd])];
@@ -1901,7 +1995,7 @@ async function completeMergerInDb(
       cash: p.cash,
       stocks: p.stocks,
     }));
-    winner = calculateFinalScores(scoredPlayers, newChains)[0].name;
+    winner = calculateFinalScores(scoredPlayers, newChains, completeMergerBonusTier)[0].name;
   }
 
   await adminClient

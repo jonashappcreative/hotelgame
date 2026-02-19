@@ -87,6 +87,11 @@ export interface GameState {
   rulesSnapshot: CustomRules | null;
   turnDeadlineEpoch: number | null;
   safeChainSize: number | null;
+  bonusTier: 'standard' | 'flat' | 'aggressive';
+  boardRows: number;
+  boardCols: string[];
+  maxChains: number;
+  eligibleChains: ChainName[];
 }
 
 export interface GameLogEntry {
@@ -134,6 +139,11 @@ export const SAFE_CHAIN_SIZE = 11;
 export const END_GAME_CHAIN_SIZE = 41;
 export const MAJORITY_BONUS_MULTIPLIER = 10;
 export const MINORITY_BONUS_MULTIPLIER = 5;
+
+// Eligible chain sets for Chain Founding Rules (Story 8)
+export const ELIGIBLE_CHAINS_5: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental'];
+export const ELIGIBLE_CHAINS_6: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
+export const ELIGIBLE_CHAINS_7: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
 export interface CustomRules {
   startWithTileOnBoard: boolean;
