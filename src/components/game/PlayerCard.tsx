@@ -11,11 +11,24 @@ interface PlayerCardProps {
   isCurrentTurn: boolean;
   isYou?: boolean;
   rank?: number;
+  cashVisibility?: 'hidden' | 'visible' | 'aggregate';
+  myPlayerIndex?: number;
 }
 
-export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: PlayerCardProps) => {
+export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cashVisibility = 'visible', myPlayerIndex }: PlayerCardProps) => {
   const [isExpanded, setIsExpanded] = useState(isCurrentTurn);
   const netWorth = getPlayerNetWorth(player, gameState.chains);
+  const totalCash = gameState.players.reduce((sum, p) => sum + p.cash, 0);
+
+  // Determine what cash/net-worth to display based on visibility mode
+  const showExact = isYou || cashVisibility === 'visible';
+  const cashLabel = showExact
+    ? `$${player.cash.toLocaleString()}`
+    : cashVisibility === 'aggregate'
+    ? `$${totalCash.toLocaleString()}`
+    : '—';
+  const netWorthLabel = showExact ? `$${netWorth.toLocaleString()}` : '—';
+  void myPlayerIndex; // prop reserved for future use
   
   const activeStocks = (Object.entries(player.stocks) as [ChainName, number][])
     .filter(([_, qty]) => qty > 0)
@@ -83,10 +96,10 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
               <div className="text-right mr-2">
                 <div className="flex items-center gap-3 text-sm">
                   <span className="text-muted-foreground">
-                    ${player.cash.toLocaleString()}
+                    {cashLabel}
                   </span>
                   <span className="cash-display text-sm">
-                    ${netWorth.toLocaleString()}
+                    {netWorthLabel}
                   </span>
                 </div>
               </div>

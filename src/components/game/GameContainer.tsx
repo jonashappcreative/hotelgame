@@ -63,8 +63,16 @@ export const GameContainer = ({
   const isMyTurn = myPlayerIndex === gameState.currentPlayerIndex;
   
   // Check if it's my turn for merger stock decisions
-  const isMyMergerTurn = gameState.phase === 'merger_handle_stock' && 
+  const isMyMergerTurn = gameState.phase === 'merger_handle_stock' &&
     gameState.merger?.currentPlayerIndex === myPlayerIndex;
+
+  // Derive cash visibility: local games always show all cash; online games follow rules
+  const cashVisibility: 'hidden' | 'visible' | 'aggregate' = (() => {
+    if (!isOnlineMode) return 'visible';
+    const rules = gameState.rulesSnapshot;
+    if (!rules?.cashVisibilityEnabled) return 'hidden';
+    return (rules.cashVisibility || 'hidden') as 'hidden' | 'visible' | 'aggregate';
+  })();
 
   // Check if player has unplayable tiles
   const hasNoPlayableTiles = gameState.phase === 'place_tile' && 
@@ -375,6 +383,8 @@ export const GameContainer = ({
                 isCurrentTurn={myPlayerIndex === gameState.currentPlayerIndex}
                 isYou={true}
                 rank={getPlayerRank(myPlayer.id)}
+                cashVisibility={cashVisibility}
+                myPlayerIndex={myPlayerIndex}
               />
               {/* Player's Hand - positioned below your cash like in tutorial */}
               <PlayerHand
@@ -401,6 +411,8 @@ export const GameContainer = ({
                       isCurrentTurn={originalIndex === gameState.currentPlayerIndex}
                       isYou={false}
                       rank={getPlayerRank(player.id)}
+                      cashVisibility={cashVisibility}
+                      myPlayerIndex={myPlayerIndex}
                     />
                   );
                 })}
