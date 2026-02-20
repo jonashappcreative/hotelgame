@@ -367,12 +367,26 @@ describe('multiplayerService', () => {
             }),
           };
         }
+        if (table === 'game_players') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
         return {};
       });
 
       const result = await joinRoom('ABC123', 'Player 1');
 
-      expect(result).toEqual({ success: false, error: 'Game already started' });
+      expect(result).toEqual({ success: false, error: 'Game already in progress. You can only rejoin with the same account you used to join.' });
     });
 
     it('should return existing player data if already joined', async () => {
@@ -382,7 +396,7 @@ describe('multiplayerService', () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: 'room-id', status: 'waiting', max_players: 4 },
+                  data: { id: 'room-id', room_code: 'ABC123', status: 'waiting', max_players: 4 },
                   error: null,
                 }),
               }),
@@ -395,11 +409,14 @@ describe('multiplayerService', () => {
               eq: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { player_index: 1 },
+                    data: { id: 'player-id', player_name: 'Player 1', player_index: 1 },
                     error: null,
                   }),
                 }),
               }),
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ error: null }),
             }),
           };
         }
@@ -413,6 +430,7 @@ describe('multiplayerService', () => {
         roomId: 'room-id',
         playerIndex: 1,
         maxPlayers: 4,
+        isRejoin: false,
       });
     });
 
@@ -872,8 +890,8 @@ describe('multiplayerService', () => {
           eq: vi.fn().mockReturnValue({
             order: vi.fn().mockResolvedValue({
               data: [
-                { id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true },
-                { id: 'p2', player_name: 'Bob', player_index: 1, is_ready: false },
+                { id: 'p1', player_name: 'Alice', player_index: 0, is_connected: true },
+                { id: 'p2', player_name: 'Bob', player_index: 1, is_connected: false },
               ],
               error: null,
             }),

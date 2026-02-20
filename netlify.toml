@@ -32,6 +32,9 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data: https://lovable.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
     # Cache static assets for 1 year
     Cache-Control = "public, max-age=31536000, immutable"

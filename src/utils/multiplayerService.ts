@@ -268,46 +268,10 @@ export const joinRoom = async (
     };
   }
 
-  // If game has started, try to rejoin by matching player name
+  // If game has started, only allow rejoin by matching user_id (already handled above).
+  // Name-based rejoin is removed for security — it allowed account takeover by guessing names.
   if (room.status !== 'waiting') {
-    // Check if there's a player with this name in the room (for anonymous users who lost their session)
-    const { data: existingPlayerByName } = await supabase
-      .from('game_players')
-      .select('*')
-      .eq('room_id', room.id)
-      .eq('player_name', playerName)
-      .maybeSingle();
-
-    if (existingPlayerByName) {
-      // Update the player record to use the new user_id
-      await supabase
-        .from('game_players')
-        .update({
-          user_id: userId,
-          is_connected: true,
-          last_seen_at: new Date().toISOString(),
-          disconnected_at: null
-        })
-        .eq('id', existingPlayerByName.id);
-
-      // Save to localStorage for future recovery
-      saveActiveGameToStorage({
-        roomId: room.id,
-        roomCode: room.room_code,
-        playerName: existingPlayerByName.player_name,
-        playerIndex: existingPlayerByName.player_index,
-      });
-
-      return {
-        success: true,
-        roomId: room.id,
-        playerIndex: existingPlayerByName.player_index,
-        maxPlayers,
-        isRejoin: true
-      };
-    }
-
-    return { success: false, error: 'Game already in progress. Use the same name you used before to rejoin.' };
+    return { success: false, error: 'Game already in progress. You can only rejoin with the same account you used to join.' };
   }
 
   // Try to join with retry logic for race conditions

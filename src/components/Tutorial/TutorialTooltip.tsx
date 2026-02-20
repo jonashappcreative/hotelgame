@@ -52,25 +52,31 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
     onExit();
   };
 
-  // Parse content for markdown-like formatting
+  // Render a line with **bold** segments as safe JSX (no dangerouslySetInnerHTML)
+  const renderBoldLine = (line: string, key: number) => {
+    const parts = line.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={`${key}-${i}`} className="text-primary font-semibold">{part.slice(2, -2)}</strong>;
+      }
+      return <React.Fragment key={`${key}-${i}`}>{part}</React.Fragment>;
+    });
+  };
+
+  const BULLET_PREFIXES = ['•', '✅', '🏨', '💰', '📈', '💎', '💼', '💵', '🥇', '🥈', '🔵', '🔄', '1️⃣', '2️⃣', '3️⃣'];
+
+  // Parse content for markdown-like formatting (safe JSX, no innerHTML)
   const formatContent = (text: string) => {
     return text.split('\n').map((line, index) => {
-      // Bold text
-      const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>');
-      
-      // Emoji bullets stay as-is
-      if (line.trim().startsWith('•') || line.trim().startsWith('✅') || line.trim().startsWith('🏨') || line.trim().startsWith('💰') || line.trim().startsWith('📈') || line.trim().startsWith('💎') || line.trim().startsWith('💼') || line.trim().startsWith('💵') || line.trim().startsWith('🥇') || line.trim().startsWith('🥈') || line.trim().startsWith('🔵') || line.trim().startsWith('🔄') || line.trim().startsWith('1️⃣') || line.trim().startsWith('2️⃣') || line.trim().startsWith('3️⃣')) {
-        return (
-          <p key={index} className="ml-1" dangerouslySetInnerHTML={{ __html: formattedLine }} />
-        );
-      }
-      
       if (line.trim() === '') {
         return <br key={index} />;
       }
-      
+
+      const isBullet = BULLET_PREFIXES.some(p => line.trim().startsWith(p));
       return (
-        <p key={index} dangerouslySetInnerHTML={{ __html: formattedLine }} />
+        <p key={index} className={isBullet ? 'ml-1' : undefined}>
+          {renderBoldLine(line, index)}
+        </p>
       );
     });
   };

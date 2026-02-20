@@ -1,9 +1,21 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Allowed CORS origins — restrict to known deployment domains
+const ALLOWED_ORIGINS = [
+  'https://acquire-game.netlify.app',  // production
+  'http://localhost:5173',             // local dev
+  'http://localhost:4173',             // local preview
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('Origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
+  };
+}
 
 // Types (duplicated from frontend since we can't import from src)
 type ChainName = 'sackson' | 'tower' | 'worldwide' | 'american' | 'festival' | 'continental' | 'imperial';
@@ -263,6 +275,8 @@ function calculateFinalScores(players: any[], chains: Record<ChainName, any>, bo
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -618,11 +632,19 @@ Deno.serve(async (req) => {
           });
         }
 
+        // Validate game phase
+        if (gameState.phase !== 'place_tile') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         // Check if it's this player's turn
         if (gameState.current_player_index !== myPlayerIndex) {
-          return new Response(JSON.stringify({ error: 'Not your turn' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -818,16 +840,23 @@ Deno.serve(async (req) => {
 
       case 'found_chain': {
         if (!gameState) {
-          return new Response(JSON.stringify({ error: 'Game not started' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Game not started' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'found_chain') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         if (gameState.current_player_index !== myPlayerIndex) {
-          return new Response(JSON.stringify({ error: 'Not your turn' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -925,23 +954,58 @@ Deno.serve(async (req) => {
       }
 
       case 'choose_merger_survivor': {
-        if (!gameState || gameState.current_player_index !== myPlayerIndex) {
-          return new Response(JSON.stringify({ error: 'Not your turn' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        if (!gameState) {
+          return new Response(JSON.stringify({ error: 'Game not started' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'merger_choose_survivor') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         const survivingChain = payload?.survivingChain as ChainName;
-        if (!survivingChain) {
-          return new Response(JSON.stringify({ error: 'Surviving chain required' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        if (!survivingChain || !CHAINS[survivingChain]) {
+          return new Response(JSON.stringify({ error: 'Surviving chain required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        const adjacentChains = payload?.adjacentChains as ChainName[];
-        const defunctChains = adjacentChains.filter(c => c !== survivingChain)
+        // Recompute adjacent chains server-side from the last placed tile (do not trust client payload)
+        const lastTileForMerger = gameState.last_placed_tile;
+        if (!lastTileForMerger) {
+          return new Response(JSON.stringify({ error: 'No last placed tile found' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        const adjTilesForMerger = getAdjacentTiles(lastTileForMerger, globalBoardRows, globalBoardColsCount);
+        const serverAdjacentChains = [...new Set(
+          adjTilesForMerger
+            .filter(tid => gameState.board[tid]?.placed && gameState.board[tid]?.chain)
+            .map(tid => gameState.board[tid].chain as ChainName)
+        )];
+
+        if (!serverAdjacentChains.includes(survivingChain)) {
+          return new Response(JSON.stringify({ error: 'Invalid surviving chain selection' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const defunctChains = serverAdjacentChains.filter(c => c !== survivingChain)
           .sort((a, b) => gameState.chains[b].tiles.length - gameState.chains[a].tiles.length);
 
         const merger = {
@@ -966,9 +1030,16 @@ Deno.serve(async (req) => {
 
       case 'pay_merger_bonuses': {
         if (!gameState || !gameState.merger) {
-          return new Response(JSON.stringify({ error: 'No merger in progress' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'No merger in progress' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'merger_pay_bonuses') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1135,9 +1206,16 @@ Deno.serve(async (req) => {
 
       case 'merger_stock_choice': {
         if (!gameState || !gameState.merger) {
-          return new Response(JSON.stringify({ error: 'No merger in progress' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'No merger in progress' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'merger_handle_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1286,19 +1364,51 @@ Deno.serve(async (req) => {
 
       case 'buy_stocks': {
         if (!gameState || gameState.current_player_index !== myPlayerIndex) {
-          return new Response(JSON.stringify({ error: 'Not your turn' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'buy_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         const purchases = payload?.purchases as { chain: ChainName; quantity: number }[];
-        
+
+        // Validate total quantity does not exceed 3 per turn
+        const totalQuantity = (purchases || []).reduce((sum, p) => sum + p.quantity, 0);
+        if (totalQuantity > 3) {
+          return new Response(JSON.stringify({ error: 'Cannot buy more than 3 stocks per turn' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         let totalCost = 0;
         const newPlayerStocks = { ...playerData.stocks };
         const newStockBank = { ...gameState.stock_bank };
 
         for (const purchase of (purchases || [])) {
+          // Validate chain is active
+          if (!gameState.chains[purchase.chain]?.isActive) {
+            return new Response(JSON.stringify({ error: `Cannot buy stock in inactive chain: ${purchase.chain}` }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Validate stock bank has sufficient shares
+          if (gameState.stock_bank[purchase.chain] < purchase.quantity) {
+            return new Response(JSON.stringify({ error: `Insufficient ${purchase.chain} shares in bank (available: ${gameState.stock_bank[purchase.chain]})` }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           const price = getStockPrice(purchase.chain, gameState.chains[purchase.chain].tiles.length);
           totalCost += price * purchase.quantity;
           newPlayerStocks[purchase.chain] = (newPlayerStocks[purchase.chain] || 0) + purchase.quantity;
@@ -1306,9 +1416,9 @@ Deno.serve(async (req) => {
         }
 
         if (totalCost > playerData.cash) {
-          return new Response(JSON.stringify({ error: 'Insufficient funds' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Insufficient funds' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1387,9 +1497,16 @@ Deno.serve(async (req) => {
 
       case 'skip_buy': {
         if (!gameState || gameState.current_player_index !== myPlayerIndex) {
-          return new Response(JSON.stringify({ error: 'Not your turn' }), { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'buy_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1463,6 +1580,14 @@ Deno.serve(async (req) => {
           );
         }
 
+        // Security: Verify the requesting user is the current player
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'Not your turn' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
         // Get current player
         const currentPlayer = allPlayers.find((p: any) => p.player_index === gameState.current_player_index);
         if (!currentPlayer) {
@@ -1522,9 +1647,16 @@ Deno.serve(async (req) => {
 
       case 'end_game_vote': {
         if (!gameState) {
-          return new Response(JSON.stringify({ error: 'Game not started' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Game not started' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (!['place_tile', 'buy_stock'].includes(gameState.phase)) {
+          return new Response(JSON.stringify({ error: 'Cannot vote to end game during an active action phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1588,14 +1720,26 @@ Deno.serve(async (req) => {
       }
 
       case 'update_room_status': {
-        // This is used to update room status (e.g., for cleanup)
-        const newStatus = payload?.status;
-        if (newStatus) {
-          await adminClient
-            .from('game_rooms')
-            .update({ status: newStatus })
-            .eq('id', roomId);
+        // Security: Only host (player_index 0) can update room status
+        if (myPlayerIndex !== 0) {
+          return new Response(JSON.stringify({ error: 'Only host can update room status' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
+
+        const VALID_ROOM_STATUSES = ['waiting', 'playing', 'finished'] as const;
+        const newStatus = payload?.status;
+        if (!newStatus || !(VALID_ROOM_STATUSES as readonly string[]).includes(newStatus)) {
+          return new Response(JSON.stringify({ error: 'Invalid or missing status value' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        await adminClient
+          .from('game_rooms')
+          .update({ status: newStatus })
+          .eq('id', roomId);
         result = { success: true };
         break;
       }
@@ -1908,10 +2052,9 @@ Deno.serve(async (req) => {
 
   } catch (error: unknown) {
     console.error('Edge function error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: message }), { 
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ error: 'An internal error occurred' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });
