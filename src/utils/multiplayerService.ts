@@ -381,7 +381,7 @@ export const leaveRoom = async (roomId: string): Promise<void> => {
 export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number; is_ready: boolean }[]> => {
   const { data, error } = await supabase
     .from('game_players_public')
-    .select('id, player_name, player_index, is_connected')
+    .select('id, player_name, player_index, is_ready')
     .eq('room_id', roomId)
     .order('player_index');
 
@@ -394,7 +394,7 @@ export const getRoomPlayers = async (roomId: string): Promise<{ id: string; play
     id: p.id || '',
     player_name: p.player_name || '',
     player_index: p.player_index ?? 0,
-    is_ready: p.is_connected ?? false,
+    is_ready: p.is_ready ?? false,
   }));
 };
 

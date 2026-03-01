@@ -1,10 +1,13 @@
 -- Track which round we are in (increments when currentPlayerIndex wraps to 0)
 -- Used to enforce grace period for turn timer (disableTimerFirstRounds)
 ALTER TABLE public.game_states
-  ADD COLUMN round_number INTEGER DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS rules_snapshot JSONB DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS turn_deadline_epoch BIGINT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS round_number INTEGER DEFAULT 0;
 
 -- Recreate game_states_public view to include round_number (tile_bag still excluded)
-CREATE OR REPLACE VIEW public.game_states_public AS
+DROP VIEW IF EXISTS public.game_states_public;
+CREATE VIEW public.game_states_public AS
   SELECT
     id,
     room_id,
