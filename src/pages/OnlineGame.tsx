@@ -6,16 +6,21 @@ import { TileId, ChainName } from '@/types/game';
 const OnlineGame = () => {
   const {
     gameState,
+    roomId,
     roomCode,
     players,
     myPlayerIndex,
     maxPlayers,
     roomStatus,
     isLoading,
+    isCheckingActiveGame,
+    activeGameInfo,
     handleCreateRoom,
     handleJoinRoom,
     handleLeaveRoom,
     handleToggleReady,
+    handleRejoinGame,
+    dismissActiveGame,
     handleTilePlacement,
     handleDiscardTile,
     handleFoundChain,
@@ -26,6 +31,7 @@ const OnlineGame = () => {
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
+    handleAutoEndTurn,
   } = useOnlineGame();
 
   // Show lobby if not in a game
@@ -33,14 +39,19 @@ const OnlineGame = () => {
     return (
       <OnlineLobby
         roomCode={roomCode}
+        roomId={roomId}
         players={players}
         myPlayerIndex={myPlayerIndex}
         maxPlayers={maxPlayers}
         isLoading={isLoading}
+        isCheckingActiveGame={isCheckingActiveGame}
+        activeGameInfo={activeGameInfo}
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
         onLeaveRoom={handleLeaveRoom}
         onToggleReady={handleToggleReady}
+        onRejoinGame={handleRejoinGame}
+        onDismissActiveGame={dismissActiveGame}
       />
     );
   }
@@ -59,6 +70,7 @@ const OnlineGame = () => {
       onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
       onNewGame={handleNewGame}
+      onAutoEndTurn={handleAutoEndTurn}
     />
   );
 };

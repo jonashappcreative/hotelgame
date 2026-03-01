@@ -10,10 +10,14 @@ interface GameBoardProps {
   selectedTile?: TileId | null;
 }
 
-const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const DEFAULT_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+const DEFAULT_ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile }: GameBoardProps) => {
+  const COLS = gameState.boardCols?.length ? gameState.boardCols : DEFAULT_COLS;
+  const ROWS = gameState.boardRows
+    ? Array.from({ length: gameState.boardRows }, (_, i) => i + 1)
+    : DEFAULT_ROWS;
   const canPlaceTile = (tileId: TileId): boolean => {
     if (!isCurrentPlayer || gameState.phase !== 'place_tile') return false;
     if (!playerTiles.includes(tileId)) return false;

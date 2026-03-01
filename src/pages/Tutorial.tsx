@@ -202,6 +202,7 @@ const TutorialPage: React.FC = () => {
                     gameState={tutorialGameState}
                     onSelectChain={handleChainSelect}
                     allowedChain="sackson"
+                    placedTile="6D"
                   />
                 </div>
               )}

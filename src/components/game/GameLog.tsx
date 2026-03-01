@@ -16,13 +16,13 @@ export const GameLog = ({ entries }: GameLogProps) => {
   const recentEntries = entries.slice(-20).reverse();
 
   return (
-    <div className="bg-card rounded-xl p-4 h-full">
+    <div className="bg-card rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3">
         <Clock className="w-4 h-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-muted-foreground">Game Log</h3>
       </div>
-      
-      <ScrollArea className="h-[200px] custom-scrollbar">
+
+      <ScrollArea className="h-[180px] custom-scrollbar">
         <div className="space-y-2 pr-2">
           {recentEntries.length === 0 ? (
             <p className="text-xs text-muted-foreground/60 italic text-center py-4">

@@ -23,6 +23,7 @@ import {
   hasPlayableTiles,
 } from './gameLogic';
 import type { GameState, PlayerState, ChainName, TileId } from '@/types/game';
+import { DEFAULT_RULES, ELIGIBLE_CHAINS_5, ELIGIBLE_CHAINS_6 } from '@/types/game';
 
 describe('gameLogic', () => {
   describe('generateAllTiles', () => {
@@ -495,7 +496,7 @@ describe('gameLogic', () => {
       // Let me restructure this properly
     });
 
-    it('should be invalid when creating 8th chain', () => {
+    it('should be invalid when all chains are active and a tile would found a new one', () => {
       // Activate all 7 chains
       const chains: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
       chains.forEach((chain, i) => {
@@ -511,12 +512,12 @@ describe('gameLogic', () => {
         };
       });
 
-      // Place an unincorporated tile and try to form an 8th chain
+      // Place an unincorporated tile and try to form a new chain
       gameState.board.set('9A' as TileId, { id: '9A' as TileId, placed: true, chain: null });
 
       const result = analyzeTilePlacement(gameState, '9B' as TileId);
       expect(result.valid).toBe(false);
-      expect(result.reason).toContain('8th hotel chain');
+      expect(result.reason).toContain('Cannot create a new hotel chain');
     });
   });
 
@@ -627,6 +628,38 @@ describe('gameLogic', () => {
 
       expect(newState.phase).toBe('buy_stock');
     });
+
+    it('should set isSafe = true when chain size meets safeChainSize', () => {
+      // foundChain collects lastTile + directly adjacent unincorporated tiles.
+      // Place the last tile at 5E with all 4 neighbours unincorporated → 5-tile chain.
+      // Set safeChainSize = 5 so the newly founded chain is immediately safe.
+      gameState.board.set('4E' as TileId, { id: '4E' as TileId, placed: true, chain: null });
+      gameState.board.set('6E' as TileId, { id: '6E' as TileId, placed: true, chain: null });
+      gameState.board.set('5D' as TileId, { id: '5D' as TileId, placed: true, chain: null });
+      gameState.board.set('5E' as TileId, { id: '5E' as TileId, placed: true, chain: null });
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5E' as TileId;
+      gameState.safeChainSize = 5;
+
+      const newState = foundChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(5);
+      expect(newState.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should set isSafe = false when safeChainSize = null, even for a large chain', () => {
+      // Same 5-tile setup but safeChainSize = null → isSafe must remain false.
+      gameState.board.set('4E' as TileId, { id: '4E' as TileId, placed: true, chain: null });
+      gameState.board.set('6E' as TileId, { id: '6E' as TileId, placed: true, chain: null });
+      gameState.board.set('5D' as TileId, { id: '5D' as TileId, placed: true, chain: null });
+      gameState.board.set('5E' as TileId, { id: '5E' as TileId, placed: true, chain: null });
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5E' as TileId;
+      gameState.safeChainSize = null;
+
+      const newState = foundChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(5);
+      expect(newState.chains.sackson.isSafe).toBe(false);
+    });
   });
 
   describe('growChain', () => {
@@ -693,6 +726,56 @@ describe('gameLogic', () => {
 
       expect(newState.chains.sackson.tiles).toHaveLength(11);
       expect(newState.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should mark chain safe at custom threshold (safeChainSize = 9)', () => {
+      // Chain already has 2 tiles; add 6 more to reach 8
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      // Set custom threshold
+      gameState.safeChainSize = 9;
+
+      // Chain has 8 tiles — not safe yet
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const stateAt9 = growChain(gameState, 'sackson');
+      expect(stateAt9.chains.sackson.tiles).toHaveLength(9);
+      expect(stateAt9.chains.sackson.isSafe).toBe(true);
+    });
+
+    it('should not be safe at 9 tiles when safeChainSize = 11', () => {
+      // Chain has 2 tiles; add 6 more → 8 total
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      gameState.safeChainSize = 11;
+
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const stateAt9 = growChain(gameState, 'sackson');
+      expect(stateAt9.chains.sackson.tiles).toHaveLength(9);
+      expect(stateAt9.chains.sackson.isSafe).toBe(false);
+    });
+
+    it('should never be safe when safeChainSize = null', () => {
+      // Build a chain of 10 tiles then grow to 11
+      const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C', '4D', '4E'].map(t => t as TileId);
+      additionalTiles.forEach(id => {
+        gameState.board.set(id, { id, placed: true, chain: 'sackson' });
+      });
+      gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
+      gameState.safeChainSize = null;
+
+      gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      gameState.lastPlacedTile = '5F' as TileId;
+      const newState = growChain(gameState, 'sackson');
+      expect(newState.chains.sackson.tiles).toHaveLength(11);
+      expect(newState.chains.sackson.isSafe).toBe(false);
     });
   });
 
@@ -878,6 +961,24 @@ describe('gameLogic', () => {
       const newState = endTurn(gameState);
 
       expect(newState.players[0].tiles).toHaveLength(initialTileCount + 1);
+    });
+
+    it('should increment roundNumber when the last player ends their turn', () => {
+      gameState.currentPlayerIndex = 3;
+      gameState.roundNumber = 0;
+
+      const newState = endTurn(gameState);
+
+      expect(newState.roundNumber).toBe(1);
+    });
+
+    it('should not increment roundNumber when a non-last player ends their turn', () => {
+      gameState.currentPlayerIndex = 1;
+      gameState.roundNumber = 2;
+
+      const newState = endTurn(gameState);
+
+      expect(newState.roundNumber).toBe(2);
     });
   });
 
@@ -1086,6 +1187,402 @@ describe('gameLogic', () => {
       gameState.players[0].tiles = ['9B' as TileId];
 
       expect(hasPlayableTiles(gameState, 0)).toBe(false);
+    });
+  });
+
+  describe('DEFAULT_RULES', () => {
+    it('should contain all required CustomRules fields with correct default values', () => {
+      expect(DEFAULT_RULES.startWithTileOnBoard).toBe(true);
+      expect(DEFAULT_RULES.turnTimerEnabled).toBe(false);
+      expect(DEFAULT_RULES.turnTimer).toBe('60');
+      expect(DEFAULT_RULES.disableTimerFirstRounds).toBe(true);
+      expect(DEFAULT_RULES.chainSafetyEnabled).toBe(false);
+      expect(DEFAULT_RULES.chainSafetyThreshold).toBe('none');
+      expect(DEFAULT_RULES.cashVisibilityEnabled).toBe(false);
+      expect(DEFAULT_RULES.cashVisibility).toBe('hidden');
+      expect(DEFAULT_RULES.bonusTierEnabled).toBe(false);
+      expect(DEFAULT_RULES.bonusTier).toBe('standard');
+      expect(DEFAULT_RULES.boardSizeEnabled).toBe(false);
+      expect(DEFAULT_RULES.boardSize).toBe('9x12');
+      expect(DEFAULT_RULES.chainFoundingEnabled).toBe(false);
+      expect(DEFAULT_RULES.maxChains).toBe('7');
+      expect(DEFAULT_RULES.startingConditionsEnabled).toBe(false);
+      expect(DEFAULT_RULES.startingCash).toBe('6000');
+      expect(DEFAULT_RULES.startingTiles).toBe('6');
+    });
+
+    it('should not contain a founderFreeStock field', () => {
+      expect('founderFreeStock' in DEFAULT_RULES).toBe(false);
+    });
+  });
+
+  // ── Story 6: Bonus Payment Tiers ─────────────────────────────────────────
+
+  describe('getBonuses — bonus tiers', () => {
+    it('should return majority=10x and minority=5x for standard tier', () => {
+      const bonuses = getBonuses('sackson', 5, 'standard');
+      const price = getStockPrice('sackson', 5);
+      expect(bonuses.majority).toBe(price * 10);
+      expect(bonuses.minority).toBe(price * 5);
+    });
+
+    it('should return majority=15x and minority=5x for aggressive tier', () => {
+      const bonuses = getBonuses('sackson', 5, 'aggressive');
+      const price = getStockPrice('sackson', 5);
+      expect(bonuses.majority).toBe(price * 15);
+      expect(bonuses.minority).toBe(price * 5);
+    });
+
+    it('should return same pool as standard for flat tier', () => {
+      const flat = getBonuses('sackson', 5, 'flat');
+      const standard = getBonuses('sackson', 5, 'standard');
+      expect(flat.majority).toBe(standard.majority);
+      expect(flat.minority).toBe(standard.minority);
+    });
+  });
+
+  describe('calculateFinalScores — bonus tiers', () => {
+    const createScoreState = (bonusTier: 'standard' | 'flat' | 'aggressive'): GameState => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      state.bonusTier = bonusTier;
+      state.chains.sackson = {
+        name: 'sackson',
+        tiles: Array(5).fill(null).map((_, i) => `${i + 1}A` as TileId),
+        isActive: true,
+        isSafe: false,
+      };
+      return state;
+    };
+
+    it('standard tier pays correct majority and minority bonuses', () => {
+      const state = createScoreState('standard');
+      state.players[0].stocks.sackson = 10; // majority
+      state.players[1].stocks.sackson = 5;  // minority
+
+      const results = calculateFinalScores(state);
+      const p0 = results.find(p => p.id === 'player-0')!;
+      const p1 = results.find(p => p.id === 'player-1')!;
+      // p0 should have more cash due to larger bonus
+      expect(p0.cash).toBeGreaterThan(p1.cash);
+    });
+
+    it('aggressive tier pays 15x majority bonus', () => {
+      const stdState = createScoreState('standard');
+      const aggState = createScoreState('aggressive');
+      stdState.players[0].stocks.sackson = 10;
+      aggState.players[0].stocks.sackson = 10;
+
+      const stdResults = calculateFinalScores(stdState);
+      const aggResults = calculateFinalScores(aggState);
+      const stdP0 = stdResults.find(p => p.id === 'player-0')!;
+      const aggP0 = aggResults.find(p => p.id === 'player-0')!;
+      // Aggressive majority holder gets more
+      expect(aggP0.cash).toBeGreaterThan(stdP0.cash);
+    });
+
+    it('flat tier distributes (majority + minority pool) equally among all stockholders', () => {
+      const state = createScoreState('flat');
+      // 3 stockholders with different amounts
+      state.players[0].stocks.sackson = 10;
+      state.players[1].stocks.sackson = 5;
+      state.players[2].stocks.sackson = 1;
+      const price = getStockPrice('sackson', 5);
+      const flatPool = price * 10 + price * 5; // majority + minority pool
+      const expectedPerPlayer = Math.floor(flatPool / 3);
+
+      const results = calculateFinalScores(state);
+      const p0 = results.find(p => p.id === 'player-0')!;
+      const p1 = results.find(p => p.id === 'player-1')!;
+      const p2 = results.find(p => p.id === 'player-2')!;
+      const stockPrice = getStockPrice('sackson', 5);
+      // Each player's cash = starting cash + flat bonus + (shares * stock price)
+      expect(p0.cash).toBe(6000 + expectedPerPlayer + 10 * stockPrice);
+      expect(p1.cash).toBe(6000 + expectedPerPlayer + 5 * stockPrice);
+      expect(p2.cash).toBe(6000 + expectedPerPlayer + 1 * stockPrice);
+    });
+
+    it('with one stockholder, all three tiers pay the full combined bonus', () => {
+      const tiers: Array<'standard' | 'flat' | 'aggressive'> = ['standard', 'flat', 'aggressive'];
+      const payouts: number[] = [];
+
+      for (const tier of tiers) {
+        const state = createScoreState(tier);
+        state.players[0].stocks.sackson = 10;
+        const results = calculateFinalScores(state);
+        const p0 = results.find(p => p.id === 'player-0')!;
+        const price = getStockPrice('sackson', 5);
+        const stockSaleValue = 10 * price;
+        payouts.push(p0.cash - 6000 - stockSaleValue); // just the bonus
+      }
+
+      const price = getStockPrice('sackson', 5);
+      // standard: 10x + 5x = 15x
+      expect(payouts[0]).toBe(price * 15);
+      // flat: same pool = 15x (only 1 holder)
+      expect(payouts[1]).toBe(price * 15);
+      // aggressive: 15x + 5x = 20x
+      expect(payouts[2]).toBe(price * 20);
+    });
+
+    it('calculateFinalScores with standard tier matches existing behaviour', () => {
+      const state = createScoreState('standard');
+      state.players[0].stocks.sackson = 10;
+      state.players[1].stocks.sackson = 5;
+
+      const results = calculateFinalScores(state);
+      for (let i = 0; i < results.length - 1; i++) {
+        expect(results[i].cash).toBeGreaterThanOrEqual(results[i + 1].cash);
+      }
+    });
+  });
+
+  // ── Story 7: Board Size ──────────────────────────────────────────────────
+
+  describe('generateAllTiles — board dimensions', () => {
+    it('should generate exactly 108 unique tiles for 9x12 (default)', () => {
+      const tiles = generateAllTiles(9, 12);
+      expect(tiles).toHaveLength(108);
+      expect(new Set(tiles).size).toBe(108);
+    });
+
+    it('should generate exactly 60 unique tiles for 6x10', () => {
+      const tiles = generateAllTiles(6, 10);
+      expect(tiles).toHaveLength(60);
+      expect(new Set(tiles).size).toBe(60);
+    });
+
+    it('generateAllTiles(6, 10) contains no tile with row > 6 or column after J', () => {
+      const tiles = generateAllTiles(6, 10);
+      const allCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+      tiles.forEach(tile => {
+        const { row, col } = parseTileId(tile as TileId);
+        expect(row).toBeLessThanOrEqual(6);
+        expect(allCols.indexOf(col)).toBeLessThanOrEqual(9); // J is at index 9
+      });
+    });
+  });
+
+  describe('getAdjacentTiles — board dimensions', () => {
+    it('getAdjacentTiles("1A", 6, 10) returns only ["2A", "1B"]', () => {
+      const adj = getAdjacentTiles('1A' as TileId, 6, 10);
+      expect(adj).toHaveLength(2);
+      expect(adj).toContain('2A');
+      expect(adj).toContain('1B');
+    });
+
+    it('getAdjacentTiles("6J", 6, 10) returns only ["5J", "6I"]', () => {
+      const adj = getAdjacentTiles('6J' as TileId, 6, 10);
+      expect(adj).toHaveLength(2);
+      expect(adj).toContain('5J');
+      expect(adj).toContain('6I');
+    });
+
+    it('getAdjacentTiles with default params still produces 9x12 boundaries', () => {
+      // Corner 9L should only have 8L and 9K
+      const adj = getAdjacentTiles('9L' as TileId);
+      expect(adj).toHaveLength(2);
+      expect(adj).toContain('8L');
+      expect(adj).toContain('9K');
+    });
+  });
+
+  describe('initializeGame — board size', () => {
+    it('with boardSize = "6x10" produces a board of 60 tiles', () => {
+      const rules = { ...DEFAULT_RULES, boardSizeEnabled: true, boardSize: '6x10' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      expect(state.board.size).toBe(60);
+    });
+
+    it('with boardSize = "6x10" sets boardRows=6 and boardCols of length 10', () => {
+      const rules = { ...DEFAULT_RULES, boardSizeEnabled: true, boardSize: '6x10' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      expect(state.boardRows).toBe(6);
+      expect(state.boardCols).toHaveLength(10);
+      expect(state.boardCols[9]).toBe('J');
+    });
+
+    it('with no rules argument (regression) produces 9x12 board with 83 tiles in bag', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      expect(state.boardRows).toBe(9);
+      expect(state.boardCols).toHaveLength(12);
+      expect(state.board.size).toBe(108);
+      // 108 - 1 starting tile - 4 * 6 player tiles = 83
+      expect(state.tileBag).toHaveLength(83);
+    });
+  });
+
+  // ── Story 8: Chain Founding Rules ────────────────────────────────────────
+
+  describe('getAvailableChainsForFoundation — eligible chains', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.board.forEach((tile, id) => {
+        gameState.board.set(id, { ...tile, placed: false, chain: null });
+      });
+    });
+
+    it('returns all 7 chains when no eligibleChains restriction set', () => {
+      const available = getAvailableChainsForFoundation(gameState);
+      expect(available).toHaveLength(7);
+    });
+
+    it('with ELIGIBLE_CHAINS_5 never returns festival or imperial', () => {
+      gameState.eligibleChains = ELIGIBLE_CHAINS_5;
+      const available = getAvailableChainsForFoundation(gameState);
+      expect(available).not.toContain('festival');
+      expect(available).not.toContain('imperial');
+      expect(available).toHaveLength(5);
+    });
+
+    it('with ELIGIBLE_CHAINS_6 never returns festival', () => {
+      gameState.eligibleChains = ELIGIBLE_CHAINS_6;
+      const available = getAvailableChainsForFoundation(gameState);
+      expect(available).not.toContain('festival');
+      expect(available).toHaveLength(6);
+    });
+
+    it('returns 0 options when all 5 eligible chains (maxChains=5) are active', () => {
+      gameState.eligibleChains = ELIGIBLE_CHAINS_5;
+      for (const chain of ELIGIBLE_CHAINS_5) {
+        gameState.chains[chain].isActive = true;
+      }
+      const available = getAvailableChainsForFoundation(gameState);
+      expect(available).toHaveLength(0);
+    });
+  });
+
+  describe('analyzeTilePlacement — eligible chains', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.board.forEach((tile, id) => {
+        gameState.board.set(id, { ...tile, placed: false, chain: null });
+      });
+    });
+
+    it('marks tile as unplayable when it would found a chain but all eligible chains are active', () => {
+      gameState.eligibleChains = ELIGIBLE_CHAINS_5;
+      // Activate all 5 eligible chains
+      for (const chain of ELIGIBLE_CHAINS_5) {
+        const t1 = `1${chain === 'sackson' ? 'A' : chain === 'tower' ? 'C' : chain === 'worldwide' ? 'E' : chain === 'american' ? 'G' : 'I'}` as TileId;
+        const t2 = `2${chain === 'sackson' ? 'A' : chain === 'tower' ? 'C' : chain === 'worldwide' ? 'E' : chain === 'american' ? 'G' : 'I'}` as TileId;
+        gameState.board.set(t1, { id: t1, placed: true, chain });
+        gameState.board.set(t2, { id: t2, placed: true, chain });
+        gameState.chains[chain] = { name: chain, tiles: [t1, t2], isActive: true, isSafe: false };
+      }
+
+      // Place an unincorporated tile and try to found a new chain
+      gameState.board.set('9A' as TileId, { id: '9A' as TileId, placed: true, chain: null });
+      const result = analyzeTilePlacement(gameState, '9B' as TileId);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('Cannot create a new hotel chain');
+    });
+  });
+
+  describe('foundChain — always grants 1 free stock (regression)', () => {
+    it('gives founder exactly 1 free stock unconditionally', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      state.board.forEach((tile, id) => {
+        state.board.set(id, { ...tile, placed: false, chain: null });
+      });
+      state.board.set('5E' as TileId, { id: '5E' as TileId, placed: true, chain: null });
+      state.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
+      state.lastPlacedTile = '5F' as TileId;
+
+      const newState = foundChain(state, 'sackson');
+      expect(newState.players[0].stocks.sackson).toBe(1);
+      expect(newState.stockBank.sackson).toBe(24);
+    });
+  });
+
+  describe('initializeGame — chain founding rules', () => {
+    it('with chainFoundingEnabled and maxChains="5" sets eligibleChains to 5 chains', () => {
+      const rules = { ...DEFAULT_RULES, chainFoundingEnabled: true, maxChains: '5' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      expect(state.maxChains).toBe(5);
+      expect(state.eligibleChains).toHaveLength(5);
+      expect(state.eligibleChains).not.toContain('festival');
+      expect(state.eligibleChains).not.toContain('imperial');
+    });
+
+    it('with chainFoundingEnabled and maxChains="6" excludes festival', () => {
+      const rules = { ...DEFAULT_RULES, chainFoundingEnabled: true, maxChains: '6' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      expect(state.maxChains).toBe(6);
+      expect(state.eligibleChains).toHaveLength(6);
+      expect(state.eligibleChains).not.toContain('festival');
+    });
+
+    it('with no chainFoundingEnabled defaults to all 7 eligible chains', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      expect(state.maxChains).toBe(7);
+      expect(state.eligibleChains).toHaveLength(7);
+    });
+  });
+
+  describe('initializeGame — bonus tier', () => {
+    it('with bonusTierEnabled and bonusTier="aggressive" sets bonusTier on state', () => {
+      const rules = { ...DEFAULT_RULES, bonusTierEnabled: true, bonusTier: 'aggressive' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      expect(state.bonusTier).toBe('aggressive');
+    });
+
+    it('with bonusTierEnabled=false defaults to standard', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      expect(state.bonusTier).toBe('standard');
+    });
+  });
+
+  describe('initializeGame — starting conditions', () => {
+    it('with startingCash="4000" gives each player $4,000', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '4000' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.cash).toBe(4000));
+    });
+
+    it('with startingCash="8000" gives each player $8,000', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '8000' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.cash).toBe(8000));
+    });
+
+    it('with startingTiles="5" gives each player exactly 5 tiles', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '5' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.tiles).toHaveLength(5));
+    });
+
+    it('with startingTiles="7" gives each player exactly 7 tiles', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '7' };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      state.players.forEach(p => expect(p.tiles).toHaveLength(7));
+    });
+
+    it('with startWithTileOnBoard=false results in zero tiles with placed: true', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: false };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(0);
+    });
+
+    it('with startWithTileOnBoard=true results in exactly 1 tile with placed: true', () => {
+      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: true };
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(1);
+    });
+
+    it('with no rules argument behaves identically to default (regression)', () => {
+      const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      state.players.forEach(p => {
+        expect(p.cash).toBe(6000);
+        expect(p.tiles).toHaveLength(6);
+      });
+      const placedTiles = [...state.board.values()].filter(t => t.placed);
+      expect(placedTiles).toHaveLength(1);
     });
   });
 });

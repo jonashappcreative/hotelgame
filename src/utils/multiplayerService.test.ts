@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { TileId, TileState, ChainName, ChainState } from '@/types/game';
+import { DEFAULT_RULES } from '@/types/game';
+import type { CustomRules } from '@/types/game';
 
 // Use vi.hoisted to create mock functions that are available during mock hoisting
 const { mockGetUser, mockSignInAnonymously, mockFrom, mockFunctionsInvoke, mockChannel, mockRemoveChannel } = vi.hoisted(() => ({
@@ -33,6 +35,7 @@ import {
   getCurrentUserId,
   getSessionId,
   createRoom,
+  fetchRoomRules,
   joinRoom,
   leaveRoom,
   getRoomPlayers,
@@ -217,6 +220,111 @@ describe('multiplayerService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('should insert custom_rules when explicit CustomRules provided', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } } });
+
+      const customRules: CustomRules = {
+        ...DEFAULT_RULES,
+        turnTimerEnabled: true,
+        turnTimer: '30',
+      };
+
+      let capturedPayload: any;
+      const mockInsert = vi.fn().mockImplementation((payload: any) => {
+        capturedPayload = payload;
+        return {
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { id: 'room-id', room_code: 'XYZ789', max_players: 4 },
+              error: null,
+            }),
+          }),
+        };
+      });
+      mockFrom.mockReturnValue({ insert: mockInsert });
+
+      await createRoom(4, customRules);
+
+      expect(capturedPayload.custom_rules).toEqual(customRules);
+    });
+
+    it('should insert DEFAULT_RULES as custom_rules when called with DEFAULT_RULES', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'user-id' } } });
+
+      let capturedPayload: any;
+      const mockInsert = vi.fn().mockImplementation((payload: any) => {
+        capturedPayload = payload;
+        return {
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { id: 'room-id', room_code: 'DEF456', max_players: 2 },
+              error: null,
+            }),
+          }),
+        };
+      });
+      mockFrom.mockReturnValue({ insert: mockInsert });
+
+      await createRoom(2, DEFAULT_RULES);
+
+      expect(capturedPayload.custom_rules).toEqual(DEFAULT_RULES);
+    });
+  });
+
+  describe('fetchRoomRules', () => {
+    it('should return stored rules when custom_rules exists', async () => {
+      const storedRules: CustomRules = { ...DEFAULT_RULES, turnTimerEnabled: true };
+
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { custom_rules: storedRules },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('room-id-123');
+
+      expect(result).toEqual(storedRules);
+    });
+
+    it('should return DEFAULT_RULES when custom_rules is NULL', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { custom_rules: null },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('room-id-456');
+
+      expect(result).toEqual(DEFAULT_RULES);
+    });
+
+    it('should return DEFAULT_RULES when the database query fails', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'Not found' },
+            }),
+          }),
+        }),
+      });
+
+      const result = await fetchRoomRules('nonexistent-room');
+
+      expect(result).toEqual(DEFAULT_RULES);
+    });
   });
 
   describe('joinRoom', () => {
@@ -259,12 +367,26 @@ describe('multiplayerService', () => {
             }),
           };
         }
+        if (table === 'game_players') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
         return {};
       });
 
       const result = await joinRoom('ABC123', 'Player 1');
 
-      expect(result).toEqual({ success: false, error: 'Game already started' });
+      expect(result).toEqual({ success: false, error: 'Game already in progress. You can only rejoin with the same account you used to join.' });
     });
 
     it('should return existing player data if already joined', async () => {
@@ -274,7 +396,7 @@ describe('multiplayerService', () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: 'room-id', status: 'waiting', max_players: 4 },
+                  data: { id: 'room-id', room_code: 'ABC123', status: 'waiting', max_players: 4 },
                   error: null,
                 }),
               }),
@@ -287,11 +409,14 @@ describe('multiplayerService', () => {
               eq: vi.fn().mockReturnValue({
                 eq: vi.fn().mockReturnValue({
                   maybeSingle: vi.fn().mockResolvedValue({
-                    data: { player_index: 1 },
+                    data: { id: 'player-id', player_name: 'Player 1', player_index: 1 },
                     error: null,
                   }),
                 }),
               }),
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ error: null }),
             }),
           };
         }
@@ -305,6 +430,7 @@ describe('multiplayerService', () => {
         roomId: 'room-id',
         playerIndex: 1,
         maxPlayers: 4,
+        isRejoin: false,
       });
     });
 
@@ -764,8 +890,8 @@ describe('multiplayerService', () => {
           eq: vi.fn().mockReturnValue({
             order: vi.fn().mockResolvedValue({
               data: [
-                { id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true },
-                { id: 'p2', player_name: 'Bob', player_index: 1, is_ready: false },
+                { id: 'p1', player_name: 'Alice', player_index: 0, is_connected: true },
+                { id: 'p2', player_name: 'Bob', player_index: 1, is_connected: false },
               ],
               error: null,
             }),

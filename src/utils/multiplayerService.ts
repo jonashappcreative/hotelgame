@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { GameState, ChainName, TileId, TileState, PlayerState, ChainState } from '@/types/game';
+import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES } from '@/types/game';
 import type { Json } from '@/integrations/supabase/types';
 
 // Get or create an authenticated session (anonymous or existing user)
@@ -37,8 +37,53 @@ export const getSessionId = (): string => {
   return sessionId;
 };
 
+// localStorage keys for game persistence
+const ACTIVE_GAME_KEY = 'acquire_active_game';
+
+interface StoredGameInfo {
+  roomId: string;
+  roomCode: string;
+  playerName: string;
+  playerIndex: number;
+  timestamp: number;
+}
+
+// Save active game info to localStorage
+export const saveActiveGameToStorage = (info: Omit<StoredGameInfo, 'timestamp'>): void => {
+  const data: StoredGameInfo = {
+    ...info,
+    timestamp: Date.now(),
+  };
+  localStorage.setItem(ACTIVE_GAME_KEY, JSON.stringify(data));
+};
+
+// Get active game info from localStorage
+export const getActiveGameFromStorage = (): StoredGameInfo | null => {
+  const stored = localStorage.getItem(ACTIVE_GAME_KEY);
+  if (!stored) return null;
+
+  try {
+    const data = JSON.parse(stored) as StoredGameInfo;
+    // Expire after 48 hours (games older than that are likely finished)
+    const maxAge = 48 * 60 * 60 * 1000;
+    if (Date.now() - data.timestamp > maxAge) {
+      localStorage.removeItem(ACTIVE_GAME_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    localStorage.removeItem(ACTIVE_GAME_KEY);
+    return null;
+  }
+};
+
+// Clear active game from localStorage
+export const clearActiveGameFromStorage = (): void => {
+  localStorage.removeItem(ACTIVE_GAME_KEY);
+};
+
 // Create a new game room
-export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
+export const createRoom = async (maxPlayers: number = 4, customRules: CustomRules = DEFAULT_RULES): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
   // Ensure we're authenticated
   const userId = await getOrCreateAuthSession();
   if (!userId) {
@@ -47,10 +92,10 @@ export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: st
   }
 
   const roomCode = generateRoomCode();
-  
+
   const { data, error } = await supabase
     .from('game_rooms')
-    .insert({ room_code: roomCode, max_players: maxPlayers })
+    .insert({ room_code: roomCode, max_players: maxPlayers, custom_rules: customRules as unknown as Json })
     .select()
     .single();
 
@@ -62,11 +107,109 @@ export const createRoom = async (maxPlayers: number = 4): Promise<{ roomCode: st
   return { roomCode: data.room_code, roomId: data.id, maxPlayers: data.max_players };
 };
 
-// Join an existing room
+// Fetch the custom rules for a room (returns DEFAULT_RULES if none are set)
+export const fetchRoomRules = async (roomId: string): Promise<CustomRules> => {
+  const { data, error } = await supabase
+    .from('game_rooms')
+    .select('custom_rules')
+    .eq('id', roomId)
+    .single();
+
+  if (error || !data) {
+    return DEFAULT_RULES;
+  }
+
+  return (data.custom_rules as unknown as CustomRules) ?? DEFAULT_RULES;
+};
+
+// Check for active games the current user is participating in
+export const checkActiveGame = async (): Promise<{
+  hasActiveGame: boolean;
+  roomCode?: string;
+  roomId?: string;
+  playerIndex?: number;
+  playerName?: string;
+  roomStatus?: string;
+  source?: 'auth' | 'localStorage';
+} | null> => {
+  // First, try to find by authenticated user ID
+  const userId = await getCurrentUserId();
+  if (userId) {
+    const { data: playerRecord, error } = await supabase
+      .from('game_players')
+      .select(`
+        player_index,
+        player_name,
+        room_id,
+        game_rooms!inner (
+          id,
+          room_code,
+          status
+        )
+      `)
+      .eq('user_id', userId)
+      .in('game_rooms.status', ['waiting', 'playing'])
+      .maybeSingle();
+
+    if (!error && playerRecord) {
+      const room = playerRecord.game_rooms as any;
+      return {
+        hasActiveGame: true,
+        roomCode: room.room_code,
+        roomId: room.id,
+        playerIndex: playerRecord.player_index,
+        playerName: playerRecord.player_name,
+        roomStatus: room.status,
+        source: 'auth',
+      };
+    }
+  }
+
+  // Fallback: Check localStorage for stored game info
+  const storedGame = getActiveGameFromStorage();
+  if (storedGame) {
+    // Verify the room still exists and is active
+    const { data: room, error: roomError } = await supabase
+      .from('game_rooms')
+      .select('id, room_code, status')
+      .eq('id', storedGame.roomId)
+      .in('status', ['waiting', 'playing'])
+      .maybeSingle();
+
+    if (!roomError && room) {
+      // Verify player still exists in the room with matching name
+      const { data: player } = await supabase
+        .from('game_players_public')
+        .select('player_index, player_name')
+        .eq('room_id', room.id)
+        .eq('player_name', storedGame.playerName)
+        .maybeSingle();
+
+      if (player) {
+        return {
+          hasActiveGame: true,
+          roomCode: room.room_code,
+          roomId: room.id,
+          playerIndex: player.player_index,
+          playerName: player.player_name,
+          roomStatus: room.status,
+          source: 'localStorage',
+        };
+      }
+    }
+
+    // Room no longer exists or player not found - clear stale data
+    clearActiveGameFromStorage();
+  }
+
+  return null;
+};
+
+// Join an existing room (or rejoin if already a player)
 export const joinRoom = async (
-  roomCode: string, 
+  roomCode: string,
   playerName: string
-): Promise<{ success: boolean; roomId?: string; playerIndex?: number; maxPlayers?: number; error?: string }> => {
+): Promise<{ success: boolean; roomId?: string; playerIndex?: number; maxPlayers?: number; error?: string; isRejoin?: boolean }> => {
   // Ensure we're authenticated
   const userId = await getOrCreateAuthSession();
   if (!userId) {
@@ -74,7 +217,7 @@ export const joinRoom = async (
   }
 
   const sessionId = getSessionId(); // Keep for backward compatibility
-  
+
   // Find the room
   const { data: room, error: roomError } = await supabase
     .from('game_rooms')
@@ -84,10 +227,6 @@ export const joinRoom = async (
 
   if (roomError || !room) {
     return { success: false, error: 'Room not found' };
-  }
-
-  if (room.status !== 'waiting') {
-    return { success: false, error: 'Game already started' };
   }
 
   const maxPlayers = room.max_players || 4;
@@ -100,8 +239,39 @@ export const joinRoom = async (
     .eq('user_id', userId)
     .maybeSingle();
 
+  // If user is already in the game, allow rejoin regardless of room status
   if (myPlayer) {
-    return { success: true, roomId: room.id, playerIndex: myPlayer.player_index, maxPlayers };
+    // Mark as reconnected
+    await supabase
+      .from('game_players')
+      .update({
+        is_connected: true,
+        last_seen_at: new Date().toISOString(),
+        disconnected_at: null
+      })
+      .eq('id', myPlayer.id);
+
+    // Save to localStorage for future recovery
+    saveActiveGameToStorage({
+      roomId: room.id,
+      roomCode: room.room_code,
+      playerName: myPlayer.player_name,
+      playerIndex: myPlayer.player_index,
+    });
+
+    return {
+      success: true,
+      roomId: room.id,
+      playerIndex: myPlayer.player_index,
+      maxPlayers,
+      isRejoin: room.status === 'playing'
+    };
+  }
+
+  // If game has started, only allow rejoin by matching user_id (already handled above).
+  // Name-based rejoin is removed for security — it allowed account takeover by guessing names.
+  if (room.status !== 'waiting') {
+    return { success: false, error: 'Game already in progress. You can only rejoin with the same account you used to join.' };
   }
 
   // Try to join with retry logic for race conditions
@@ -147,6 +317,14 @@ export const joinRoom = async (
       .maybeSingle();
 
     if (!insertError && insertedPlayer) {
+      // Save to localStorage for future recovery
+      saveActiveGameToStorage({
+        roomId: room.id,
+        roomCode: room.room_code,
+        playerName: playerName,
+        playerIndex: insertedPlayer.player_index,
+      });
+
       return { success: true, roomId: room.id, playerIndex: insertedPlayer.player_index, maxPlayers };
     }
 
@@ -188,12 +366,15 @@ export const joinRoom = async (
 export const leaveRoom = async (roomId: string): Promise<void> => {
   const userId = await getCurrentUserId();
   if (!userId) return;
-  
+
   await supabase
     .from('game_players')
     .delete()
     .eq('room_id', roomId)
     .eq('user_id', userId);
+
+  // Clear localStorage
+  clearActiveGameFromStorage();
 };
 
 // Get room players (public info only - excludes tiles for security)
@@ -347,11 +528,20 @@ export const dbToGameState = (
     lastPlacedTile: dbState.last_placed_tile || null,
     pendingChainFoundation: dbState.pending_chain_foundation || null,
     merger: dbState.merger || null,
-    mergerAdjacentChains: null,
+    mergerAdjacentChains: dbState.merger_adjacent_chains || null,
     stocksPurchasedThisTurn: dbState.stocks_purchased_this_turn,
     gameLog: dbState.game_log || [],
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
+    roundNumber: dbState.round_number ?? 0,
+    rulesSnapshot: (dbState.rules_snapshot as import('@/types/game').CustomRules) ?? null,
+    turnDeadlineEpoch: dbState.turn_deadline_epoch ?? null,
+    safeChainSize: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      if (!rs || !rs.chainSafetyEnabled) return 11;
+      if (rs.chainSafetyThreshold === 'none') return null;
+      return parseInt(rs.chainSafetyThreshold);
+    })(),
   };
 };
 
@@ -416,6 +606,39 @@ export const subscribeToRoom = (
   return () => {
     supabase.removeChannel(channel);
   };
+};
+
+// Send heartbeat to indicate player is still connected
+export const sendHeartbeat = async (roomId: string): Promise<boolean> => {
+  const userId = await getCurrentUserId();
+  if (!userId) return false;
+
+  const { error } = await supabase
+    .from('game_players')
+    .update({
+      is_connected: true,
+      last_seen_at: new Date().toISOString(),
+      disconnected_at: null
+    })
+    .eq('room_id', roomId)
+    .eq('user_id', userId);
+
+  return !error;
+};
+
+// Mark player as disconnected
+export const markDisconnected = async (roomId: string): Promise<void> => {
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
+  await supabase
+    .from('game_players')
+    .update({
+      is_connected: false,
+      disconnected_at: new Date().toISOString()
+    })
+    .eq('room_id', roomId)
+    .eq('user_id', userId);
 };
 
 // Helper function

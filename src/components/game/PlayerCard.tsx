@@ -11,11 +11,24 @@ interface PlayerCardProps {
   isCurrentTurn: boolean;
   isYou?: boolean;
   rank?: number;
+  cashVisibility?: 'hidden' | 'visible' | 'aggregate';
+  myPlayerIndex?: number;
 }
 
-export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: PlayerCardProps) => {
+export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cashVisibility = 'visible', myPlayerIndex }: PlayerCardProps) => {
   const [isExpanded, setIsExpanded] = useState(isCurrentTurn);
   const netWorth = getPlayerNetWorth(player, gameState.chains);
+  const totalCash = gameState.players.reduce((sum, p) => sum + p.cash, 0);
+
+  // Determine what cash/net-worth to display based on visibility mode
+  const showExact = isYou || cashVisibility === 'visible';
+  const cashLabel = showExact
+    ? `$${player.cash.toLocaleString()}`
+    : cashVisibility === 'aggregate'
+    ? `$${totalCash.toLocaleString()}`
+    : '—';
+  const netWorthLabel = showExact ? `$${netWorth.toLocaleString()}` : '—';
+  void myPlayerIndex; // prop reserved for future use
   
   const activeStocks = (Object.entries(player.stocks) as [ChainName, number][])
     .filter(([_, qty]) => qty > 0)
@@ -38,12 +51,15 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
   // Keep active player expanded
   const effectiveExpanded = isCurrentTurn || isExpanded;
 
+  const isDisconnected = player.isConnected === false;
+
   return (
     <Collapsible open={effectiveExpanded} onOpenChange={setIsExpanded}>
       <div className={cn(
-        "player-card",
+        "player-card relative",
         isCurrentTurn && "player-card-active",
-        isYou && "ring-1 ring-primary/30"
+        isYou && "ring-1 ring-primary/30",
+        isDisconnected && "opacity-60 border-destructive/50"
       )}>
         {/* Header - Always visible */}
         <CollapsibleTrigger className="w-full" disabled={isCurrentTurn}>
@@ -58,14 +74,20 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
               <div className="text-left">
                 <p className={cn(
                   "font-semibold text-sm",
-                  isCurrentTurn && "text-primary"
+                  isCurrentTurn && "text-primary",
+                  isDisconnected && "text-muted-foreground"
                 )}>
                   {player.name}
                   {isYou && <span className="text-muted-foreground ml-1 text-xs">(You)</span>}
                 </p>
-                {isCurrentTurn && (
+                {isDisconnected ? (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <WifiOff className="w-3 h-3" />
+                    Disconnected
+                  </p>
+                ) : isCurrentTurn ? (
                   <p className="text-xs text-primary animate-pulse">Current Turn</p>
-                )}
+                ) : null}
               </div>
             </div>
             
@@ -74,10 +96,10 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank }: Pl
               <div className="text-right mr-2">
                 <div className="flex items-center gap-3 text-sm">
                   <span className="text-muted-foreground">
-                    ${player.cash.toLocaleString()}
+                    {cashLabel}
                   </span>
                   <span className="cash-display text-sm">
-                    ${netWorth.toLocaleString()}
+                    {netWorthLabel}
                   </span>
                 </div>
               </div>

@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  GameState, 
-  TileId, 
+import {
+  GameState,
+  TileId,
   ChainName,
   MergerStockDecision,
+  CustomRules,
+  DEFAULT_RULES,
 } from '@/types/game';
 import {
   initializeGame,
@@ -24,6 +26,10 @@ import {
   getOrCreateAuthSession,
   getCurrentUserId,
   toggleReady,
+  checkActiveGame,
+  sendHeartbeat,
+  markDisconnected,
+  clearActiveGameFromStorage,
 } from '@/utils/multiplayerService';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -44,6 +50,75 @@ export const useOnlineGame = () => {
   const [maxPlayers, setMaxPlayers] = useState<number>(4);
   const [roomStatus, setRoomStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingActiveGame, setIsCheckingActiveGame] = useState(true);
+  const [activeGameInfo, setActiveGameInfo] = useState<{
+    roomCode: string;
+    roomId: string;
+    playerName: string;
+    roomStatus: string;
+  } | null>(null);
+
+  // Check for active games on mount
+  useEffect(() => {
+    const checkForActiveGame = async () => {
+      try {
+        const result = await checkActiveGame();
+        if (result?.hasActiveGame && result.roomCode && result.roomId) {
+          setActiveGameInfo({
+            roomCode: result.roomCode,
+            roomId: result.roomId,
+            playerName: result.playerName || 'Player',
+            roomStatus: result.roomStatus || 'waiting',
+          });
+        }
+      } catch (error) {
+        console.error('[useOnlineGame] Error checking for active game:', error);
+      } finally {
+        setIsCheckingActiveGame(false);
+      }
+    };
+
+    checkForActiveGame();
+  }, []);
+
+  // Heartbeat mechanism - send every 15 seconds while in a room
+  useEffect(() => {
+    if (!roomId) return;
+
+    // Send initial heartbeat
+    sendHeartbeat(roomId);
+
+    const heartbeatInterval = setInterval(() => {
+      sendHeartbeat(roomId);
+    }, 15000); // Every 15 seconds
+
+    // Mark as disconnected when leaving the page
+    const handleBeforeUnload = () => {
+      markDisconnected(roomId);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Page is being hidden - could be closing or switching tabs
+        // We'll mark as potentially disconnected, but heartbeat will restore on return
+        markDisconnected(roomId);
+      } else if (document.visibilityState === 'visible') {
+        // Page is visible again - send heartbeat to mark as connected
+        sendHeartbeat(roomId);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Mark disconnected when unmounting (leaving the game page)
+      markDisconnected(roomId);
+    };
+  }, [roomId]);
 
   // Subscribe to room changes
   useEffect(() => {
@@ -85,6 +160,10 @@ export const useOnlineGame = () => {
       },
       (status) => {
         setRoomStatus(status as 'waiting' | 'playing' | 'finished');
+        // Clear localStorage when game finishes
+        if (status === 'finished') {
+          clearActiveGameFromStorage();
+        }
       }
     );
 
@@ -96,10 +175,10 @@ export const useOnlineGame = () => {
     return await getSecurePlayerData(rId);
   };
 
-  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4) => {
+  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4, rules: CustomRules = DEFAULT_RULES) => {
     setIsLoading(true);
     try {
-      const result = await createRoom(playerCount);
+      const result = await createRoom(playerCount, rules);
       if (!result) {
         toast({ title: 'Error', description: 'Failed to create room', variant: 'destructive' });
         return;
@@ -448,9 +527,9 @@ export const useOnlineGame = () => {
 
   const handleNewGame = useCallback(async () => {
     if (!roomId) return;
-    
+
     const result = await executeGameAction('new_game', roomId);
-    
+
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
       return;
@@ -459,6 +538,81 @@ export const useOnlineGame = () => {
     setGameState(null);
     setRoomStatus('waiting');
   }, [roomId]);
+
+  const handleAutoEndTurn = useCallback(async () => {
+    if (!gameState || !roomId) return;
+
+    if (gameState.currentPlayerIndex !== myPlayerIndex) return;
+
+    const result = await executeGameAction('auto_end_turn', roomId);
+
+    if (!result.success) {
+      console.warn('[useOnlineGame] auto_end_turn failed:', result.error);
+      return;
+    }
+
+    await refreshGameState();
+  }, [gameState, roomId, myPlayerIndex, refreshGameState]);
+
+  // Rejoin an active game
+  const handleRejoinGame = useCallback(async () => {
+    if (!activeGameInfo) return;
+
+    setIsLoading(true);
+    try {
+      const result = await joinRoom(activeGameInfo.roomCode, activeGameInfo.playerName);
+      if (!result.success) {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+        setActiveGameInfo(null);
+        return;
+      }
+
+      setRoomId(result.roomId!);
+      setRoomCode(activeGameInfo.roomCode);
+      setMaxPlayers(result.maxPlayers || 4);
+      setMyPlayerIndex(result.playerIndex!);
+
+      const currentPlayers = await getRoomPlayers(result.roomId!);
+      setPlayers(currentPlayers);
+
+      // Check room status and load game state if playing
+      const { data: room } = await supabase
+        .from('game_rooms')
+        .select('status, max_players')
+        .eq('id', result.roomId!)
+        .single();
+
+      if (room) {
+        setMaxPlayers(room.max_players || 4);
+        if (room.status === 'playing') {
+          setRoomStatus('playing');
+          const { data: dbState } = await supabase
+            .from('game_states_public')
+            .select('*')
+            .eq('room_id', result.roomId!)
+            .single();
+
+          if (dbState) {
+            const fullPlayers = await fetchFullPlayerData(result.roomId!);
+            const fullState = dbToGameState(dbState, fullPlayers, activeGameInfo.roomCode);
+            setGameState(fullState);
+          }
+        } else {
+          setRoomStatus(room.status as 'waiting' | 'playing' | 'finished');
+        }
+      }
+
+      setActiveGameInfo(null);
+      toast({ title: 'Rejoined Game', description: `Welcome back, ${activeGameInfo.playerName}!` });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeGameInfo]);
+
+  // Dismiss active game notification
+  const dismissActiveGame = useCallback(() => {
+    setActiveGameInfo(null);
+  }, []);
 
   return {
     // State
@@ -471,13 +625,21 @@ export const useOnlineGame = () => {
     roomStatus,
     isLoading,
     isMyTurn: gameState?.currentPlayerIndex === myPlayerIndex,
-    
+
+    // Reconnection state
+    isCheckingActiveGame,
+    activeGameInfo,
+
     // Lobby actions
     handleCreateRoom,
     handleJoinRoom,
     handleLeaveRoom,
     handleToggleReady,
-    
+
+    // Reconnection actions
+    handleRejoinGame,
+    dismissActiveGame,
+
     // Game actions
     handleTilePlacement,
     handleDiscardTile,
@@ -489,7 +651,8 @@ export const useOnlineGame = () => {
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
-    
+    handleAutoEndTurn,
+
     getAvailableChains: gameState ? () => getAvailableChainsForFoundation(gameState) : () => [],
   };
 };

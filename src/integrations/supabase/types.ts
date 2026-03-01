@@ -59,9 +59,11 @@ export type Database = {
         Row: {
           cash: number
           created_at: string
+          disconnected_at: string | null
           id: string
           is_connected: boolean
           is_ready: boolean
+          last_seen_at: string | null
           player_index: number
           player_name: string
           room_id: string
@@ -73,9 +75,11 @@ export type Database = {
         Insert: {
           cash?: number
           created_at?: string
+          disconnected_at?: string | null
           id?: string
           is_connected?: boolean
           is_ready?: boolean
+          last_seen_at?: string | null
           player_index: number
           player_name: string
           room_id: string
@@ -87,9 +91,11 @@ export type Database = {
         Update: {
           cash?: number
           created_at?: string
+          disconnected_at?: string | null
           id?: string
           is_connected?: boolean
           is_ready?: boolean
+          last_seen_at?: string | null
           player_index?: number
           player_name?: string
           room_id?: string
@@ -230,9 +236,11 @@ export type Database = {
         Row: {
           cash: number | null
           created_at: string | null
+          disconnected_at: string | null
           id: string | null
           is_connected: boolean | null
           is_ready: boolean | null
+          last_seen_at: string | null
           player_index: number | null
           player_name: string | null
           room_id: string | null
@@ -241,9 +249,11 @@ export type Database = {
         Insert: {
           cash?: number | null
           created_at?: string | null
+          disconnected_at?: string | null
           id?: string | null
           is_connected?: boolean | null
           is_ready?: boolean | null
+          last_seen_at?: string | null
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null
@@ -252,9 +262,11 @@ export type Database = {
         Update: {
           cash?: number | null
           created_at?: string | null
+          disconnected_at?: string | null
           id?: string | null
           is_connected?: boolean | null
           is_ready?: boolean | null
+          last_seen_at?: string | null
           player_index?: number | null
           player_name?: string | null
           room_id?: string | null

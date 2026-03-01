@@ -83,6 +83,15 @@ export interface GameState {
   gameLog: GameLogEntry[];
   winner: string | null;
   endGameVotes: string[];
+  roundNumber: number;
+  rulesSnapshot: CustomRules | null;
+  turnDeadlineEpoch: number | null;
+  safeChainSize: number | null;
+  bonusTier: 'standard' | 'flat' | 'aggressive';
+  boardRows: number;
+  boardCols: string[];
+  maxChains: number;
+  eligibleChains: ChainName[];
 }
 
 export interface GameLogEntry {
@@ -130,3 +139,48 @@ export const SAFE_CHAIN_SIZE = 11;
 export const END_GAME_CHAIN_SIZE = 41;
 export const MAJORITY_BONUS_MULTIPLIER = 10;
 export const MINORITY_BONUS_MULTIPLIER = 5;
+
+// Eligible chain sets for Chain Founding Rules (Story 8)
+export const ELIGIBLE_CHAINS_5: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental'];
+export const ELIGIBLE_CHAINS_6: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
+export const ELIGIBLE_CHAINS_7: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
+
+export interface CustomRules {
+  startWithTileOnBoard: boolean;
+  turnTimerEnabled: boolean;
+  turnTimer: string;
+  disableTimerFirstRounds: boolean;
+  chainSafetyEnabled: boolean;
+  chainSafetyThreshold: string;
+  cashVisibilityEnabled: boolean;
+  cashVisibility: string;
+  bonusTierEnabled: boolean;
+  bonusTier: string;
+  boardSizeEnabled: boolean;
+  boardSize: string;
+  chainFoundingEnabled: boolean;
+  maxChains: string;
+  startingConditionsEnabled: boolean;
+  startingCash: string;
+  startingTiles: string;
+}
+
+export const DEFAULT_RULES: CustomRules = {
+  startWithTileOnBoard: true,
+  turnTimerEnabled: false,
+  turnTimer: '60',
+  disableTimerFirstRounds: true,
+  chainSafetyEnabled: false,
+  chainSafetyThreshold: 'none',
+  cashVisibilityEnabled: false,
+  cashVisibility: 'hidden',
+  bonusTierEnabled: false,
+  bonusTier: 'standard',
+  boardSizeEnabled: false,
+  boardSize: '9x12',
+  chainFoundingEnabled: false,
+  maxChains: '7',
+  startingConditionsEnabled: false,
+  startingCash: '6000',
+  startingTiles: '6',
+};

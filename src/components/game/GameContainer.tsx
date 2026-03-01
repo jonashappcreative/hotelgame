@@ -14,9 +14,10 @@ import { MergerStockDecision as MergerStockDecisionComponent } from './MergerSto
 import { EndGameVote } from './EndGameVote';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
-import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles } from '@/utils/gameLogic';
+import { TurnTimer } from './TurnTimer';
+import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock } from 'lucide-react';
+import { Clock, WifiOff } from 'lucide-react';
 
 interface GameContainerProps {
   gameState: GameState;
@@ -31,6 +32,7 @@ interface GameContainerProps {
   onEndGameVote: (vote: boolean) => void;
   onNewGame: () => void;
   onDiscardTile?: (tileId: TileId) => void;
+  onAutoEndTurn?: () => void;
 }
 
 export const GameContainer = ({
@@ -46,6 +48,7 @@ export const GameContainer = ({
   onEndGameVote,
   onNewGame,
   onDiscardTile,
+  onAutoEndTurn,
 }: GameContainerProps) => {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   
@@ -60,8 +63,16 @@ export const GameContainer = ({
   const isMyTurn = myPlayerIndex === gameState.currentPlayerIndex;
   
   // Check if it's my turn for merger stock decisions
-  const isMyMergerTurn = gameState.phase === 'merger_handle_stock' && 
+  const isMyMergerTurn = gameState.phase === 'merger_handle_stock' &&
     gameState.merger?.currentPlayerIndex === myPlayerIndex;
+
+  // Derive cash visibility: local games always show all cash; online games follow rules
+  const cashVisibility: 'hidden' | 'visible' | 'aggregate' = (() => {
+    if (!isOnlineMode) return 'visible';
+    const rules = gameState.rulesSnapshot;
+    if (!rules?.cashVisibilityEnabled) return 'hidden';
+    return (rules.cashVisibility || 'hidden') as 'hidden' | 'visible' | 'aggregate';
+  })();
 
   // Check if player has unplayable tiles
   const hasNoPlayableTiles = gameState.phase === 'place_tile' && 
@@ -79,10 +90,33 @@ export const GameContainer = ({
 
   // Get merger analysis for survivor choice
   const getMergerPotentialSurvivors = (): ChainName[] => {
-    if (gameState.phase !== 'merger_choose_survivor' || !gameState.mergerAdjacentChains) {
+    if (gameState.phase !== 'merger_choose_survivor') {
       return [];
     }
-    const analysis = analyzeMerger(gameState, gameState.lastPlacedTile!, gameState.mergerAdjacentChains);
+
+    // Try to use mergerAdjacentChains first, or derive from board state
+    let adjacentChains = gameState.mergerAdjacentChains;
+
+    if (!adjacentChains && gameState.lastPlacedTile) {
+      // Derive adjacent chains from board state
+      const adjacent = getAdjacentTiles(gameState.lastPlacedTile);
+      const chainsSet = new Set<ChainName>();
+
+      for (const adjTile of adjacent) {
+        const tile = gameState.board.get(adjTile);
+        if (tile?.chain) {
+          chainsSet.add(tile.chain);
+        }
+      }
+
+      adjacentChains = Array.from(chainsSet);
+    }
+
+    if (!adjacentChains || adjacentChains.length < 2) {
+      return [];
+    }
+
+    const analysis = analyzeMerger(gameState, gameState.lastPlacedTile!, adjacentChains);
     return analysis.potentialSurvivors;
   };
 
@@ -128,6 +162,29 @@ export const GameContainer = ({
         onDiscard={handleDiscardTile}
         onClose={() => {}}
       />
+
+      {/* Chain Founder Modal - Only show to current player */}
+      {gameState.phase === 'found_chain' && isMyTurn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+          <ChainFounder
+            availableChains={getAvailableChainsForFoundation(gameState)}
+            onSelectChain={onFoundChain}
+          />
+        </div>
+      )}
+
+      {/* Merger Survivor Choice Modal - Only show to current player */}
+      {gameState.phase === 'merger_choose_survivor' && isMyTurn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+          <MergerSurvivorChoice
+            chains={getMergerPotentialSurvivors()}
+            chainSizes={Object.fromEntries(
+              Object.entries(gameState.chains).map(([k, v]) => [k, v.tiles.length])
+            ) as Record<ChainName, number>}
+            onSelectSurvivor={onChooseMergerSurvivor}
+          />
+        </div>
+      )}
 
       {/* Waiting overlay removed - now shown in sidebar notification */}
 
@@ -179,18 +236,31 @@ export const GameContainer = ({
               selectedTile={selectedTile}
             />
 
-            {/* Action Area */}
-            <div className="grid md:grid-cols-2 gap-4">
-            {/* Player's Hand - always visible in online mode */}
-            <PlayerHand
-              tiles={myPlayer.tiles}
-              gameState={gameState}
-              isCurrentPlayer={isMyTurn}
-              canPlace={gameState.phase === 'place_tile' && isMyTurn}
-              onTileClick={handleTileSelect}
-              selectedTile={selectedTile}
-            />
+            {/* Turn Timer — shown only to the active player when timer is enabled */}
+            {(() => {
+              const rules = gameState.rulesSnapshot;
+              const roundNumber = gameState.roundNumber ?? 0;
+              const showTimer =
+                isMyTurn &&
+                isOnlineMode &&
+                gameState.phase === 'place_tile' &&
+                rules?.turnTimerEnabled === true &&
+                !(rules.disableTimerFirstRounds && roundNumber < 2) &&
+                onAutoEndTurn !== undefined;
+              if (!showTimer) return null;
+              const durationSecs = parseInt(rules!.turnTimer ?? '60');
+              return (
+                <TurnTimer
+                  key={gameState.currentPlayerIndex}
+                  durationSeconds={durationSecs}
+                  isActive={true}
+                  onExpire={onAutoEndTurn!}
+                />
+              );
+            })()}
 
+            {/* Action Area */}
+            <div>
               {/* Current Action */}
               <div>
                 {gameState.phase === 'place_tile' && (
@@ -202,23 +272,6 @@ export const GameContainer = ({
                       </p>
                     </div>
                   </div>
-                )}
-
-                {gameState.phase === 'found_chain' && (
-                  <ChainFounder
-                    availableChains={getAvailableChainsForFoundation(gameState)}
-                    onSelectChain={onFoundChain}
-                  />
-                )}
-
-                {gameState.phase === 'merger_choose_survivor' && (
-                  <MergerSurvivorChoice
-                    chains={getMergerPotentialSurvivors()}
-                    chainSizes={Object.fromEntries(
-                      Object.entries(gameState.chains).map(([k, v]) => [k, v.tiles.length])
-                    ) as Record<ChainName, number>}
-                    onSelectSurvivor={onChooseMergerSurvivor}
-                  />
                 )}
 
                 {gameState.phase === 'merger_pay_bonuses' && gameState.merger?.currentDefunctChain && (
@@ -287,21 +340,31 @@ export const GameContainer = ({
               </div>
             </div>
 
-            {/* Game Log - Mobile */}
-            <div className="lg:hidden">
-              <GameLog entries={gameState.gameLog} />
-            </div>
+            {/* Game Log */}
+            <GameLog entries={gameState.gameLog} />
 
             {/* Turn Status Notification - Mobile */}
             {isOnlineMode && !isMyTurn && gameState.phase !== 'game_over' && !isMyMergerTurn && (
               <div className="lg:hidden mt-4">
-                <div className="bg-card rounded-xl p-4 shadow-md border border-primary/20">
+                <div className={`bg-card rounded-xl p-4 shadow-md border ${
+                  currentPlayer.isConnected === false ? 'border-destructive/40' : 'border-primary/20'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    {currentPlayer.isConnected === false ? (
+                      <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    )}
                     <div>
-                      <p className="font-semibold text-sm">Waiting for {currentPlayer.name}</p>
+                      <p className="font-semibold text-sm">
+                        {currentPlayer.isConnected === false
+                          ? `Waiting for ${currentPlayer.name} to reconnect...`
+                          : `Waiting for ${currentPlayer.name}`}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        It's their turn to play
+                        {currentPlayer.isConnected === false
+                          ? 'They appear to be disconnected'
+                          : "It's their turn to play"}
                       </p>
                     </div>
                   </div>
@@ -312,35 +375,71 @@ export const GameContainer = ({
 
           {/* Right Column - Players and Log */}
           <div className="space-y-4 lg:space-y-6">
-            {/* Player Cards */}
+            {/* Your Player Card + Tiles */}
             <div className="space-y-3">
-              {gameState.players.map((player, index) => (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  gameState={gameState}
-                  isCurrentTurn={index === gameState.currentPlayerIndex}
-                  isYou={player.id === myPlayer.id}
-                  rank={getPlayerRank(player.id)}
-                />
-              ))}
+              <PlayerCard
+                player={myPlayer}
+                gameState={gameState}
+                isCurrentTurn={myPlayerIndex === gameState.currentPlayerIndex}
+                isYou={true}
+                rank={getPlayerRank(myPlayer.id)}
+                cashVisibility={cashVisibility}
+                myPlayerIndex={myPlayerIndex}
+              />
+              {/* Player's Hand - positioned below your cash like in tutorial */}
+              <PlayerHand
+                tiles={myPlayer.tiles}
+                gameState={gameState}
+                isCurrentPlayer={isMyTurn}
+                canPlace={gameState.phase === 'place_tile' && isMyTurn}
+                onTileClick={handleTileSelect}
+                selectedTile={selectedTile}
+              />
             </div>
 
-            {/* Game Log - Desktop */}
-            <div className="hidden lg:block">
-              <GameLog entries={gameState.gameLog} />
+            {/* Other Player Cards */}
+            <div className="space-y-3">
+              {gameState.players
+                .filter((player) => player.id !== myPlayer.id)
+                .map((player, index) => {
+                  const originalIndex = gameState.players.findIndex(p => p.id === player.id);
+                  return (
+                    <PlayerCard
+                      key={player.id}
+                      player={player}
+                      gameState={gameState}
+                      isCurrentTurn={originalIndex === gameState.currentPlayerIndex}
+                      isYou={false}
+                      rank={getPlayerRank(player.id)}
+                      cashVisibility={cashVisibility}
+                      myPlayerIndex={myPlayerIndex}
+                    />
+                  );
+                })}
             </div>
 
             {/* Turn Status Notification - Desktop */}
             {isOnlineMode && !isMyTurn && gameState.phase !== 'game_over' && !isMyMergerTurn && (
               <div className="hidden lg:block mt-4">
-                <div className="bg-card rounded-xl p-4 shadow-md border border-primary/20">
+                <div className={`bg-card rounded-xl p-4 shadow-md border ${
+                  currentPlayer.isConnected === false ? 'border-destructive/40' : 'border-primary/20'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    {currentPlayer.isConnected === false ? (
+                      <WifiOff className="w-5 h-5 text-destructive flex-shrink-0" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-primary animate-pulse flex-shrink-0" />
+                    )}
                     <div>
-                      <p className="font-semibold text-sm">Waiting for {currentPlayer.name}</p>
+                      <p className="font-semibold text-sm">
+                        {currentPlayer.isConnected === false
+                          ? `Waiting for ${currentPlayer.name} to reconnect...`
+                          : `Waiting for ${currentPlayer.name}`}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        It's their turn to play
+                        {currentPlayer.isConnected === false
+                          ? 'They appear to be disconnected'
+                          : "It's their turn to play"}
                       </p>
                     </div>
                   </div>
