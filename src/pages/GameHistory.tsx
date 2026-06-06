@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/integrations/api/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, Trophy, Loader2, Calendar, DollarSign } from 'lucide-react';
@@ -36,14 +36,11 @@ const GameHistory = () => {
   }, [user]);
 
   const fetchHistory = async () => {
-    const { data, error } = await supabase
-      .from('game_history')
-      .select('*')
-      .order('played_at', { ascending: false })
-      .limit(50);
-
-    if (!error && data) {
-      setHistory(data);
+    const { ok, data } = await apiFetch<{ history: GameHistoryEntry[] }>(
+      '/account', { op: 'list_history' },
+    );
+    if (ok && data?.history) {
+      setHistory(data.history);
     }
     setLoading(false);
   };

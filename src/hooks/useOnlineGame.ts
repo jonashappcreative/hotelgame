@@ -30,8 +30,9 @@ import {
   sendHeartbeat,
   markDisconnected,
   clearActiveGameFromStorage,
+  getPublicGameState,
+  getRoomStatus,
 } from '@/utils/multiplayerService';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
 interface OnlinePlayer {
@@ -129,27 +130,11 @@ export const useOnlineGame = () => {
       (newPlayers) => {
         setPlayers(newPlayers);
       },
-      async () => {
-        // Don't use subscription payload - fetch full state from database
-        // Subscription payloads only contain changed fields, missing board data!
-        console.log('[useOnlineGame] Game state update notification - fetching full state from DB');
-
+      async (dbState) => {
+        // The relay only signals a change; subscribeToRoom fetches the
+        // authoritative public state and passes it here.
         try {
-          // Fetch complete game state from game_states_public view
-          const { data: dbState, error: stateError } = await supabase
-            .from('game_states_public')
-            .select('*')
-            .eq('room_id', roomId)
-            .single();
-
-          if (stateError) {
-            console.error('[useOnlineGame] Error fetching game state:', stateError);
-            return;
-          }
-
-          // Fetch fresh player data
           const freshPlayers = await fetchFullPlayerData(roomId);
-
           if (dbState && roomCode) {
             const fullState = dbToGameState(dbState, freshPlayers, roomCode);
             setGameState(fullState);
@@ -222,23 +207,15 @@ export const useOnlineGame = () => {
       setPlayers(currentPlayers);
 
       // Check if game already started
-      const { data: room } = await supabase
-        .from('game_rooms')
-        .select('status, max_players')
-        .eq('id', result.roomId!)
-        .single();
+      const room = await getRoomStatus(result.roomId!);
 
       if (room) {
         setMaxPlayers(room.max_players || 4);
         if (room.status === 'playing') {
           setRoomStatus('playing');
           // Fetch game state from public view
-          const { data: dbState } = await supabase
-            .from('game_states_public')
-            .select('*')
-            .eq('room_id', result.roomId!)
-            .single();
-          
+          const dbState = await getPublicGameState(result.roomId!);
+
           if (dbState) {
             const fullPlayers = await fetchFullPlayerData(result.roomId!);
             const fullState = dbToGameState(dbState, fullPlayers, code.toUpperCase());
@@ -279,11 +256,7 @@ export const useOnlineGame = () => {
       if (result.gameStarted) {
         // Game auto-started because all players were ready
         // The subscription will handle state transition, but fetch immediately too
-        const { data: dbState } = await supabase
-          .from('game_states_public')
-          .select('*')
-          .eq('room_id', roomId)
-          .single();
+        const dbState = await getPublicGameState(roomId);
 
         if (dbState && roomCode) {
           const fullPlayers = await fetchFullPlayerData(roomId);
@@ -302,12 +275,8 @@ export const useOnlineGame = () => {
   // Refresh game state from database
   const refreshGameState = useCallback(async () => {
     if (!roomId || !roomCode) return;
-    
-    const { data: dbState } = await supabase
-      .from('game_states_public')
-      .select('*')
-      .eq('room_id', roomId)
-      .single();
+
+    const dbState = await getPublicGameState(roomId);
 
     if (dbState) {
       const fullPlayers = await fetchFullPlayerData(roomId);
@@ -576,21 +545,13 @@ export const useOnlineGame = () => {
       setPlayers(currentPlayers);
 
       // Check room status and load game state if playing
-      const { data: room } = await supabase
-        .from('game_rooms')
-        .select('status, max_players')
-        .eq('id', result.roomId!)
-        .single();
+      const room = await getRoomStatus(result.roomId!);
 
       if (room) {
         setMaxPlayers(room.max_players || 4);
         if (room.status === 'playing') {
           setRoomStatus('playing');
-          const { data: dbState } = await supabase
-            .from('game_states_public')
-            .select('*')
-            .eq('room_id', result.roomId!)
-            .single();
+          const dbState = await getPublicGameState(result.roomId!);
 
           if (dbState) {
             const fullPlayers = await fetchFullPlayerData(result.roomId!);

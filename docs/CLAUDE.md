@@ -2,8 +2,19 @@
 
 ## Project Context
 - This is an online multiplayer board game (Acquire)
-- Uses Supabase for backend (auth, realtime, edge functions)
+- Backend stack:
+  - Auth: custom JWT via Netlify Functions (signed/verified with `jose`)
+  - DB: Netlify DB (Neon Postgres)
+  - Realtime: Hetzner Socket.io relay at server.jonashapp.com
 - Built with React, TypeScript, Vite, and Tailwind CSS
+
+## Before pushing anything to main
+- PLease check if Jonas really wants tu push to main, as this triggers an auto deploy. We prever a structure like:
+
+Main < Staging < Development < Feature Branches
+
+- Only wen staging works and is tested locally, push to main upon request.
+
 
 ## Testing Requirements
 
@@ -19,6 +30,6 @@ npm test
 
 ### Test Coverage
 - `src/utils/gameLogic.test.ts` - Core game mechanics (tile placement, chains, stocks, scoring)
-- `src/utils/multiplayerService.test.ts` - Supabase integration (auth, rooms, realtime)
+- `src/utils/multiplayerService.test.ts` - Multiplayer integration (auth, rooms, realtime)
 
 All tests must pass before merging any changes. If tests fail, fix the issues before committing.
