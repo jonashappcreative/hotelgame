@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS game_players (
   session_id      VARCHAR(100) NOT NULL,
   is_connected    BOOLEAN NOT NULL DEFAULT true,
   is_ready        BOOLEAN NOT NULL DEFAULT false,
+  is_bot          BOOLEAN NOT NULL DEFAULT false,
+  bot_difficulty  VARCHAR(10),
   cash            INTEGER NOT NULL DEFAULT 6000,
   tiles           TEXT[] DEFAULT '{}',
   stocks          JSONB NOT NULL DEFAULT '{"sackson":0,"tower":0,"worldwide":0,"american":0,"festival":0,"continental":0,"imperial":0}',
@@ -101,6 +103,12 @@ CREATE TABLE IF NOT EXISTS game_players (
   CONSTRAINT unique_player_per_room UNIQUE (room_id, player_index),
   CONSTRAINT player_name_length CHECK (char_length(player_name) BETWEEN 1 AND 30)
 );
+
+-- Bot players (added post-launch): is_bot flags AI-controlled seats and
+-- bot_difficulty is one of 'easy' | 'medium' | 'hard' (NULL for humans).
+-- Idempotent so this file can be re-applied to an already-provisioned DB.
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS bot_difficulty VARCHAR(10);
 
 -- Prevent the same user joining the same room twice (also guards race conditions)
 CREATE UNIQUE INDEX IF NOT EXISTS unique_user_per_room
@@ -175,6 +183,8 @@ CREATE VIEW game_players_public AS
     stocks,
     is_connected,
     is_ready,
+    is_bot,
+    bot_difficulty,
     last_seen_at,
     disconnected_at,
     created_at

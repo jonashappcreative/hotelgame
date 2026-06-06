@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { query } from './_shared/db';
 import { signToken } from './_shared/auth';
 import { getCorsHeaders, jsonResponse } from './_shared/cors';
+import { serverError } from './_shared/errors';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -50,7 +51,6 @@ export default async (req: Request): Promise<Response> => {
     const token = await signToken(userId, { expiresIn: '7d' });
     return jsonResponse({ token, userId, email: normalizedEmail, isAnonymous: false }, 200, cors);
   } catch (err) {
-    console.error('auth-signup error:', err);
-    return jsonResponse({ error: 'An internal error occurred' }, 500, cors);
+    return serverError('auth-signup error', err, cors);
   }
 };

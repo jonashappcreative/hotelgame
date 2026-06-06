@@ -5,6 +5,7 @@
 import { query } from './_shared/db';
 import { signToken } from './_shared/auth';
 import { getCorsHeaders, jsonResponse } from './_shared/cors';
+import { serverError } from './_shared/errors';
 
 export default async (req: Request): Promise<Response> => {
   const cors = getCorsHeaders(req);
@@ -19,7 +20,6 @@ export default async (req: Request): Promise<Response> => {
     const token = await signToken(userId, { expiresIn: '48h', claims: { anon: true } });
     return jsonResponse({ token, userId, isAnonymous: true }, 200, cors);
   } catch (err) {
-    console.error('auth-anonymous error:', err);
-    return jsonResponse({ error: 'An internal error occurred' }, 500, cors);
+    return serverError('auth-anonymous error', err, cors);
   }
 };

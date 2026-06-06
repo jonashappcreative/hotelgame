@@ -19,6 +19,9 @@ const OnlineGame = () => {
     handleJoinRoom,
     handleLeaveRoom,
     handleToggleReady,
+    handleAddBot,
+    handleRemoveBot,
+    isHost,
     handleRejoinGame,
     dismissActiveGame,
     handleTilePlacement,
@@ -50,6 +53,9 @@ const OnlineGame = () => {
         onJoinRoom={handleJoinRoom}
         onLeaveRoom={handleLeaveRoom}
         onToggleReady={handleToggleReady}
+        isHost={isHost}
+        onAddBot={handleAddBot}
+        onRemoveBot={handleRemoveBot}
         onRejoinGame={handleRejoinGame}
         onDismissActiveGame={dismissActiveGame}
       />

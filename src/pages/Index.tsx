@@ -7,7 +7,8 @@ import { GameContainer } from '@/components/game/GameContainer';
 import { TileId, ChainName } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Monitor, Sparkles, Wifi, User, LogOut, History } from 'lucide-react';
+import { Monitor, Wifi, User, LogOut, History } from 'lucide-react';
+import logoMainScreen from '@/img/Logo_MainScreen.webp';
 
 type GameMode = 'select' | 'local';
 
@@ -85,10 +86,11 @@ const Index = () => {
 
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
-              <Sparkles className="w-8 h-8 text-primary" />
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight mb-2">Acquire</h1>
+            <img
+              src={logoMainScreen}
+              alt="Hotel Game logo"
+              className="mx-auto mb-4 w-48 h-auto"
+            />
             <p className="text-muted-foreground">
               The classic hotel empire building game
             </p>

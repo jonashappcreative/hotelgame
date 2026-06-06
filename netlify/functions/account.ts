@@ -5,6 +5,7 @@
 import { query } from './_shared/db';
 import { verifyAuth } from './_shared/auth';
 import { getCorsHeaders, jsonResponse } from './_shared/cors';
+import { serverError } from './_shared/errors';
 
 export default async (req: Request): Promise<Response> => {
   const cors = getCorsHeaders(req);
@@ -56,7 +57,6 @@ export default async (req: Request): Promise<Response> => {
         return jsonResponse({ error: `Unknown op: ${op}` }, 400, cors);
     }
   } catch (err) {
-    console.error('account error:', err);
-    return jsonResponse({ error: 'An internal error occurred' }, 500, cors);
+    return serverError('account error', err, cors);
   }
 };

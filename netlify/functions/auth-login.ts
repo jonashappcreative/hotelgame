@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { query } from './_shared/db';
 import { signToken } from './_shared/auth';
 import { getCorsHeaders, jsonResponse } from './_shared/cors';
+import { serverError } from './_shared/errors';
 
 export default async (req: Request): Promise<Response> => {
   const cors = getCorsHeaders(req);
@@ -35,7 +36,6 @@ export default async (req: Request): Promise<Response> => {
     const token = await signToken(user.id, { expiresIn: '7d' });
     return jsonResponse({ token, userId: user.id, email: email.toLowerCase(), isAnonymous: false }, 200, cors);
   } catch (err) {
-    console.error('auth-login error:', err);
-    return jsonResponse({ error: 'An internal error occurred' }, 500, cors);
+    return serverError('auth-login error', err, cors);
   }
 };

@@ -263,8 +263,8 @@ describe('multiplayerService', () => {
 
       const players = await getRoomPlayers('room-id');
       expect(players).toEqual([
-        { id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true },
-        { id: 'p2', player_name: 'Bob',   player_index: 1, is_ready: false },
+        { id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true, is_bot: false, bot_difficulty: null },
+        { id: 'p2', player_name: 'Bob',   player_index: 1, is_ready: false, is_bot: false, bot_difficulty: null },
       ]);
     });
 
@@ -280,7 +280,7 @@ describe('multiplayerService', () => {
         error: null,
       });
       const players = await getRoomPlayers('room-id');
-      expect(players).toEqual([{ id: '', player_name: '', player_index: 0, is_ready: false }]);
+      expect(players).toEqual([{ id: '', player_name: '', player_index: 0, is_ready: false, is_bot: false, bot_difficulty: null }]);
     });
   });
 

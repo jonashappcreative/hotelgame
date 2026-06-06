@@ -21,6 +21,8 @@ import {
   getRoomPlayers,
   getSecurePlayerData,
   executeGameAction,
+  addBot,
+  removeBot,
   dbToGameState,
   subscribeToRoom,
   getOrCreateAuthSession,
@@ -40,6 +42,8 @@ interface OnlinePlayer {
   player_name: string;
   player_index: number;
   is_ready: boolean;
+  is_bot?: boolean;
+  bot_difficulty?: string | null;
 }
 
 export const useOnlineGame = () => {
@@ -271,6 +275,47 @@ export const useOnlineGame = () => {
       setIsLoading(false);
     }
   }, [roomId, roomCode, players]);
+
+  const handleAddBot = useCallback(async (difficulty: 'easy' | 'medium' | 'hard') => {
+    if (!roomId) return;
+    const result = await addBot(roomId, difficulty);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error || 'Failed to add bot', variant: 'destructive' });
+      return;
+    }
+    // The relay broadcasts players_changed, but refresh immediately too.
+    setPlayers(await getRoomPlayers(roomId));
+  }, [roomId]);
+
+  const handleRemoveBot = useCallback(async (playerIndex: number) => {
+    if (!roomId) return;
+    const result = await removeBot(roomId, playerIndex);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error || 'Failed to remove bot', variant: 'destructive' });
+      return;
+    }
+    setPlayers(await getRoomPlayers(roomId));
+  }, [roomId]);
+
+  // Resume bot turns paused by the server's per-invocation budget. Server-side
+  // driveBots plays bots inline after each human action, but a long all-bot
+  // stretch can exceed the function time limit and pause with a bot still to
+  // act. Exactly one human (the lowest-seat human) nudges via `bot_tick`.
+  useEffect(() => {
+    if (roomStatus !== 'playing' || !gameState || myPlayerIndex == null || !roomId) return;
+
+    const actorIndex = gameState.phase === 'merger_handle_stock'
+      ? gameState.merger?.currentPlayerIndex
+      : gameState.currentPlayerIndex;
+    const actor = players.find((p) => p.player_index === actorIndex);
+    if (!actor?.is_bot) return;
+
+    const humanSeats = players.filter((p) => !p.is_bot).map((p) => p.player_index).sort((a, b) => a - b);
+    if (humanSeats[0] !== myPlayerIndex) return; // only the primary human nudges
+
+    const timer = setTimeout(() => { executeGameAction('bot_tick', roomId); }, 1500);
+    return () => clearTimeout(timer);
+  }, [gameState, players, roomStatus, myPlayerIndex, roomId]);
 
   // Refresh game state from database
   const refreshGameState = useCallback(async () => {
@@ -586,6 +631,7 @@ export const useOnlineGame = () => {
     roomStatus,
     isLoading,
     isMyTurn: gameState?.currentPlayerIndex === myPlayerIndex,
+    isHost: myPlayerIndex === 0,
 
     // Reconnection state
     isCheckingActiveGame,
@@ -596,6 +642,8 @@ export const useOnlineGame = () => {
     handleJoinRoom,
     handleLeaveRoom,
     handleToggleReady,
+    handleAddBot,
+    handleRemoveBot,
 
     // Reconnection actions
     handleRejoinGame,

@@ -12,262 +12,38 @@ import { db } from './_shared/db';
 import { verifyAuth } from './_shared/auth';
 import { getCorsHeaders } from './_shared/cors';
 import { notifyWsServer } from './_shared/ws';
+import { decideBotMove, type BotDifficulty } from './_shared/bot';
 
-// Types (duplicated from frontend since we can't import from src)
-type ChainName = 'sackson' | 'tower' | 'worldwide' | 'american' | 'festival' | 'continental' | 'imperial';
-type TileId = string;
-
-// Mirror of src/types/game.ts CustomRules — keep in sync (founderFreeStock intentionally excluded)
-interface CustomRules {
-  startWithTileOnBoard: boolean;
-  turnTimerEnabled: boolean;
-  turnTimer: string;
-  disableTimerFirstRounds: boolean;
-  chainSafetyEnabled: boolean;
-  chainSafetyThreshold: string;
-  cashVisibilityEnabled: boolean;
-  cashVisibility: string;
-  bonusTierEnabled: boolean;
-  bonusTier: string;
-  boardSizeEnabled: boolean;
-  boardSize: string;
-  chainFoundingEnabled: boolean;
-  maxChains: string;
-  startingConditionsEnabled: boolean;
-  startingCash: string;
-  startingTiles: string;
-}
-
-const DEFAULT_RULES: CustomRules = {
-  startWithTileOnBoard: true,
-  turnTimerEnabled: false,
-  turnTimer: '60',
-  disableTimerFirstRounds: true,
-  chainSafetyEnabled: false,
-  chainSafetyThreshold: 'none',
-  cashVisibilityEnabled: false,
-  cashVisibility: 'hidden',
-  bonusTierEnabled: false,
-  bonusTier: 'standard',
-  boardSizeEnabled: false,
-  boardSize: '9x12',
-  chainFoundingEnabled: false,
-  maxChains: '7',
-  startingConditionsEnabled: false,
-  startingCash: '6000',
-  startingTiles: '6',
-};
-
-interface MergerStockDecision {
-  sell: number;
-  trade: number;
-  keep: number;
-}
+// Pure Acquire rule helpers, constants, and shared types now live in
+// _shared/rules.ts so the bot (_shared/bot.ts) evaluates moves with the exact
+// same logic this engine enforces.
+import {
+  type ChainName,
+  type TileId,
+  type CustomRules,
+  type MergerStockDecision,
+  DEFAULT_RULES,
+  CHAINS,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getBonusTier,
+  getStockPrice,
+  getBonuses,
+  getAdjacentTiles,
+  shuffle,
+  generateAllTiles,
+  checkGameEnd,
+  getStockholderRankings,
+  calculateFinalScores,
+} from './_shared/rules';
 
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
           'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'skip_buy' |
-          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn';
+          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn' | 'bot_tick';
   roomId: string;
   payload?: any;
-}
-
-// Chain info for game logic
-const CHAINS: Record<ChainName, { displayName: string; tier: 'budget' | 'midrange' | 'premium' }> = {
-  sackson: { displayName: 'Sackson', tier: 'budget' },
-  tower: { displayName: 'Tower', tier: 'budget' },
-  worldwide: { displayName: 'Worldwide', tier: 'midrange' },
-  american: { displayName: 'American', tier: 'midrange' },
-  festival: { displayName: 'Festival', tier: 'midrange' },
-  continental: { displayName: 'Continental', tier: 'premium' },
-  imperial: { displayName: 'Imperial', tier: 'premium' },
-};
-
-const END_GAME_CHAIN_SIZE = 41;
-const CHAIN_SIZE_BRACKETS = [2, 3, 5, 10, 20, 30, 40, Infinity] as const;
-const BASE_PRICES: Record<'budget' | 'midrange' | 'premium', number[]> = {
-  budget: [200, 300, 400, 500, 600, 700, 800, 900],
-  midrange: [300, 400, 500, 600, 700, 800, 900, 1000],
-  premium: [400, 500, 600, 700, 800, 900, 1000, 1100],
-};
-const ALL_COLS_EF = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
-
-// Eligible chain sets for Chain Founding Rules
-const ELIGIBLE_CHAINS_5_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental'];
-const ELIGIBLE_CHAINS_6_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
-const ELIGIBLE_CHAINS_7_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
-
-function getSafeChainSize(rules: CustomRules): number | null {
-  if (!rules.chainSafetyEnabled) return 11;
-  if (rules.chainSafetyThreshold === 'none') return null;
-  return parseInt(rules.chainSafetyThreshold);
-}
-
-function getBoardDimensions(rules: CustomRules): { boardRows: number; boardColsCount: number } {
-  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
-  const boardColsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
-  return { boardRows, boardColsCount };
-}
-
-function getEligibleChains(rules: CustomRules): ChainName[] {
-  if (!rules.chainFoundingEnabled) return ELIGIBLE_CHAINS_7_EF;
-  const max = parseInt(rules.maxChains);
-  return max === 5 ? ELIGIBLE_CHAINS_5_EF : max === 6 ? ELIGIBLE_CHAINS_6_EF : ELIGIBLE_CHAINS_7_EF;
-}
-
-function getBonusTier(rules: CustomRules): string {
-  return rules.bonusTierEnabled ? rules.bonusTier : 'standard';
-}
-
-// Helper functions
-function getStockPrice(chainName: ChainName, size: number): number {
-  if (size === 0) return 0;
-  const tier = CHAINS[chainName].tier;
-  const prices = BASE_PRICES[tier];
-
-  for (let i = 0; i < CHAIN_SIZE_BRACKETS.length; i++) {
-    if (size <= CHAIN_SIZE_BRACKETS[i]) {
-      return prices[i];
-    }
-  }
-  return prices[prices.length - 1];
-}
-
-function getBonuses(chainName: ChainName, size: number, bonusTier: string = 'standard'): { majority: number; minority: number } {
-  const price = getStockPrice(chainName, size);
-  const majorityMult = bonusTier === 'aggressive' ? 15 : 10;
-  return {
-    majority: price * majorityMult,
-    minority: price * 5,
-  };
-}
-
-function parseTileId(tileId: TileId): { row: number; col: string } {
-  const match = tileId.match(/^(\d)([A-L])$/);
-  if (!match) throw new Error(`Invalid tile ID: ${tileId}`);
-  return { row: parseInt(match[1]), col: match[2] };
-}
-
-function getAdjacentTiles(tileId: TileId, boardRows: number = 9, boardColsCount: number = 12): TileId[] {
-  const { row, col } = parseTileId(tileId);
-  const cols = ALL_COLS_EF.slice(0, boardColsCount);
-  const colIndex = cols.indexOf(col);
-  const adjacent: TileId[] = [];
-
-  if (row > 1) adjacent.push(`${row - 1}${col}`);
-  if (row < boardRows) adjacent.push(`${row + 1}${col}`);
-  if (colIndex > 0) adjacent.push(`${row}${cols[colIndex - 1]}`);
-  if (colIndex < cols.length - 1) adjacent.push(`${row}${cols[colIndex + 1]}`);
-
-  return adjacent;
-}
-
-function shuffle<T>(array: T[]): T[] {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
-function generateAllTiles(boardRows: number = 9, boardColsCount: number = 12): TileId[] {
-  const tiles: TileId[] = [];
-  const cols = ALL_COLS_EF.slice(0, boardColsCount);
-  for (let row = 1; row <= boardRows; row++) {
-    for (const col of cols) {
-      tiles.push(`${row}${col}`);
-    }
-  }
-  return tiles;
-}
-
-function checkGameEnd(chains: Record<ChainName, any>): boolean {
-  const activeChains = Object.values(chains).filter((c: any) => c.isActive);
-  return activeChains.some((c: any) => c.tiles.length >= END_GAME_CHAIN_SIZE);
-}
-
-function getStockholderRankings(players: any[], chainName: ChainName): { majority: any[]; minority: any[] } {
-  const holders = players
-    .filter(p => p.stocks[chainName] > 0)
-    .sort((a, b) => b.stocks[chainName] - a.stocks[chainName]);
-
-  if (holders.length === 0) {
-    return { majority: [], minority: [] };
-  }
-
-  const maxShares = holders[0].stocks[chainName];
-  const majority = holders.filter(p => p.stocks[chainName] === maxShares);
-
-  if (majority.length === holders.length) {
-    return { majority, minority: [] };
-  }
-
-  const remainingHolders = holders.filter(p => p.stocks[chainName] < maxShares);
-  if (remainingHolders.length === 0) {
-    return { majority, minority: [] };
-  }
-
-  const secondMaxShares = remainingHolders[0].stocks[chainName];
-  const minority = remainingHolders.filter(p => p.stocks[chainName] === secondMaxShares);
-
-  return { majority, minority };
-}
-
-function calculateFinalScores(players: any[], chains: Record<ChainName, any>, bonusTier: string = 'standard'): any[] {
-  const scoredPlayers = players.map(p => ({ ...p }));
-
-  for (const chain of Object.values(chains)) {
-    if (!chain.isActive) continue;
-
-    const bonuses = getBonuses(chain.name, chain.tiles.length, bonusTier);
-
-    if (bonusTier === 'flat') {
-      // Flat: split combined pool equally among all stockholders
-      const allHolders = scoredPlayers.filter(p => p.stocks[chain.name] > 0);
-      if (allHolders.length > 0) {
-        const flatPool = bonuses.majority + bonuses.minority;
-        const perPlayer = Math.floor(flatPool / allHolders.length);
-        for (const holder of allHolders) {
-          const p = scoredPlayers.find(pl => pl.id === holder.id)!;
-          p.cash += perPlayer;
-        }
-      }
-    } else {
-      const { majority, minority } = getStockholderRankings(scoredPlayers, chain.name);
-
-      if (majority.length > 0) {
-        if (minority.length === 0) {
-          const totalBonus = bonuses.majority + bonuses.minority;
-          const perPlayer = Math.floor(totalBonus / majority.length);
-          for (const player of majority) {
-            const p = scoredPlayers.find(pl => pl.id === player.id)!;
-            p.cash += perPlayer;
-          }
-        } else {
-          const majorityBonus = Math.floor(bonuses.majority / majority.length);
-          const minorityBonus = Math.floor(bonuses.minority / minority.length);
-
-          for (const player of majority) {
-            const p = scoredPlayers.find(pl => pl.id === player.id)!;
-            p.cash += majorityBonus;
-          }
-          for (const player of minority) {
-            const p = scoredPlayers.find(pl => pl.id === player.id)!;
-            p.cash += minorityBonus;
-          }
-        }
-      }
-    }
-
-    const price = getStockPrice(chain.name, chain.tiles.length);
-    for (const player of scoredPlayers) {
-      player.cash += player.stocks[chain.name] * price;
-      player.stocks[chain.name] = 0;
-    }
-  }
-
-  return scoredPlayers.sort((a, b) => b.cash - a.cash);
 }
 
 // Fan out realtime events after a successful mutation. Over-notifying just
@@ -292,33 +68,65 @@ export default async (req: Request): Promise<Response> => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let userId: string | null;
+  let body: GameActionRequest;
   try {
     // Validate authorization (jose JWT instead of Supabase Auth)
-    const userId = await verifyAuth(req);
+    userId = await verifyAuth(req);
     if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    console.log('Authenticated user:', userId);
+    body = await req.json();
+  } catch (error) {
+    console.error('Bad request:', error);
+    return new Response(JSON.stringify({ error: 'Bad request' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
 
+  // Run the requested action as the authenticated human player.
+  const res = await handleGameAction({ corsHeaders, body, actorUserId: userId });
+
+  // On success, play out any consecutive bot turns server-side (this also
+  // covers the toggle_ready that starts the game, so a bot in seat 0 opens).
+  if (res.status === 200) {
+    try {
+      await driveBots(body.roomId, corsHeaders);
+    } catch (error) {
+      console.error('driveBots error:', error);
+    }
+  }
+  return res;
+};
+
+// Core action handler. Resolves the acting player either from the JWT
+// (`actorUserId`, the human path) or by seat (`actAsPlayerIndex`, the bot
+// path), then runs the same engine logic and returns a Response.
+async function handleGameAction(opts: {
+  corsHeaders: Record<string, string>;
+  body: { action: string; roomId: string; payload?: any };
+  actorUserId?: string;
+  actAsPlayerIndex?: number;
+}): Promise<Response> {
+  const { corsHeaders } = opts;
+
+  try {
     // Neon-backed service client (same query surface as the old admin client)
     const adminClient = db;
 
-    // Parse request body
-    const body: GameActionRequest = await req.json();
-    const { action, roomId, payload } = body;
-
+    const { action, roomId, payload } = opts.body;
     console.log('Processing action:', action, 'for room:', roomId);
 
-    // Verify player is in the room
-    const { data: playerData, error: playerError } = await adminClient
-      .from('game_players')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('user_id', userId)
-      .single();
+    // Resolve the acting player: a bot is addressed by seat, a human by user id.
+    let playerQuery = adminClient.from('game_players').select('*').eq('room_id', roomId);
+    playerQuery = opts.actAsPlayerIndex != null
+      ? playerQuery.eq('player_index', opts.actAsPlayerIndex)
+      : playerQuery.eq('user_id', opts.actorUserId);
+    const { data: playerData, error: playerError } = await playerQuery.single();
 
     if (playerError || !playerData) {
       console.error('Player not found:', playerError);
@@ -2028,6 +1836,13 @@ export default async (req: Request): Promise<Response> => {
         break;
       }
 
+      case 'bot_tick': {
+        // No-op: any player in the room may call this to resume bot play that
+        // was paused by the per-invocation budget. driveBots runs afterwards.
+        result = { success: true };
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -2048,10 +1863,61 @@ export default async (req: Request): Promise<Response> => {
     console.error('Function error:', error);
     return new Response(JSON.stringify({ error: 'An internal error occurred' }), {
       status: 500,
-      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
-};
+}
+
+// Play out consecutive bot turns until a human must act, the game ends, or the
+// per-invocation budget is spent. Each bot move runs through the real engine
+// (handleGameAction), so it is validated and fans out its own realtime event.
+// State is persisted after every single move, so hitting the budget never
+// corrupts a turn — the next human action (or `bot_tick` nudge) resumes here.
+async function driveBots(roomId: string, corsHeaders: Record<string, string>): Promise<void> {
+  const deadline = Date.now() + 8000;
+  const MAX_MOVES = 60;
+
+  for (let i = 0; i < MAX_MOVES; i++) {
+    if (Date.now() > deadline) return;
+
+    const { data: gameState } = await db.from('game_states').select('*').eq('room_id', roomId).single();
+    if (!gameState || gameState.phase === 'game_over') return;
+
+    const { data: players } = await db.from('game_players').select('*').eq('room_id', roomId).order('player_index');
+    if (!players || players.length === 0) return;
+
+    // Whose move is it? During the per-player merger stock step the actor is
+    // merger.currentPlayerIndex; otherwise it's the current player.
+    const actorIndex = gameState.phase === 'merger_handle_stock'
+      ? gameState.merger?.currentPlayerIndex
+      : gameState.current_player_index;
+    if (actorIndex == null) return;
+
+    const actor = players.find((p: any) => p.player_index === actorIndex);
+    if (!actor || !actor.is_bot) return; // a human must act — stop
+
+    const difficulty = (actor.bot_difficulty as BotDifficulty) || 'medium';
+    let move;
+    try {
+      move = decideBotMove(difficulty, gameState.phase, gameState, players, actor);
+    } catch (error) {
+      console.error('Bot decision error:', error);
+      return;
+    }
+
+    const res = await handleGameAction({
+      corsHeaders,
+      body: { action: move.action, roomId, payload: move.payload },
+      actAsPlayerIndex: actorIndex,
+    });
+
+    if (res.status !== 200) {
+      // A rejected bot move would loop forever — log and bail.
+      console.error('Bot move rejected:', difficulty, gameState.phase, move.action, res.status);
+      return;
+    }
+  }
+}
 
 // Helper function to complete merger
 async function completeMergerInDb(

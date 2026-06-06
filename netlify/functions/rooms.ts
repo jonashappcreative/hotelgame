@@ -7,13 +7,17 @@
 // except a player's own tiles (served via WHERE user_id = <jwt sub>).
 // =============================================================================
 
+import { randomUUID } from 'node:crypto';
 import { db, query } from './_shared/db';
 import { verifyAuth } from './_shared/auth';
 import { getCorsHeaders, jsonResponse } from './_shared/cors';
+import { serverError } from './_shared/errors';
 import { notifyWsServer } from './_shared/ws';
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_ACTIVE_ROOMS_PER_USER = 5;
+const BOT_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
+const BOT_NAMES = ['Aria', 'Byte', 'Cortex', 'Delta', 'Echo', 'Flux'];
 
 function generateRoomCode(): string {
   let code = '';
@@ -81,6 +85,102 @@ export default async (req: Request): Promise<Response> => {
         return jsonResponse({ error: 'Failed to generate a unique room code' }, 500, cors);
       }
 
+      // ---- add a bot player (host only, waiting room) -------------------------
+      case 'add_bot': {
+        const difficulty = String(body.difficulty || 'medium');
+        if (!BOT_DIFFICULTIES.has(difficulty)) {
+          return jsonResponse({ error: 'Invalid difficulty' }, 400, cors);
+        }
+
+        const { data: room } = await db.from('game_rooms')
+          .select('id, status, max_players').eq('id', roomId).single();
+        if (!room) return jsonResponse({ error: 'Room not found' }, 404, cors);
+        if (room.status !== 'waiting') {
+          return jsonResponse({ error: 'Cannot add bots after the game has started' }, 400, cors);
+        }
+
+        // Only the host (seat 0) may manage bots.
+        const caller = await query<{ player_index: number }>(
+          'SELECT player_index FROM game_players WHERE room_id = $1 AND user_id = $2',
+          [roomId, userId],
+        );
+        if (caller[0]?.player_index !== 0) {
+          return jsonResponse({ error: 'Only the host can add bots' }, 403, cors);
+        }
+
+        // Pick the lowest free seat.
+        const seats = await query<{ player_index: number }>(
+          'SELECT player_index FROM game_players WHERE room_id = $1 ORDER BY player_index',
+          [roomId],
+        );
+        if (seats.length >= room.max_players) {
+          return jsonResponse({ error: 'Room is full' }, 409, cors);
+        }
+        const used = new Set(seats.map((s) => s.player_index));
+        let seat = 0;
+        while (used.has(seat) && seat < room.max_players) seat++;
+        if (seat >= room.max_players) {
+          return jsonResponse({ error: 'Room is full' }, 409, cors);
+        }
+
+        const name = BOT_NAMES[seat % BOT_NAMES.length];
+        // Bots have no user_id, are always ready/connected, and carry a synthetic
+        // session id (the column is NOT NULL). Retry once on a seat race.
+        try {
+          await query(
+            `INSERT INTO game_players
+               (room_id, player_name, player_index, session_id, is_ready, is_connected, is_bot, bot_difficulty)
+             VALUES ($1, $2, $3, $4, true, true, true, $5)`,
+            [roomId, name, seat, `bot:${randomUUID()}`, difficulty],
+          );
+        } catch (err: any) {
+          if (err?.code === '23505') {
+            return jsonResponse({ error: 'Seat taken, try again' }, 409, cors);
+          }
+          throw err;
+        }
+
+        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        return jsonResponse({ success: true, playerIndex: seat }, 200, cors);
+      }
+
+      // ---- remove a bot player (host only, waiting room) ----------------------
+      case 'remove_bot': {
+        const playerIndex = Number(body.playerIndex);
+        if (!Number.isInteger(playerIndex)) {
+          return jsonResponse({ error: 'playerIndex required' }, 400, cors);
+        }
+
+        const { data: room } = await db.from('game_rooms')
+          .select('status').eq('id', roomId).single();
+        if (!room) return jsonResponse({ error: 'Room not found' }, 404, cors);
+        if (room.status !== 'waiting') {
+          return jsonResponse({ error: 'Cannot remove bots after the game has started' }, 400, cors);
+        }
+
+        const caller = await query<{ player_index: number }>(
+          'SELECT player_index FROM game_players WHERE room_id = $1 AND user_id = $2',
+          [roomId, userId],
+        );
+        if (caller[0]?.player_index !== 0) {
+          return jsonResponse({ error: 'Only the host can remove bots' }, 403, cors);
+        }
+
+        const target = await query<{ is_bot: boolean }>(
+          'SELECT is_bot FROM game_players WHERE room_id = $1 AND player_index = $2',
+          [roomId, playerIndex],
+        );
+        if (!target[0]) return jsonResponse({ error: 'Seat not found' }, 404, cors);
+        if (!target[0].is_bot) return jsonResponse({ error: 'That seat is not a bot' }, 400, cors);
+
+        await query(
+          'DELETE FROM game_players WHERE room_id = $1 AND player_index = $2 AND is_bot = true',
+          [roomId, playerIndex],
+        );
+        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        return jsonResponse({ success: true }, 200, cors);
+      }
+
       // ---- room metadata -----------------------------------------------------
       case 'get_room': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
@@ -116,7 +216,7 @@ export default async (req: Request): Promise<Response> => {
       case 'list_players': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data } = await db.from('game_players_public')
-          .select('id, player_name, player_index, cash, stocks, is_connected, is_ready, created_at')
+          .select('id, player_name, player_index, cash, stocks, is_connected, is_ready, is_bot, bot_difficulty, created_at')
           .eq('room_id', roomId).order('player_index');
         return jsonResponse({ players: data ?? [] }, 200, cors);
       }
@@ -125,7 +225,7 @@ export default async (req: Request): Promise<Response> => {
       case 'get_players': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data: publicPlayers } = await db.from('game_players_public')
-          .select('id, room_id, player_name, player_index, cash, stocks, is_connected, is_ready, created_at')
+          .select('id, room_id, player_name, player_index, cash, stocks, is_connected, is_ready, is_bot, bot_difficulty, created_at')
           .eq('room_id', roomId).order('player_index');
 
         const { data: me } = await db.from('game_players')
@@ -264,7 +364,6 @@ export default async (req: Request): Promise<Response> => {
         return jsonResponse({ error: `Unknown op: ${op}` }, 400, cors);
     }
   } catch (err) {
-    console.error('rooms error:', err);
-    return jsonResponse({ error: 'An internal error occurred' }, 500, cors);
+    return serverError('rooms error', err, cors);
   }
 };

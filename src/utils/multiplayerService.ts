@@ -221,8 +221,17 @@ export const leaveRoom = async (roomId: string): Promise<void> => {
   clearActiveGameFromStorage();
 };
 
+export interface RoomPlayer {
+  id: string;
+  player_name: string;
+  player_index: number;
+  is_ready: boolean;
+  is_bot: boolean;
+  bot_difficulty: string | null;
+}
+
 // Get room players (public info only - excludes tiles for security)
-export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number; is_ready: boolean }[]> => {
+export const getRoomPlayers = async (roomId: string): Promise<RoomPlayer[]> => {
   const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'list_players', roomId });
   if (!ok || !data?.players) {
     return [];
@@ -233,7 +242,27 @@ export const getRoomPlayers = async (roomId: string): Promise<{ id: string; play
     player_name: p.player_name || '',
     player_index: p.player_index ?? 0,
     is_ready: p.is_ready ?? false,
+    is_bot: p.is_bot ?? false,
+    bot_difficulty: p.bot_difficulty ?? null,
   }));
+};
+
+// Add an AI bot to the room (host only). difficulty: 'easy' | 'medium' | 'hard'.
+export const addBot = async (
+  roomId: string,
+  difficulty: 'easy' | 'medium' | 'hard',
+): Promise<{ success: boolean; error?: string }> => {
+  const { ok, error } = await apiFetch('/rooms', { op: 'add_bot', roomId, difficulty });
+  return ok ? { success: true } : { success: false, error: error || 'Failed to add bot' };
+};
+
+// Remove a bot from the room by seat (host only).
+export const removeBot = async (
+  roomId: string,
+  playerIndex: number,
+): Promise<{ success: boolean; error?: string }> => {
+  const { ok, error } = await apiFetch('/rooms', { op: 'remove_bot', roomId, playerIndex });
+  return ok ? { success: true } : { success: false, error: error || 'Failed to remove bot' };
 };
 
 // Toggle ready state for the current player

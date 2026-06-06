@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info } from 'lucide-react';
+import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info, Bot, X, Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { CustomRules, DEFAULT_RULES } from '@/types/game';
 import { fetchRoomRules } from '@/utils/multiplayerService';
@@ -54,7 +54,7 @@ const InfoTooltip = ({ text }: { text: string }) => (
 interface OnlineLobbyProps {
   roomCode: string | null;
   roomId: string | null;
-  players: { id: string; player_name: string; player_index: number; is_ready: boolean }[];
+  players: { id: string; player_name: string; player_index: number; is_ready: boolean; is_bot?: boolean; bot_difficulty?: string | null }[];
   myPlayerIndex: number | null;
   maxPlayers: number;
   isLoading: boolean;
@@ -69,6 +69,9 @@ interface OnlineLobbyProps {
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
   onToggleReady: () => void;
+  isHost?: boolean;
+  onAddBot?: (difficulty: 'easy' | 'medium' | 'hard') => void;
+  onRemoveBot?: (playerIndex: number) => void;
   onRejoinGame?: () => void;
   onDismissActiveGame?: () => void;
 }
@@ -86,6 +89,9 @@ export const OnlineLobby = ({
   onJoinRoom,
   onLeaveRoom,
   onToggleReady,
+  isHost,
+  onAddBot,
+  onRemoveBot,
   onRejoinGame,
   onDismissActiveGame,
 }: OnlineLobbyProps) => {
@@ -93,6 +99,7 @@ export const OnlineLobby = ({
   const [playerName, setPlayerName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [selectedPlayerCount, setSelectedPlayerCount] = useState('4');
+  const [botDifficulty, setBotDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [mode, setMode] = useState<'menu' | 'create' | 'join' | 'customRules'>('menu');
   const [confirmedRules, setConfirmedRules] = useState<CustomRules | null>(null);
   const [draftRules, setDraftRules] = useState<CustomRules>({ ...DEFAULT_RULES });
@@ -170,12 +177,16 @@ export const OnlineLobby = ({
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
                         player
-                          ? player.is_ready
-                            ? 'bg-green-500 text-white'
-                            : 'bg-primary text-primary-foreground'
+                          ? player.is_bot
+                            ? 'bg-violet-500 text-white'
+                            : player.is_ready
+                              ? 'bg-green-500 text-white'
+                              : 'bg-primary text-primary-foreground'
                           : 'bg-muted'
                       }`}>
-                        {player?.is_ready ? <Check className="h-4 w-4" /> : index + 1}
+                        {player?.is_bot
+                          ? <Bot className="h-4 w-4" />
+                          : player?.is_ready ? <Check className="h-4 w-4" /> : index + 1}
                       </div>
                       <span className={player ? 'font-medium' : 'text-muted-foreground'}>
                         {player ? player.player_name : 'Waiting...'}
@@ -185,19 +196,58 @@ export const OnlineLobby = ({
                       )}
                     </div>
                     {player && (
-                      <Badge
-                        variant="outline"
-                        className={`flex-shrink-0 ${player.is_ready
-                          ? 'border-green-500/50 text-green-600'
-                          : 'border-yellow-500/50 text-yellow-600'}`}
-                      >
-                        {player.is_ready ? 'Ready' : 'Not Ready'}
-                      </Badge>
+                      player.is_bot ? (
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge variant="outline" className="border-violet-500/50 text-violet-600 capitalize">
+                            Bot · {player.bot_difficulty ?? 'medium'}
+                          </Badge>
+                          {isHost && onRemoveBot && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => onRemoveBot(index)}
+                              aria-label="Remove bot"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={`flex-shrink-0 ${player.is_ready
+                            ? 'border-green-500/50 text-green-600'
+                            : 'border-yellow-500/50 text-yellow-600'}`}
+                        >
+                          {player.is_ready ? 'Ready' : 'Not Ready'}
+                        </Badge>
+                      )
                     )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Add Bot — host only, while there is a free seat */}
+            {isHost && onAddBot && players.length < maxPlayers && (
+              <div className="flex items-center gap-2">
+                <Select value={botDifficulty} onValueChange={(v) => setBotDifficulty(v as 'easy' | 'medium' | 'hard')}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy — random moves</SelectItem>
+                    <SelectItem value="medium">Medium — basic strategy</SelectItem>
+                    <SelectItem value="hard">Hard — strong play</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="secondary" onClick={() => onAddBot(botDifficulty)} disabled={isLoading}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Bot
+                </Button>
+              </div>
+            )}
 
             {/* Room Rules Summary — visible to all players before ready-up */}
             {roomRules && (
