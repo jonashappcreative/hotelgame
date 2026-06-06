@@ -1,0 +1,16 @@
+services:
+  ws-server:
+    build: .
+    container_name: acquire-ws
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:?set WS_INTERNAL_SECRET in .env}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://acquiregame.netlify.app}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

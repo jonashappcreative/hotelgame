@@ -5,6 +5,14 @@
 - Uses Supabase for backend (auth, realtime, edge functions)
 - Built with React, TypeScript, Vite, and Tailwind CSS
 
+## Before pushing anything to main
+- PLease check if Jonas really wants tu push to main, as this triggers an auto deploy. We prever a structure like:
+
+Main < Staging < Development < Feature Branches
+
+- Only wen staging works and is tested locally, push to main upon request.
+
+
 ## Testing Requirements
 
 **IMPORTANT:** Always run all tests before committing to main or develop branches.

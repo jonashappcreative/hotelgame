@@ -8,12 +8,39 @@
   # Directory that contains the deploy-ready HTML files and assets
   publish = "dist"
 
-  # Directory with the serverless functions (not used for this project)
-  # functions = "netlify/functions"
+  # Directory with the serverless functions (game-action + auth endpoints)
+  functions = "netlify/functions"
 
 [build.environment]
-  # Node version for builds
-  NODE_VERSION = "18.17.0"
+  # Node version for builds and functions runtime
+  NODE_VERSION = "20"
+
+# Clean /api/* paths map to the serverless functions.
+# Must come BEFORE the SPA catch-all so it is matched first.
+[[redirects]]
+  from = "/api/auth/anonymous"
+  to = "/.netlify/functions/auth-anonymous"
+  status = 200
+[[redirects]]
+  from = "/api/auth/signup"
+  to = "/.netlify/functions/auth-signup"
+  status = 200
+[[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+[[redirects]]
+  from = "/api/game-action"
+  to = "/.netlify/functions/game-action"
+  status = 200
+[[redirects]]
+  from = "/api/rooms"
+  to = "/.netlify/functions/rooms"
+  status = 200
+[[redirects]]
+  from = "/api/account"
+  to = "/.netlify/functions/account"
+  status = 200
 
 # Redirect rules for Single Page Application (SPA)
 # This ensures all routes are handled by React Router
@@ -32,7 +59,7 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
-    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data: https://lovable.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://server.jonashapp.com wss://server.jonashapp.com; img-src 'self' data: https://lovable.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
     # Cache static assets for 1 year
     Cache-Control = "public, max-age=31536000, immutable"

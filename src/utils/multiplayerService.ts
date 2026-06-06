@@ -1,30 +1,21 @@
-import { supabase } from '@/integrations/supabase/client';
+import { io, type Socket } from 'socket.io-client';
+import {
+  apiFetch,
+  getUserIdFromToken,
+  signInAnonymous,
+} from '@/integrations/api/client';
 import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES } from '@/types/game';
-import type { Json } from '@/integrations/supabase/types';
 
 // Get or create an authenticated session (anonymous or existing user)
 export const getOrCreateAuthSession = async (): Promise<string | null> => {
-  // First check if we already have a session
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (user) {
-    return user.id;
-  }
-  
-  // Sign in anonymously if not authenticated
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) {
-    console.error('Failed to create anonymous session:', error);
-    return null;
-  }
-  
-  return data.user?.id ?? null;
+  const existing = getUserIdFromToken();
+  if (existing) return existing;
+  return await signInAnonymous();
 };
 
-// Get current user ID (must be authenticated first)
+// Get current user ID from the stored token (must be authenticated first)
 export const getCurrentUserId = async (): Promise<string | null> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user?.id ?? null;
+  return getUserIdFromToken();
 };
 
 // Legacy session ID for backward compatibility
@@ -91,35 +82,41 @@ export const createRoom = async (maxPlayers: number = 4, customRules: CustomRule
     return null;
   }
 
-  const roomCode = generateRoomCode();
+  const { ok, data, error } = await apiFetch<{ roomCode: string; roomId: string; maxPlayers: number }>(
+    '/rooms', { op: 'create', maxPlayers, customRules },
+  );
 
-  const { data, error } = await supabase
-    .from('game_rooms')
-    .insert({ room_code: roomCode, max_players: maxPlayers, custom_rules: customRules as unknown as Json })
-    .select()
-    .single();
-
-  if (error) {
+  if (!ok || !data) {
     console.error('Error creating room:', error);
     return null;
   }
 
-  return { roomCode: data.room_code, roomId: data.id, maxPlayers: data.max_players };
+  return { roomCode: data.roomCode, roomId: data.roomId, maxPlayers: data.maxPlayers };
 };
 
 // Fetch the custom rules for a room (returns DEFAULT_RULES if none are set)
 export const fetchRoomRules = async (roomId: string): Promise<CustomRules> => {
-  const { data, error } = await supabase
-    .from('game_rooms')
-    .select('custom_rules')
-    .eq('id', roomId)
-    .single();
+  const { ok, data } = await apiFetch<{ customRules: CustomRules | null }>(
+    '/rooms', { op: 'get_rules', roomId },
+  );
+  if (!ok || !data?.customRules) return DEFAULT_RULES;
+  return data.customRules;
+};
 
-  if (error || !data) {
-    return DEFAULT_RULES;
-  }
+// Fetch room metadata (status, max_players, ...)
+export const getRoomStatus = async (
+  roomId: string,
+): Promise<{ status: 'waiting' | 'playing' | 'finished'; max_players: number } | null> => {
+  const { ok, data } = await apiFetch<{ room: any }>('/rooms', { op: 'get_room', roomId });
+  if (!ok || !data?.room) return null;
+  return { status: data.room.status, max_players: data.room.max_players ?? 4 };
+};
 
-  return (data.custom_rules as unknown as CustomRules) ?? DEFAULT_RULES;
+// Fetch the public game state (tile_bag excluded by the backend view)
+export const getPublicGameState = async (roomId: string): Promise<any | null> => {
+  const { ok, data } = await apiFetch<{ state: any }>('/rooms', { op: 'get_state', roomId });
+  if (!ok) return null;
+  return data?.state ?? null;
 };
 
 // Check for active games the current user is participating in
@@ -135,31 +132,16 @@ export const checkActiveGame = async (): Promise<{
   // First, try to find by authenticated user ID
   const userId = await getCurrentUserId();
   if (userId) {
-    const { data: playerRecord, error } = await supabase
-      .from('game_players')
-      .select(`
-        player_index,
-        player_name,
-        room_id,
-        game_rooms!inner (
-          id,
-          room_code,
-          status
-        )
-      `)
-      .eq('user_id', userId)
-      .in('game_rooms.status', ['waiting', 'playing'])
-      .maybeSingle();
-
-    if (!error && playerRecord) {
-      const room = playerRecord.game_rooms as any;
+    const { ok, data } = await apiFetch<{ active: any }>('/rooms', { op: 'find_active' });
+    if (ok && data?.active) {
+      const a = data.active;
       return {
         hasActiveGame: true,
-        roomCode: room.room_code,
-        roomId: room.id,
-        playerIndex: playerRecord.player_index,
-        playerName: playerRecord.player_name,
-        roomStatus: room.status,
+        roomCode: a.room_code,
+        roomId: a.room_id,
+        playerIndex: a.player_index,
+        playerName: a.player_name,
+        roomStatus: a.status,
         source: 'auth',
       };
     }
@@ -169,27 +151,16 @@ export const checkActiveGame = async (): Promise<{
   const storedGame = getActiveGameFromStorage();
   if (storedGame) {
     // Verify the room still exists and is active
-    const { data: room, error: roomError } = await supabase
-      .from('game_rooms')
-      .select('id, room_code, status')
-      .eq('id', storedGame.roomId)
-      .in('status', ['waiting', 'playing'])
-      .maybeSingle();
-
-    if (!roomError && room) {
-      // Verify player still exists in the room with matching name
-      const { data: player } = await supabase
-        .from('game_players_public')
-        .select('player_index, player_name')
-        .eq('room_id', room.id)
-        .eq('player_name', storedGame.playerName)
-        .maybeSingle();
-
+    const room = await getRoomStatus(storedGame.roomId);
+    if (room && (room.status === 'waiting' || room.status === 'playing')) {
+      // Verify the stored player still exists in the room (by name)
+      const players = await getRoomPlayers(storedGame.roomId);
+      const player = players.find((p) => p.player_name === storedGame.playerName);
       if (player) {
         return {
           hasActiveGame: true,
-          roomCode: room.room_code,
-          roomId: room.id,
+          roomCode: storedGame.roomCode,
+          roomId: storedGame.roomId,
           playerIndex: player.player_index,
           playerName: player.player_name,
           roomStatus: room.status,
@@ -218,179 +189,46 @@ export const joinRoom = async (
 
   const sessionId = getSessionId(); // Keep for backward compatibility
 
-  // Find the room
-  const { data: room, error: roomError } = await supabase
-    .from('game_rooms')
-    .select('*')
-    .eq('room_code', roomCode.toUpperCase())
-    .maybeSingle();
+  const { ok, data, error } = await apiFetch<{
+    success: boolean; roomId: string; playerIndex: number; maxPlayers: number; isRejoin?: boolean;
+  }>('/rooms', { op: 'join', roomCode: roomCode.toUpperCase(), playerName, sessionId });
 
-  if (roomError || !room) {
-    return { success: false, error: 'Room not found' };
+  if (!ok || !data?.success) {
+    return { success: false, error: error || 'Failed to join room' };
   }
 
-  const maxPlayers = room.max_players || 4;
+  // Save to localStorage for future recovery
+  saveActiveGameToStorage({
+    roomId: data.roomId,
+    roomCode: roomCode.toUpperCase(),
+    playerName,
+    playerIndex: data.playerIndex,
+  });
 
-  // Check if this user already joined (check our own record first)
-  const { data: myPlayer } = await supabase
-    .from('game_players')
-    .select('*')
-    .eq('room_id', room.id)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  // If user is already in the game, allow rejoin regardless of room status
-  if (myPlayer) {
-    // Mark as reconnected
-    await supabase
-      .from('game_players')
-      .update({
-        is_connected: true,
-        last_seen_at: new Date().toISOString(),
-        disconnected_at: null
-      })
-      .eq('id', myPlayer.id);
-
-    // Save to localStorage for future recovery
-    saveActiveGameToStorage({
-      roomId: room.id,
-      roomCode: room.room_code,
-      playerName: myPlayer.player_name,
-      playerIndex: myPlayer.player_index,
-    });
-
-    return {
-      success: true,
-      roomId: room.id,
-      playerIndex: myPlayer.player_index,
-      maxPlayers,
-      isRejoin: room.status === 'playing'
-    };
-  }
-
-  // If game has started, only allow rejoin by matching user_id (already handled above).
-  // Name-based rejoin is removed for security — it allowed account takeover by guessing names.
-  if (room.status !== 'waiting') {
-    return { success: false, error: 'Game already in progress. You can only rejoin with the same account you used to join.' };
-  }
-
-  // Try to join with retry logic for race conditions
-  const maxRetries = 5;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    // Get current player count using the public view
-    const { data: players, error: playersError } = await supabase
-      .from('game_players_public')
-      .select('player_index')
-      .eq('room_id', room.id)
-      .order('player_index');
-
-    if (playersError) {
-      return { success: false, error: 'Error checking players' };
-    }
-
-    if (players && players.length >= maxPlayers) {
-      return { success: false, error: 'Room is full' };
-    }
-
-    // Find the next available player_index (handle gaps from players leaving)
-    const usedIndices = new Set(players?.map(p => p.player_index) || []);
-    let playerIndex = 0;
-    while (usedIndices.has(playerIndex) && playerIndex < maxPlayers) {
-      playerIndex++;
-    }
-
-    if (playerIndex >= maxPlayers) {
-      return { success: false, error: 'Room is full' };
-    }
-
-    // Try to insert player
-    const { data: insertedPlayer, error: insertError } = await supabase
-      .from('game_players')
-      .insert({
-        room_id: room.id,
-        player_name: playerName,
-        player_index: playerIndex,
-        user_id: userId,
-        session_id: sessionId,
-      })
-      .select()
-      .maybeSingle();
-
-    if (!insertError && insertedPlayer) {
-      // Save to localStorage for future recovery
-      saveActiveGameToStorage({
-        roomId: room.id,
-        roomCode: room.room_code,
-        playerName: playerName,
-        playerIndex: insertedPlayer.player_index,
-      });
-
-      return { success: true, roomId: room.id, playerIndex: insertedPlayer.player_index, maxPlayers };
-    }
-
-    // If it's a unique constraint violation, check if we're already in the game
-    if (insertError?.code === '23505') {
-      console.log(`Join attempt ${attempt + 1} failed due to unique constraint, checking if already joined...`);
-
-      // Re-check if this user already joined (might have succeeded in parallel request/tab)
-      const { data: existingPlayer } = await supabase
-        .from('game_players')
-        .select('*')
-        .eq('room_id', room.id)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (existingPlayer) {
-        console.log('User already in game, returning existing player');
-        return { success: true, roomId: room.id, playerIndex: existingPlayer.player_index, maxPlayers };
-      }
-
-      // Not a duplicate user - must be a player_index race condition, retry
-      console.log('Not a duplicate user, retrying with new player_index...');
-      // Exponential backoff with random jitter to desynchronize concurrent requests
-      const baseDelay = 150 * Math.pow(2, attempt);
-      const jitter = Math.random() * 100;
-      await new Promise(resolve => setTimeout(resolve, baseDelay + jitter));
-      continue;
-    }
-
-    // Other error - fail immediately
-    console.error('Error joining room:', insertError);
-    return { success: false, error: 'Failed to join room' };
-  }
-
-  return { success: false, error: 'Failed to join room after multiple attempts' };
+  return {
+    success: true,
+    roomId: data.roomId,
+    playerIndex: data.playerIndex,
+    maxPlayers: data.maxPlayers,
+    isRejoin: data.isRejoin,
+  };
 };
 
 // Leave a room
 export const leaveRoom = async (roomId: string): Promise<void> => {
-  const userId = await getCurrentUserId();
-  if (!userId) return;
-
-  await supabase
-    .from('game_players')
-    .delete()
-    .eq('room_id', roomId)
-    .eq('user_id', userId);
-
+  await apiFetch('/rooms', { op: 'leave', roomId });
   // Clear localStorage
   clearActiveGameFromStorage();
 };
 
 // Get room players (public info only - excludes tiles for security)
 export const getRoomPlayers = async (roomId: string): Promise<{ id: string; player_name: string; player_index: number; is_ready: boolean }[]> => {
-  const { data, error } = await supabase
-    .from('game_players_public')
-    .select('id, player_name, player_index, is_ready')
-    .eq('room_id', roomId)
-    .order('player_index');
-
-  if (error) {
-    console.error('Error fetching players:', error);
+  const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'list_players', roomId });
+  if (!ok || !data?.players) {
     return [];
   }
 
-  return (data || []).map(p => ({
+  return data.players.map((p) => ({
     id: p.id || '',
     player_name: p.player_name || '',
     player_index: p.player_index ?? 0,
@@ -411,51 +249,24 @@ export const toggleReady = async (roomId: string): Promise<{ success: boolean; g
 // Get player data with secure tile handling
 // Only returns tiles for the current session's player, others get empty arrays
 export const getSecurePlayerData = async (roomId: string): Promise<any[]> => {
-  const userId = await getCurrentUserId();
-  
-  // Fetch public player data (excludes tiles and session_id for security)
-  const { data: publicData, error: publicError } = await supabase
-    .from('game_players_public')
-    .select('id, room_id, player_name, player_index, cash, stocks, is_connected, created_at')
-    .eq('room_id', roomId)
-    .order('player_index');
-
-  if (publicError || !publicData) {
-    console.error('Error fetching player data:', publicError);
+  const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'get_players', roomId });
+  if (!ok || !data?.players) {
     return [];
   }
-
-  // Fetch own player data separately using user_id
-  const { data: myPlayer } = await supabase
-    .from('game_players')
-    .select('player_index, tiles')
-    .eq('room_id', roomId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  const myPlayerIndex = myPlayer?.player_index ?? -1;
-  const myTiles: string[] = myPlayer?.tiles || [];
-
-  // Return players with tiles only for the authenticated user
-  return publicData.map((p) => ({
-    ...p,
-    tiles: p.player_index === myPlayerIndex ? myTiles : []
-  }));
+  return data.players;
 };
 
-// Execute a game action via the edge function
+// Execute a game action via the serverless function
 export const executeGameAction = async (
   action: string,
   roomId: string,
   payload?: any
 ): Promise<{ success: boolean; error?: string; data?: any }> => {
-  const { data, error } = await supabase.functions.invoke('game-action', {
-    body: { action, roomId, payload }
-  });
+  const { ok, data, error } = await apiFetch('/game-action', { action, roomId, payload });
 
-  if (error) {
+  if (!ok) {
     console.error('Game action error:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error || 'Game action failed' };
   }
 
   if (data?.error) {
@@ -465,16 +276,16 @@ export const executeGameAction = async (
   return data || { success: true };
 };
 
-// Start the game via edge function
+// Start the game via the serverless function
 export const startGame = async (roomId: string, gameState: GameState): Promise<boolean> => {
   const result = await executeGameAction('start_game', roomId);
   return result.success;
 };
 
-// Update game state via edge function (for actions that need state update)
+// Update game state via serverless function (for actions that need state update)
 export const updateGameState = async (roomId: string, gameState: GameState): Promise<boolean> => {
-  // This is now handled by the edge function for each specific action
-  // Kept for compatibility but the edge function handles updates
+  // This is now handled by the serverless function for each specific action
+  // Kept for compatibility but the function handles updates
   return true;
 };
 
@@ -484,21 +295,12 @@ export const dbToGameState = (
   players: any[],
   roomCode: string
 ): GameState => {
-  // Debug logging
-  console.log('[dbToGameState] Received dbState:', {
-    hasBoardField: !!dbState.board,
-    boardType: typeof dbState.board,
-    boardKeys: dbState.board ? Object.keys(dbState.board).length : 0,
-    phase: dbState.phase,
-  });
-
   // Convert board object back to Map
   const board = new Map<TileId, TileState>();
   if (dbState.board) {
     Object.entries(dbState.board).forEach(([key, value]) => {
       board.set(key as TileId, value as TileState);
     });
-    console.log(`[dbToGameState] Converted ${board.size} tiles to board Map`);
   } else {
     console.warn('[dbToGameState] No board data in dbState!');
   }
@@ -545,108 +347,54 @@ export const dbToGameState = (
   };
 };
 
-// Subscribe to room changes
+// Subscribe to room changes via the Hetzner Socket.io relay.
+// The relay only signals *that* something changed; we fetch the authoritative
+// (public) data from the API in response — the same model as before.
 export const subscribeToRoom = (
   roomId: string,
   onPlayersChange: (players: any[]) => void,
   onGameStateChange: (state: any) => void,
   onRoomStatusChange: (status: string) => void
 ) => {
-  const channel = supabase
-    .channel(`room-${roomId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'game_players',
-        filter: `room_id=eq.${roomId}`,
-      },
-      async () => {
-        const players = await getRoomPlayers(roomId);
-        onPlayersChange(players);
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'game_states',
-        filter: `room_id=eq.${roomId}`,
-      },
-      (payload) => {
-        // Filter out tile_bag from the payload for security
-        const state = payload.new as any;
-        if (state) {
-          console.log('[subscribeToRoom] Received game_states update:', {
-            hasBoard: !!state.board,
-            boardType: typeof state.board,
-            phase: state.phase,
-          });
-          const { tile_bag, ...publicState } = state;
-          onGameStateChange(publicState);
-        }
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'game_rooms',
-        filter: `id=eq.${roomId}`,
-      },
-      (payload: any) => {
-        onRoomStatusChange(payload.new.status);
-      }
-    )
-    .subscribe();
+  const wsUrl = import.meta.env.VITE_WS_URL as string | undefined;
+  if (!wsUrl) {
+    console.error('[subscribeToRoom] VITE_WS_URL is not set; realtime disabled');
+    return () => {};
+  }
+
+  const socket: Socket = io(wsUrl, { transports: ['websocket'] });
+
+  const joinRoomChannel = () => socket.emit('join_room', roomId);
+  socket.on('connect', joinRoomChannel);
+
+  socket.on('game:players_changed', async () => {
+    const players = await getRoomPlayers(roomId);
+    onPlayersChange(players);
+  });
+
+  socket.on('game:state_updated', async () => {
+    const state = await getPublicGameState(roomId);
+    if (state) onGameStateChange(state);
+  });
+
+  socket.on('room:status_changed', async () => {
+    const room = await getRoomStatus(roomId);
+    if (room) onRoomStatusChange(room.status);
+  });
 
   return () => {
-    supabase.removeChannel(channel);
+    socket.emit('leave_room', roomId);
+    socket.disconnect();
   };
 };
 
 // Send heartbeat to indicate player is still connected
 export const sendHeartbeat = async (roomId: string): Promise<boolean> => {
-  const userId = await getCurrentUserId();
-  if (!userId) return false;
-
-  const { error } = await supabase
-    .from('game_players')
-    .update({
-      is_connected: true,
-      last_seen_at: new Date().toISOString(),
-      disconnected_at: null
-    })
-    .eq('room_id', roomId)
-    .eq('user_id', userId);
-
-  return !error;
+  const { ok } = await apiFetch('/rooms', { op: 'heartbeat', roomId });
+  return ok;
 };
 
-// Mark player as disconnected
+// Mark player as disconnected (keepalive so it survives page unload)
 export const markDisconnected = async (roomId: string): Promise<void> => {
-  const userId = await getCurrentUserId();
-  if (!userId) return;
-
-  await supabase
-    .from('game_players')
-    .update({
-      is_connected: false,
-      disconnected_at: new Date().toISOString()
-    })
-    .eq('room_id', roomId)
-    .eq('user_id', userId);
-};
-
-// Helper function
-const generateRoomCode = (): string => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+  await apiFetch('/rooms', { op: 'disconnect', roomId }, { keepalive: true });
 };
