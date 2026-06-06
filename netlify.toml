@@ -15,6 +15,12 @@
   # Node version for builds and functions runtime
   NODE_VERSION = "20"
 
+  # These are public, non-secret URLs (the realtime relay endpoint). They must
+  # appear in the client bundle (VITE_WS_URL) and the CSP connect-src directive
+  # (see the Content-Security-Policy header below), so exclude them from
+  # Netlify's secrets scanner to avoid false positives that fail the build.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_WS_URL,WS_SERVER_URL"
+
 # Clean /api/* paths map to the serverless functions.
 # Must come BEFORE the SPA catch-all so it is matched first.
 [[redirects]]
