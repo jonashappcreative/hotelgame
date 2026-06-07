@@ -84,7 +84,7 @@ export const ELIGIBLE_CHAINS_6_EF: ChainName[] = ['sackson', 'tower', 'worldwide
 export const ELIGIBLE_CHAINS_7_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
 export function getSafeChainSize(rules: CustomRules): number | null {
-  if (!rules.chainSafetyEnabled) return 11;
+  if (!rules.chainSafetyEnabled) return null;
   if (rules.chainSafetyThreshold === 'none') return null;
   return parseInt(rules.chainSafetyThreshold);
 }

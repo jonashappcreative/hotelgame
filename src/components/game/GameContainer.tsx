@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
@@ -17,7 +17,9 @@ import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock, WifiOff } from 'lucide-react';
+import { Clock, WifiOff, ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { getStockPrice } from '@/utils/gameLogic';
 
 interface GameContainerProps {
   gameState: GameState;
@@ -75,9 +77,26 @@ export const GameContainer = ({
   })();
 
   // Check if player has unplayable tiles
-  const hasNoPlayableTiles = gameState.phase === 'place_tile' && 
-    isMyTurn && 
+  const hasNoPlayableTiles = gameState.phase === 'place_tile' &&
+    isMyTurn &&
     !hasPlayableTiles(gameState, gameState.currentPlayerIndex);
+
+  // Auto-complete the buy phase when the player can't afford any available stock.
+  const buyPhaseActive = gameState.phase === 'buy_stock' && isMyTurn;
+  const canBuyAnything = buyPhaseActive && (() => {
+    const activeChains = (Object.keys(gameState.chains) as ChainName[])
+      .filter(c => gameState.chains[c].isActive && gameState.stockBank[c] > 0);
+    return myPlayer.cash > 0 && activeChains.some(
+      c => getStockPrice(c, gameState.chains[c].tiles.length) <= myPlayer.cash
+    );
+  })();
+
+  useEffect(() => {
+    if (buyPhaseActive && !canBuyAnything) {
+      const t = setTimeout(() => onEndTurn?.(), 800);
+      return () => clearTimeout(t);
+    }
+  }, [buyPhaseActive, canBuyAnything]);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]
@@ -317,7 +336,6 @@ export const GameContainer = ({
                       gameState={gameState}
                       playerCash={myPlayer.cash}
                       onPurchase={onBuyStocks}
-                      onEndTurn={onEndTurn}
                     />
                   ) : isOnlineMode ? (
                     <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
@@ -333,7 +351,6 @@ export const GameContainer = ({
                       gameState={gameState}
                       playerCash={myPlayer.cash}
                       onPurchase={onBuyStocks}
-                      onEndTurn={onEndTurn}
                     />
                   )
                 )}
@@ -395,6 +412,19 @@ export const GameContainer = ({
                 onTileClick={handleTileSelect}
                 selectedTile={selectedTile}
               />
+              {/* End Turn — shown below tiles during the buy phase */}
+              {buyPhaseActive && (
+                canBuyAnything ? (
+                  <Button size="lg" className="w-full" onClick={onEndTurn}>
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    End Turn
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    Can't afford any stocks — ending turn…
+                  </p>
+                )
+              )}
             </div>
 
             {/* Other Player Cards */}

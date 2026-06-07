@@ -369,9 +369,18 @@ export const dbToGameState = (
     turnDeadlineEpoch: dbState.turn_deadline_epoch ?? null,
     safeChainSize: (() => {
       const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      if (!rs || !rs.chainSafetyEnabled) return 11;
+      if (!rs || !rs.chainSafetyEnabled) return null;
       if (rs.chainSafetyThreshold === 'none') return null;
       return parseInt(rs.chainSafetyThreshold);
+    })(),
+    boardRows: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      return rs?.boardSizeEnabled && rs?.boardSize === '6x10' ? 6 : 9;
+    })(),
+    boardCols: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      const count = rs?.boardSizeEnabled && rs?.boardSize === '6x10' ? 10 : 12;
+      return ['A','B','C','D','E','F','G','H','I','J','K','L'].slice(0, count);
     })(),
   };
 };

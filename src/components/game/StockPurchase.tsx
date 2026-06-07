@@ -1,18 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChainName, GameState, CHAINS, MAX_STOCKS_PER_TURN, STOCKS_PER_CHAIN } from '@/types/game';
 import { getStockPrice } from '@/utils/gameLogic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Minus, Plus, ShoppingCart, ArrowRight } from 'lucide-react';
+import { Minus, Plus, ShoppingCart } from 'lucide-react';
 
 interface StockPurchaseProps {
   gameState: GameState;
   playerCash: number;
   onPurchase: (purchases: { chain: ChainName; quantity: number }[]) => void;
-  onEndTurn: () => void;
 }
 
-export const StockPurchase = ({ gameState, playerCash, onPurchase, onEndTurn }: StockPurchaseProps) => {
+export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurchaseProps) => {
   const [selections, setSelections] = useState<Record<ChainName, number>>({
     sackson: 0,
     tower: 0,
@@ -25,7 +24,23 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase, onEndTurn }: 
   const [hasPurchased, setHasPurchased] = useState(false);
 
   const totalSelected = Object.values(selections).reduce((a, b) => a + b, 0);
-  
+
+  // All chains for display (active first, then inactive/sold out)
+  const allChains = (Object.keys(gameState.chains) as ChainName[]);
+
+  const activeChains = allChains
+    .filter(chain => gameState.chains[chain].isActive && gameState.stockBank[chain] > 0)
+    .sort((a, b) => {
+      const priceA = getStockPrice(a, gameState.chains[a].tiles.length);
+      const priceB = getStockPrice(b, gameState.chains[b].tiles.length);
+      return priceA - priceB;
+    });
+
+  // True only if the player can afford at least one share of at least one available chain.
+  const canBuyAnything = playerCash > 0 && activeChains.some(
+    chain => getStockPrice(chain, gameState.chains[chain].tiles.length) <= playerCash
+  );
+
   const getTotalCost = (): number => {
     return (Object.entries(selections) as [ChainName, number][]).reduce((total, [chain, qty]) => {
       if (qty === 0) return total;
@@ -37,17 +52,6 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase, onEndTurn }: 
   const totalCost = getTotalCost();
   const canAfford = totalCost <= playerCash;
   const remainingPurchases = MAX_STOCKS_PER_TURN - totalSelected;
-
-  // All chains for display (active first, then inactive/sold out)
-  const allChains = (Object.keys(gameState.chains) as ChainName[]);
-  
-  const activeChains = allChains
-    .filter(chain => gameState.chains[chain].isActive && gameState.stockBank[chain] > 0)
-    .sort((a, b) => {
-      const priceA = getStockPrice(a, gameState.chains[a].tiles.length);
-      const priceB = getStockPrice(b, gameState.chains[b].tiles.length);
-      return priceA - priceB;
-    });
 
   const soldOutChains = allChains
     .filter(chain => gameState.chains[chain].isActive && gameState.stockBank[chain] === 0);
@@ -93,11 +97,7 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase, onEndTurn }: 
   if (activeChains.length === 0 && soldOutChains.length === 0) {
     return (
       <div className="bg-card rounded-xl p-6 text-center animate-slide-up">
-        <p className="text-muted-foreground mb-4">No active chains to purchase stock from</p>
-        <Button onClick={onEndTurn} size="lg">
-          <ArrowRight className="w-4 h-4 mr-2" />
-          End Turn
-        </Button>
+        <p className="text-muted-foreground">No active chains — use End Turn below.</p>
       </div>
     );
   }
@@ -217,27 +217,16 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase, onEndTurn }: 
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3">
-        {totalSelected > 0 && (
-          <Button
-            className="flex-1"
-            onClick={handleBuy}
-            disabled={!canAfford}
-          >
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Buy {totalSelected} Share{totalSelected !== 1 ? 's' : ''}
-          </Button>
-        )}
+      {totalSelected > 0 && (
         <Button
-          variant={totalSelected > 0 ? "outline" : "default"}
-          className={totalSelected > 0 ? "" : "flex-1"}
-          size="lg"
-          onClick={onEndTurn}
+          className="w-full"
+          onClick={handleBuy}
+          disabled={!canAfford}
         >
-          <ArrowRight className="w-4 h-4 mr-2" />
-          End Turn
+          <ShoppingCart className="w-4 h-4 mr-2" />
+          Buy {totalSelected} Share{totalSelected !== 1 ? 's' : ''}
         </Button>
-      </div>
+      )}
 
       {hasPurchased && (
         <p className="text-xs text-muted-foreground text-center mt-3">
