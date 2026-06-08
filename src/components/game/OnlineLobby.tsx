@@ -143,7 +143,7 @@ export const OnlineLobby = ({
   // In a room waiting for players
   if (roomCode) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Waiting for Players</CardTitle>
@@ -316,7 +316,7 @@ export const OnlineLobby = ({
   // Show loading state while checking for active game
   if (isCheckingActiveGame) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-muted-foreground">Checking for active games...</p>
@@ -328,7 +328,7 @@ export const OnlineLobby = ({
   // Main menu
   if (mode === 'menu') {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-between mb-4">
             <Button
@@ -417,7 +417,7 @@ export const OnlineLobby = ({
   // Create room form
   if (mode === 'create') {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-between mb-4">
             <Button
@@ -564,7 +564,7 @@ export const OnlineLobby = ({
 
     return (
       <TooltipProvider delayDuration={300}>
-        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
           <div className="w-full max-w-md flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <Button
@@ -890,7 +890,7 @@ export const OnlineLobby = ({
     );
   }
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
           <Button

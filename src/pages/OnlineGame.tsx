@@ -91,8 +91,10 @@ const OnlineGame = () => {
       onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
       onNewGame={handleNewGame}
+      onReturnToLobby={handleLeaveRoom}
       onAutoEndTurn={handleAutoEndTurn}
       botCount={botCount}
+      isHost={isHost}
     />
   );
 };

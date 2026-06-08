@@ -10,8 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Monitor, Wifi, User, LogOut, History } from 'lucide-react';
 import logoMainScreen from '@/img/Logo_MainScreen.webp';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
+import { SiteFooter } from '@/components/SiteFooter';
 
 type GameMode = 'select' | 'local';
+
+// Account / sign-in UI is hidden until logging in unlocks player-specific
+// features (saved settings, history, etc.). Flip to true to re-enable; the
+// /auth and /history routes and all wiring stay intact behind this flag.
+const SHOW_ACCOUNT_UI = false;
 
 const Index = () => {
   const [mode, setMode] = useState<GameMode>('select');
@@ -40,12 +46,13 @@ const Index = () => {
   // Mode selection screen
   if (mode === 'select') {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen flex flex-col p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
+        <div className="flex-1 flex items-center justify-center w-full">
         <div className="w-full max-w-md">
           {/* User Menu - Top Right */}
           <div className="absolute top-4 right-4 flex items-center gap-2">
             <AudioSettingsButton variant="outline" />
-            {!authLoading && (
+            {SHOW_ACCOUNT_UI && !authLoading && (
               <>
                 {user ? (
                   <>
@@ -166,6 +173,8 @@ const Index = () => {
             </Button>
           </div>
         </div>
+        </div>
+        <SiteFooter />
       </div>
     );
   }

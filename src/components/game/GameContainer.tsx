@@ -18,7 +18,7 @@ import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock, WifiOff, ArrowRight } from 'lucide-react';
+import { Clock, WifiOff, ArrowRight, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getStockPrice } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
@@ -35,9 +35,13 @@ interface GameContainerProps {
   onEndTurn: () => void;
   onEndGameVote: (vote: boolean) => void;
   onNewGame: () => void;
+  /** Leave the room / go back to the lobby. Works for every player (online). */
+  onReturnToLobby?: () => void;
   onDiscardTile?: (tileId: TileId) => void;
   onAutoEndTurn?: () => void;
   botCount?: number;
+  /** Whether this player may start a new game (host in online mode). */
+  isHost?: boolean;
 }
 
 export const GameContainer = ({
@@ -52,9 +56,11 @@ export const GameContainer = ({
   onEndTurn,
   onEndGameVote,
   onNewGame,
+  onReturnToLobby,
   onDiscardTile,
   onAutoEndTurn,
   botCount = 0,
+  isHost = true,
 }: GameContainerProps) => {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
 
@@ -254,11 +260,12 @@ export const GameContainer = ({
 
       {/* Game Over Modal */}
       {gameState.phase === 'game_over' && showGameOver && (
-        <GameOver 
-          gameState={gameState} 
+        <GameOver
+          gameState={gameState}
           onNewGame={onNewGame}
           onClose={() => setShowGameOver(false)}
-          onReturnToLobby={onNewGame}
+          onReturnToLobby={onReturnToLobby ?? onNewGame}
+          canStartNewGame={isHost}
         />
       )}
 
@@ -277,6 +284,15 @@ export const GameContainer = ({
               <p className="text-sm text-muted-foreground">Current Turn</p>
               <p className="font-semibold text-primary">{currentPlayer.name}</p>
             </div>
+            {/* Once the game is over, the results overlay can be dismissed to
+                inspect the final board — this button brings it back so the
+                player is never stranded without a way to the lobby. */}
+            {gameState.phase === 'game_over' && !showGameOver && (
+              <Button variant="default" size="sm" onClick={() => setShowGameOver(true)}>
+                <Trophy className="w-4 h-4 mr-2" />
+                View Results
+              </Button>
+            )}
             <InfoCard gameState={gameState} />
             <AudioSettingsButton variant="outline" />
             <EndGameVote

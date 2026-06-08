@@ -9,6 +9,8 @@ interface GameOverProps {
   onNewGame: () => void;
   onReturnToLobby?: () => void;
   onClose?: () => void;
+  /** When false, hide the "New Game" button (e.g. non-host in an online game). */
+  canStartNewGame?: boolean;
 }
 
 // Calculate detailed score breakdown
@@ -79,7 +81,7 @@ const calculateDetailedScores = (gameState: GameState) => {
   return players.sort((a, b) => b.finalCash - a.finalCash);
 };
 
-export const GameOver = ({ gameState, onNewGame, onReturnToLobby, onClose }: GameOverProps) => {
+export const GameOver = ({ gameState, onNewGame, onReturnToLobby, onClose, canStartNewGame = true }: GameOverProps) => {
   const detailedScores = calculateDetailedScores(gameState);
 
   return (
@@ -206,14 +208,16 @@ export const GameOver = ({ gameState, onNewGame, onReturnToLobby, onClose }: Gam
               Return to Lobby
             </Button>
           )}
-          <Button
-            className="flex-1"
-            size="lg"
-            onClick={onNewGame}
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            New Game
-          </Button>
+          {canStartNewGame && (
+            <Button
+              className="flex-1"
+              size="lg"
+              onClick={onNewGame}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              New Game
+            </Button>
+          )}
         </div>
       </div>
     </div>
