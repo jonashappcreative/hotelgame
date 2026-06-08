@@ -587,7 +587,7 @@ async function handleGameAction(opts: {
         }
 
         // Check for game end
-        if (checkGameEnd(newChains) && newPhase === 'buy_stock') {
+        if (checkGameEnd(newChains, globalBoardRows) && newPhase === 'buy_stock') {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -717,7 +717,7 @@ async function handleGameAction(opts: {
         let newPhase = 'buy_stock';
         let winner = null;
 
-        if (checkGameEnd(newChains)) {
+        if (checkGameEnd(newChains, globalBoardRows)) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1261,7 +1261,7 @@ async function handleGameAction(opts: {
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains)) {
+        if (checkGameEnd(gameState.chains, globalBoardRows)) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1331,7 +1331,7 @@ async function handleGameAction(opts: {
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains)) {
+        if (checkGameEnd(gameState.chains, globalBoardRows)) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1463,7 +1463,8 @@ async function handleGameAction(opts: {
 
         if (vote && !endGameVotes.includes(playerId)) {
           const newVotes = [...endGameVotes, playerId];
-          const votesNeeded = Math.ceil(allPlayers.length / 2);
+          const humanPlayers = allPlayers.filter((p: any) => !p.is_bot);
+          const votesNeeded = Math.max(1, Math.ceil(humanPlayers.length / 2));
 
           let newPhase = gameState.phase;
           let winner = null;
@@ -1619,7 +1620,7 @@ async function handleGameAction(opts: {
               : null;
           let phase = 'place_tile';
           let autoWinner: string | null = null;
-          if (checkGameEnd(chains)) {
+          if (checkGameEnd(chains, autoBoardRows)) {
             phase = 'game_over';
             const scored = allPlayers.map(p => ({
               id: `player-${p.player_index}`,
@@ -1990,7 +1991,7 @@ async function completeMergerInDb(
   let newPhase = 'buy_stock';
   let winner = null;
 
-  if (checkGameEnd(newChains)) {
+  if (checkGameEnd(newChains, cmBoardRows)) {
     newPhase = 'game_over';
     const scoredPlayers = allPlayers.map(p => ({
       id: `player-${p.player_index}`,

@@ -1,9 +1,14 @@
+import { useEffect, useRef } from 'react';
 import { useOnlineGame } from '@/hooks/useOnlineGame';
 import { OnlineLobby } from '@/components/game/OnlineLobby';
 import { GameContainer } from '@/components/game/GameContainer';
 import { TileId, ChainName } from '@/types/game';
+import { useAudio } from '@/contexts/AudioContext';
 
 const OnlineGame = () => {
+  const { playSfx } = useAudio();
+  const prevPlayersLengthRef = useRef(0);
+
   const {
     gameState,
     roomId,
@@ -37,6 +42,14 @@ const OnlineGame = () => {
     handleAutoEndTurn,
   } = useOnlineGame();
 
+  // SFX: play player-join when someone new joins the lobby
+  useEffect(() => {
+    if (players.length > prevPlayersLengthRef.current && prevPlayersLengthRef.current > 0) {
+      playSfx('player-join');
+    }
+    prevPlayersLengthRef.current = players.length;
+  }, [players.length, playSfx]);
+
   // Show lobby if not in a game
   if (roomStatus !== 'playing' || !gameState) {
     return (
@@ -62,6 +75,8 @@ const OnlineGame = () => {
     );
   }
 
+  const botCount = players.filter(p => p.is_bot).length;
+
   return (
     <GameContainer
       gameState={gameState}
@@ -77,6 +92,7 @@ const OnlineGame = () => {
       onEndGameVote={handleEndGameVote}
       onNewGame={handleNewGame}
       onAutoEndTurn={handleAutoEndTurn}
+      botCount={botCount}
     />
   );
 };

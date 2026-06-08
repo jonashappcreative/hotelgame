@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Monitor, Wifi, User, LogOut, History } from 'lucide-react';
 import logoMainScreen from '@/img/Logo_MainScreen.webp';
+import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 type GameMode = 'select' | 'local';
 
@@ -43,6 +44,7 @@ const Index = () => {
         <div className="w-full max-w-md">
           {/* User Menu - Top Right */}
           <div className="absolute top-4 right-4 flex items-center gap-2">
+            <AudioSettingsButton variant="outline" />
             {!authLoading && (
               <>
                 {user ? (

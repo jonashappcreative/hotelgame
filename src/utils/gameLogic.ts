@@ -582,16 +582,12 @@ export const endTurn = (state: GameState): GameState => {
 };
 
 // Check if game should end
-// Game ends ONLY when any chain reaches 41+ tiles
+// Game ends ONLY when any chain reaches the end-game tile threshold.
+// Small board (6 rows) uses 30; standard board uses 41.
 export const checkGameEnd = (state: GameState): boolean => {
+  const endSize = state.boardRows === 6 ? 30 : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(state.chains).filter(c => c.isActive);
-  
-  // ONLY condition: Any chain has 41+ tiles
-  if (activeChains.some(c => c.tiles.length >= END_GAME_CHAIN_SIZE)) {
-    return true;
-  }
-
-  return false;
+  return activeChains.some(c => c.tiles.length >= endSize);
 };
 
 // Calculate final scores

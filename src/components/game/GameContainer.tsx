@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
+import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
 import { PlayerCard } from './PlayerCard';
@@ -20,6 +21,7 @@ import { analyzeMerger } from '@/utils/mergerLogic';
 import { Clock, WifiOff, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getStockPrice } from '@/utils/gameLogic';
+import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
   gameState: GameState;
@@ -35,6 +37,7 @@ interface GameContainerProps {
   onNewGame: () => void;
   onDiscardTile?: (tileId: TileId) => void;
   onAutoEndTurn?: () => void;
+  botCount?: number;
 }
 
 export const GameContainer = ({
@@ -51,12 +54,17 @@ export const GameContainer = ({
   onNewGame,
   onDiscardTile,
   onAutoEndTurn,
+  botCount = 0,
 }: GameContainerProps) => {
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-  
+
   // Tile selection state for confirmation modal
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const [showGameOver, setShowGameOver] = useState(true);
+
+  const { playSfx } = useAudio();
+  const prevPhaseRef = useRef(gameState.phase);
+  const prevPlayerIndexRef = useRef(gameState.currentPlayerIndex);
   
   // Determine if we're in online mode (myPlayerIndex provided) or local mode
   const isOnlineMode = myPlayerIndexProp !== undefined;
@@ -97,6 +105,35 @@ export const GameContainer = ({
       return () => clearTimeout(t);
     }
   }, [buyPhaseActive, canBuyAnything]);
+
+  // SFX: watch phase transitions
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    const curr = gameState.phase;
+    if (prev === curr) return;
+    prevPhaseRef.current = curr;
+
+    if (curr === 'game_over') {
+      playSfx('game-over');
+    } else if (curr === 'merger_choose_survivor') {
+      playSfx('merger-fanfare');
+    } else if (curr === 'merger_pay_bonuses' && (prev === 'place_tile' || prev === 'merger_choose_survivor')) {
+      playSfx('merger-fanfare');
+    } else if (prev === 'found_chain') {
+      playSfx('chain-founded');
+    }
+  }, [gameState.phase, playSfx]);
+
+  // SFX: your-turn notification (online mode only)
+  useEffect(() => {
+    if (!isOnlineMode) return;
+    const prev = prevPlayerIndexRef.current;
+    const curr = gameState.currentPlayerIndex;
+    if (prev !== curr && curr === myPlayerIndex) {
+      playSfx('your-turn');
+    }
+    prevPlayerIndexRef.current = curr;
+  }, [gameState.currentPlayerIndex, isOnlineMode, myPlayerIndex, playSfx]);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]
@@ -152,6 +189,7 @@ export const GameContainer = ({
   // Handle tile confirmation
   const handleTileConfirm = () => {
     if (selectedTile) {
+      playSfx('tile-place');
       onTilePlacement(selectedTile);
       setSelectedTile(null);
     }
@@ -162,6 +200,13 @@ export const GameContainer = ({
     if (onDiscardTile) {
       onDiscardTile(tileId);
     }
+  };
+
+  const handleBuyStocksWithSfx = (purchases: { chain: string; quantity: number }[]) => {
+    if (purchases.some(p => p.quantity > 0)) {
+      playSfx('buy-stock');
+    }
+    onBuyStocks(purchases);
   };
 
   return (
@@ -227,18 +272,20 @@ export const GameContainer = ({
             </p>
           </div>
           
-          <div className="flex items-center gap-3">
-            <EndGameVote
-              gameState={gameState}
-              currentPlayerId={myPlayer.id}
-              onVote={onEndGameVote}
-              canCallVote={canCallEndGameVote}
-            />
+          <div className="flex items-center gap-2">
             <div className="text-right hidden sm:block">
               <p className="text-sm text-muted-foreground">Current Turn</p>
               <p className="font-semibold text-primary">{currentPlayer.name}</p>
             </div>
             <InfoCard gameState={gameState} />
+            <AudioSettingsButton variant="outline" />
+            <EndGameVote
+              gameState={gameState}
+              currentPlayerId={myPlayer.id}
+              onVote={onEndGameVote}
+              canCallVote={canCallEndGameVote}
+              botCount={botCount}
+            />
           </div>
         </header>
 
@@ -335,7 +382,7 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
-                      onPurchase={onBuyStocks}
+                      onPurchase={handleBuyStocksWithSfx}
                     />
                   ) : isOnlineMode ? (
                     <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
@@ -350,7 +397,7 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
-                      onPurchase={onBuyStocks}
+                      onPurchase={handleBuyStocksWithSfx}
                     />
                   )
                 )}

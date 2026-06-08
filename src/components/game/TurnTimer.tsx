@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAudio } from '@/contexts/AudioContext';
 
 interface TurnTimerProps {
   durationSeconds: number;
@@ -9,11 +10,14 @@ interface TurnTimerProps {
 export const TurnTimer = ({ durationSeconds, isActive, onExpire }: TurnTimerProps) => {
   const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
   const hasExpiredRef = useRef(false);
+  const hasWarnedRef  = useRef(false);
+  const { playSfx } = useAudio();
 
   // Reset when a new turn starts (durationSeconds changes)
   useEffect(() => {
     setSecondsLeft(durationSeconds);
     hasExpiredRef.current = false;
+    hasWarnedRef.current  = false;
   }, [durationSeconds]);
 
   // Countdown interval
@@ -40,6 +44,14 @@ export const TurnTimer = ({ durationSeconds, isActive, onExpire }: TurnTimerProp
       onExpire();
     }
   }, [secondsLeft, isActive, onExpire]);
+
+  // Play warning sound once at 10 seconds
+  useEffect(() => {
+    if (isActive && secondsLeft === 10 && !hasWarnedRef.current) {
+      hasWarnedRef.current = true;
+      playSfx('timer-warn');
+    }
+  }, [secondsLeft, isActive, playSfx]);
 
   if (!isActive) return null;
 

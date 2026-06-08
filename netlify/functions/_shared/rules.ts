@@ -168,9 +168,12 @@ export function generateAllTiles(boardRows: number = 9, boardColsCount: number =
   return tiles;
 }
 
-export function checkGameEnd(chains: Record<ChainName, any>): boolean {
+export const SMALL_BOARD_END_GAME_SIZE = 30;
+
+export function checkGameEnd(chains: Record<ChainName, any>, boardRows: number = 9): boolean {
+  const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(chains).filter((c: any) => c.isActive);
-  return activeChains.some((c: any) => c.tiles.length >= END_GAME_CHAIN_SIZE);
+  return activeChains.some((c: any) => c.tiles.length >= endSize);
 }
 
 export function getStockholderRankings(players: any[], chainName: ChainName): { majority: any[]; minority: any[] } {

@@ -106,8 +106,8 @@ export const GameOver = ({ gameState, onNewGame, onReturnToLobby, onClose }: Gam
         <div className="space-y-4 mb-6">
           {detailedScores.map((player, index) => {
             const isWinner = index === 0;
-            const icons = [Crown, Medal, Medal, Medal];
-            const Icon = icons[index];
+            const icons = [Crown, Medal, Medal, Medal, Medal, Medal];
+            const Icon = icons[index] ?? Medal;
 
             return (
               <div

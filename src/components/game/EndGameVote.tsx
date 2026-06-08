@@ -17,6 +17,7 @@ interface EndGameVoteProps {
   currentPlayerId: string;
   onVote: (vote: boolean) => void;
   canCallVote: boolean;
+  botCount?: number;
 }
 
 export const EndGameVote = ({
@@ -24,17 +25,21 @@ export const EndGameVote = ({
   currentPlayerId,
   onVote,
   canCallVote,
+  botCount = 0,
 }: EndGameVoteProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  
+
+  const endGameSize = gameState.boardRows === 6 ? 30 : 41;
+
   // Check if current player has already voted
   const hasVoted = gameState.endGameVotes?.includes(currentPlayerId);
-  const votesNeeded = Math.ceil(gameState.players.length / 2);
+  const humanPlayerCount = gameState.players.length - botCount;
+  const votesNeeded = Math.max(1, Math.ceil(humanPlayerCount / 2));
   const currentVotes = gameState.endGameVotes?.length || 0;
 
   // Check end game eligibility - can vote anytime during place_tile or buy_stock phase
   const activeChains = Object.values(gameState.chains).filter(c => c.isActive);
-  const hasChainOver40 = activeChains.some(c => c.tiles.length >= 41);
+  const hasChainOverLimit = activeChains.some(c => c.tiles.length >= endGameSize);
 
   // Allow voting when at least one chain is active
   const canEndGame = activeChains.length > 0;
@@ -70,9 +75,9 @@ export const EndGameVote = ({
           <DialogTitle>Vote to End Game</DialogTitle>
           <DialogDescription>
             Vote to end the game early. If majority agrees, the game will end and final scores will be calculated.
-            {hasChainOver40 && (
+            {hasChainOverLimit && (
               <span className="block mt-1 text-primary">
-                • A chain has reached 41+ tiles - game will end automatically!
+                • A chain has reached {endGameSize}+ tiles — game will end automatically!
               </span>
             )}
           </DialogDescription>

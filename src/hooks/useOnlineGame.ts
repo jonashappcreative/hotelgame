@@ -526,8 +526,9 @@ export const useOnlineGame = () => {
       return;
     }
 
-    const currentPlayer = gameState.players[myPlayerIndex];
-    const votesNeeded = Math.ceil(gameState.players.length / 2);
+    const botCount = players.filter(p => p.is_bot).length;
+    const humanCount = gameState.players.length - botCount;
+    const votesNeeded = Math.max(1, Math.ceil(humanCount / 2));
     const currentVotes = gameState.endGameVotes.length + (vote ? 1 : 0);
     
     if (currentVotes >= votesNeeded) {

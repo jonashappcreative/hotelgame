@@ -14,6 +14,7 @@ import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTrian
 import { toast } from '@/hooks/use-toast';
 import { CustomRules, DEFAULT_RULES } from '@/types/game';
 import { fetchRoomRules } from '@/utils/multiplayerService';
+import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -329,15 +330,17 @@ export const OnlineLobby = ({
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mb-4"
-            onClick={() => navigate('/')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
+          <div className="flex items-center justify-between mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/')}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <AudioSettingsButton variant="outline" />
+          </div>
 
           {/* Active Game Reconnection Banner */}
           {activeGameInfo && (
@@ -415,17 +418,20 @@ export const OnlineLobby = ({
   if (mode === 'create') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="w-fit mb-2"
+        <div className="w-full max-w-md">
+          <div className="flex items-center justify-between mb-4">
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setMode('menu')}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
+            <AudioSettingsButton variant="outline" />
+          </div>
+          <Card>
+          <CardHeader>
             <CardTitle>Create a Room</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -540,7 +546,8 @@ export const OnlineLobby = ({
               </div>
             )}
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -558,17 +565,20 @@ export const OnlineLobby = ({
     return (
       <TooltipProvider delayDuration={300}>
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
-          <Card className="w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
-            <CardHeader>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-fit mb-2"
+          <div className="w-full max-w-md flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleBackFromRules}
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
+              <AudioSettingsButton variant="outline" />
+            </div>
+          <Card className="flex flex-col overflow-hidden flex-1 min-h-0">
+            <CardHeader>
               <CardTitle className="text-2xl font-bold">Set Custom Rules</CardTitle>
               <p className="text-sm text-muted-foreground">Configure game rules before creating your room</p>
             </CardHeader>
@@ -874,23 +884,27 @@ export const OnlineLobby = ({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          </div>
         </div>
       </TooltipProvider>
     );
   }
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-fit mb-2"
+      <div className="w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setMode('menu')}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
+          <AudioSettingsButton variant="outline" />
+        </div>
+        <Card>
+        <CardHeader>
           <CardTitle>Join a Room</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -962,7 +976,8 @@ export const OnlineLobby = ({
             Join Room
           </Button>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 };
