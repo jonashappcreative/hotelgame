@@ -3,6 +3,7 @@
 // (comma-separated); falls back to the production site + local dev ports.
 
 const DEFAULT_ORIGINS = [
+  'https://hotelgame.jonashapp.com',
   'https://acquiregame.netlify.app',
   'http://localhost:8080',
   'http://localhost:5173',

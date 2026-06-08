@@ -16,11 +16,23 @@ import { Server } from 'socket.io';
 
 const PORT = process.env.PORT || 3001;
 const INTERNAL_SECRET = process.env.WS_INTERNAL_SECRET;
-// Comma-separated list of allowed browser origins for the Socket.io CORS check.
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+// Allowed browser origins for the Socket.io CORS check. Configurable via the
+// comma-separated ALLOWED_ORIGINS env var; falls back to the production
+// domains + local dev ports when unset.
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://hotelgame.jonashapp.com',
+  'https://acquiregame.netlify.app',
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+const ENV_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
+const ALLOWED_ORIGINS = ENV_ALLOWED_ORIGINS.length > 0
+  ? ENV_ALLOWED_ORIGINS
+  : DEFAULT_ALLOWED_ORIGINS;
 
 if (!INTERNAL_SECRET) {
   console.error('FATAL: WS_INTERNAL_SECRET is not set. Refusing to start.');
