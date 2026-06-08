@@ -89,6 +89,139 @@
     --background: 222 47% 8%;
     --foreground: 210 40% 96%;
   }
+
+  /* ===========================================================================
+   * THEME PREVIEW VARIANTS (test-only) — toggled via the on-screen switcher.
+   * Each is grounded in the lobby background image: a deep, saturated teal-cyan
+   * (≈hsl 180–190) with green-leaning edges and warm gold accents. They shift
+   * both the blue accent (was 199°) and the navy neutrals (were 222°) toward
+   * green/turquoise. Applied as a class on <html>; later source order than
+   * :root, so they win. Remove this block + the switcher to finalize a choice.
+   * ========================================================================= */
+
+  /* 1 — Turquoise: bright cyan-teal, closest to the brightest wall tones. */
+  .theme-turquoise {
+    --background: 192 46% 7%;
+    --foreground: 180 30% 96%;
+    --card: 192 42% 10%;
+    --card-foreground: 180 30% 96%;
+    --popover: 192 42% 10%;
+    --popover-foreground: 180 30% 96%;
+    --primary: 185 82% 45%;
+    --primary-foreground: 192 50% 7%;
+    --secondary: 192 38% 15%;
+    --secondary-foreground: 180 30% 96%;
+    --muted: 192 26% 17%;
+    --muted-foreground: 186 18% 62%;
+    --accent: 185 82% 45%;
+    --accent-foreground: 192 50% 7%;
+    --border: 188 30% 22%;
+    --input: 192 26% 17%;
+    --ring: 185 82% 45%;
+    --tile-hover: 185 82% 45%;
+    --gradient-primary: linear-gradient(135deg, hsl(185 82% 47%) 0%, hsl(190 82% 35%) 100%);
+    --shadow-glow: 0 0 20px hsl(185 82% 47% / 0.35);
+    --cash-neutral: 45 90% 52%;
+    --sidebar-background: 192 46% 7%;
+    --sidebar-primary: 185 82% 45%;
+    --sidebar-primary-foreground: 192 50% 7%;
+    --sidebar-accent: 192 38% 15%;
+    --sidebar-border: 188 30% 22%;
+    --sidebar-ring: 185 82% 45%;
+  }
+
+  /* 2 — Emerald Teal: greener, richer — turquoise pulled toward emerald. */
+  .theme-emerald {
+    --background: 174 42% 7%;
+    --foreground: 168 28% 96%;
+    --card: 174 40% 10%;
+    --card-foreground: 168 28% 96%;
+    --popover: 174 40% 10%;
+    --popover-foreground: 168 28% 96%;
+    --primary: 165 72% 43%;
+    --primary-foreground: 174 50% 7%;
+    --secondary: 174 36% 15%;
+    --secondary-foreground: 168 28% 96%;
+    --muted: 174 26% 17%;
+    --muted-foreground: 168 18% 60%;
+    --accent: 165 72% 43%;
+    --accent-foreground: 174 50% 7%;
+    --border: 170 28% 22%;
+    --input: 174 26% 17%;
+    --ring: 165 72% 43%;
+    --tile-hover: 165 72% 43%;
+    --gradient-primary: linear-gradient(135deg, hsl(165 72% 45%) 0%, hsl(170 72% 33%) 100%);
+    --shadow-glow: 0 0 20px hsl(165 72% 45% / 0.35);
+    --cash-neutral: 45 90% 52%;
+    --sidebar-background: 174 42% 7%;
+    --sidebar-primary: 165 72% 43%;
+    --sidebar-primary-foreground: 174 50% 7%;
+    --sidebar-accent: 174 36% 15%;
+    --sidebar-border: 170 28% 22%;
+    --sidebar-ring: 165 72% 43%;
+  }
+
+  /* 3 — Teal & Gold: teal chrome with the image's warm gold as the accent. */
+  .theme-teal-gold {
+    --background: 190 44% 7%;
+    --foreground: 180 25% 96%;
+    --card: 190 40% 10%;
+    --card-foreground: 180 25% 96%;
+    --popover: 190 40% 10%;
+    --popover-foreground: 180 25% 96%;
+    --primary: 188 78% 44%;
+    --primary-foreground: 190 50% 7%;
+    --secondary: 190 36% 15%;
+    --secondary-foreground: 180 25% 96%;
+    --muted: 190 26% 17%;
+    --muted-foreground: 184 16% 62%;
+    --accent: 42 85% 55%;
+    --accent-foreground: 40 60% 10%;
+    --border: 188 30% 22%;
+    --input: 190 26% 17%;
+    --ring: 42 85% 55%;
+    --tile-hover: 188 78% 44%;
+    --gradient-primary: linear-gradient(135deg, hsl(188 78% 46%) 0%, hsl(192 78% 34%) 100%);
+    --shadow-glow: 0 0 20px hsl(42 85% 55% / 0.32);
+    --cash-neutral: 42 88% 55%;
+    --sidebar-background: 190 44% 7%;
+    --sidebar-primary: 188 78% 44%;
+    --sidebar-primary-foreground: 190 50% 7%;
+    --sidebar-accent: 190 36% 15%;
+    --sidebar-border: 188 30% 22%;
+    --sidebar-ring: 42 85% 55%;
+  }
+
+  /* 4 — Jade: deep, calm green — the "rich royal green" end of the range. */
+  .theme-jade {
+    --background: 158 40% 7%;
+    --foreground: 150 26% 96%;
+    --card: 158 38% 10%;
+    --card-foreground: 150 26% 96%;
+    --popover: 158 38% 10%;
+    --popover-foreground: 150 26% 96%;
+    --primary: 150 58% 43%;
+    --primary-foreground: 158 50% 7%;
+    --secondary: 158 34% 15%;
+    --secondary-foreground: 150 26% 96%;
+    --muted: 158 24% 17%;
+    --muted-foreground: 150 16% 60%;
+    --accent: 150 58% 43%;
+    --accent-foreground: 158 50% 7%;
+    --border: 156 26% 22%;
+    --input: 158 24% 17%;
+    --ring: 150 58% 43%;
+    --tile-hover: 150 58% 43%;
+    --gradient-primary: linear-gradient(135deg, hsl(150 58% 45%) 0%, hsl(156 58% 33%) 100%);
+    --shadow-glow: 0 0 20px hsl(150 58% 45% / 0.35);
+    --cash-neutral: 45 90% 52%;
+    --sidebar-background: 158 40% 7%;
+    --sidebar-primary: 150 58% 43%;
+    --sidebar-primary-foreground: 158 50% 7%;
+    --sidebar-accent: 158 34% 15%;
+    --sidebar-border: 156 26% 22%;
+    --sidebar-ring: 150 58% 43%;
+  }
 }
 
 @layer base {

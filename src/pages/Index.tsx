@@ -46,7 +46,7 @@ const Index = () => {
   // Mode selection screen
   if (mode === 'select') {
     return (
-      <div className="min-h-screen flex flex-col p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
+      <div className="min-h-screen flex flex-col p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.25),rgba(0,0,0,0.25)),url(/Background-image.jpeg)]">
         <div className="flex-1 flex items-center justify-center w-full">
         <div className="w-full max-w-md">
           {/* User Menu - Top Right */}
@@ -106,7 +106,7 @@ const Index = () => {
           </div>
 
           {/* Mode Selection */}
-          <Card className="shadow-lg">
+          <Card className="shadow-xl bg-card/30 backdrop-blur-2xl border border-white/15">
             <CardHeader className="text-center pb-4">
               <CardTitle className="text-xl">Choose Game Mode</CardTitle>
             </CardHeader>
@@ -157,7 +157,7 @@ const Index = () => {
           </Card>
 
           {/* Game Info */}
-          <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
+          <div className="mt-6 p-4 rounded-xl bg-card/30 backdrop-blur-2xl border border-white/15 shadow-xl">
             <h3 className="font-medium mb-2 text-sm">How to Play</h3>
             <p className="text-xs text-muted-foreground mb-3">
               Build a hotel empire by placing tiles, founding chains, and trading stocks. 
