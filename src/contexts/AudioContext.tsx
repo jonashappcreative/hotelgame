@@ -31,10 +31,10 @@ const VOICE_FILES: Record<string, string> = {
 };
 
 const MUSIC_TRACKS = [
-  '/sounds/music/music-01.mp3',
-  '/sounds/music/music-02.mp3',
-  '/sounds/music/music-03.mp3',
-  '/sounds/music/music-04.mp3',
+  '/sounds/sfx/music/music-01.mp3',
+  '/sounds/sfx/music/music-02.mp3',
+  '/sounds/sfx/music/music-03.mp3',
+  '/sounds/sfx/music/music-04.mp3',
 ];
 
 const LS_MUSIC  = 'audio_music_volume';
