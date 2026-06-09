@@ -1,12 +1,12 @@
 hotelgame.jonashapp.com {
     handle /socket.io/* {
-        reverse_proxy acquire-backend:3000
+        reverse_proxy localhost:3000
     }
     handle /api/* {
-        reverse_proxy acquire-backend:3000
+        reverse_proxy localhost:3000
     }
     handle /health {
-        reverse_proxy acquire-backend:3000
+        reverse_proxy localhost:3000
     }
 
     handle {

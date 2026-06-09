@@ -18,38 +18,34 @@ services:
     networks: [internal]
 
   backend:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
+    image: acquire-backend:latest
     container_name: acquire-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://acquire:${POSTGRES_PASSWORD}@postgres:5432/acquire
       JWT_SECRET: ${JWT_SECRET}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [internal, caddy]
+    networks: [internal]
 
   caddy:
     image: caddy:2-alpine
     container_name: acquire-caddy
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+    network_mode: host
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./dist:/srv/hotelgame:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [backend]
-    networks: [caddy]
 
 networks:
   internal:
-  caddy:
 
 volumes:
   postgres_data:
