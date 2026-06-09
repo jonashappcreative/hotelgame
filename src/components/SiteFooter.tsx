@@ -63,7 +63,8 @@ const CREDITS: { role: string; by: string }[] = [
 // Development timeline mapped from the git history. Newest first; the top entry
 // is the current release.
 const VERSION_HISTORY: { version: string; date: string; summary: string; current?: boolean }[] = [
-  { version: '1.2.0', date: '2026-06-09', current: true, summary: 'Game-over → lobby fix, idle-room auto-cleanup (closes rooms after 10 min), site footer (About / Imprint / Version History), hidden login, lobby background image, and a green/turquoise theme system.' },
+  { version: '1.3.0', date: '2026-06-09', current: true, summary: 'Full Hetzner migration: unified Hono + Socket.IO backend (no more Netlify Functions), standard Postgres, in-process WebSocket notifications, Caddy reverse proxy, turquoise theme finalised, Lovable branding removed, and improved merger stock decision UI (tick marks, numeric labels, post-trade portfolio preview).' },
+  { version: '1.2.0', date: '2026-06-09', summary: 'Game-over → lobby fix, idle-room auto-cleanup (closes rooms after 10 min), site footer (About / Imprint / Version History), hidden login, lobby background image, and a green/turquoise theme system.' },
   { version: '1.1.0', date: '2026-06-08', summary: 'Sound-effects & music system, small-board rule set, automatic buy-phase completion, header reorder, and AI-bot tuning.' },
   { version: '1.0.0', date: '2026-06-06', summary: 'Production backend migration: Supabase → Netlify DB (Neon) + a Hetzner Socket.IO relay. Added AI bots and game branding.' },
   { version: '0.11.0', date: '2026-02-22', summary: 'Security remediation across two audit passes and a brand / IP naming-compliance review.' },
