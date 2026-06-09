@@ -1,0 +1,16 @@
+services:
+  lovable-app:
+    build: .
+    container_name: lovable-dev
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source code for hot-reload
+      - .:/app
+      # Prevent overwriting node_modules
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: npm run dev -- --host 0.0.0.0
+    stdin_open: true
+    tty: true

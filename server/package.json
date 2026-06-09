@@ -1,0 +1,25 @@
+{
+  "name": "acquire-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/server/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server/server.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "bcryptjs": "^2.4.3",
+    "hono": "^4.7.11",
+    "jose": "^5.9.6",
+    "pg": "^8.13.3",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.16.5",
+    "@types/pg": "^8.11.14",
+    "typescript": "^5.8.3"
+  }
+}

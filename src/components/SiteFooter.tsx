@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +8,6 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { PREVIEW_THEMES, applyTheme, getStoredThemeId } from '@/lib/themePreview';
 
 const OWNER_NAME = 'Jonas Happ';
 const CONTACT_EMAIL = 'jonashapp.business@gmail.com';
@@ -35,19 +33,19 @@ const TECH_STACK: { group: string; items: string[] }[] = [
   {
     group: 'Backend',
     items: [
-      'Netlify Functions (serverless, Node 20)',
+      'Hono (Node 20, REST API + WebSocket in one process)',
       'jose (JWT auth), bcryptjs (password hashing)',
     ],
   },
   {
     group: 'Database',
-    items: ['Neon — Serverless Postgres (via Netlify DB)'],
+    items: ['Postgres 16 (Docker)'],
   },
   {
     group: 'Infrastructure',
     items: [
-      'Hetzner — WebSocket relay server (Express + Socket.IO)',
-      'Netlify — hosting, serverless functions & continuous deploy',
+      'Hetzner — VPS hosting (Docker Compose: Caddy + backend + Postgres)',
+      'Caddy — TLS termination, reverse proxy, static file serving',
     ],
   },
   {
@@ -58,11 +56,8 @@ const TECH_STACK: { group: string; items: string[] }[] = [
 
 const CREDITS: { role: string; by: string }[] = [
   { role: 'Logo & Favicon', by: 'ChatGPT (OpenAI)' },
-  { role: 'UI design', by: 'Lovable' },
   { role: 'Backend & Server', by: 'Claude Code (Anthropic)' },
   { role: 'Server hosting', by: 'Hetzner' },
-  { role: 'Deployment', by: 'Netlify' },
-  { role: 'Database', by: 'Neon' },
 ];
 
 // Development timeline mapped from the git history. Newest first; the top entry
@@ -85,13 +80,7 @@ const VERSION_HISTORY: { version: string; date: string; summary: string; current
 ];
 
 export const SiteFooter = () => {
-  const [open, setOpen] = useState<null | 'about' | 'imprint' | 'versions' | 'theme'>(null);
-  const [activeTheme, setActiveTheme] = useState<string>(getStoredThemeId);
-
-  const chooseTheme = (id: string) => {
-    applyTheme(id);
-    setActiveTheme(id);
-  };
+  const [open, setOpen] = useState<null | 'about' | 'imprint' | 'versions'>(null);
 
   const linkClass = 'hover:text-foreground transition-colors';
 
@@ -102,12 +91,7 @@ export const SiteFooter = () => {
           © {CURRENT_YEAR} {OWNER_NAME}
         </span>
 
-        {/* Theme preview — centered (test only) */}
-        <div className="flex justify-center order-1 sm:order-2">
-          <button onClick={() => setOpen('theme')} className={linkClass}>
-            Theme
-          </button>
-        </div>
+        <div className="hidden sm:block order-2" />
 
         <nav className="flex items-center justify-center sm:justify-end gap-4 order-2 sm:order-3">
           <button onClick={() => setOpen('about')} className={linkClass}>
@@ -221,41 +205,6 @@ export const SiteFooter = () => {
               </tbody>
             </table>
           </ScrollArea>
-        </DialogContent>
-      </Dialog>
-
-      {/* Theme preview (test only) */}
-      <Dialog open={open === 'theme'} onOpenChange={(o) => !o && setOpen(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Theme preview</DialogTitle>
-            <DialogDescription>
-              Test-only — try the green / turquoise palettes derived from the
-              lobby artwork. Your choice is saved locally.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-1.5">
-            {PREVIEW_THEMES.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => chooseTheme(t.id)}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                  activeTheme === t.id
-                    ? 'bg-primary/15 text-primary'
-                    : 'hover:bg-muted text-foreground'
-                )}
-              >
-                <span
-                  className="h-5 w-5 rounded-full border border-white/20 shrink-0"
-                  style={{ backgroundColor: t.swatch }}
-                />
-                <span className="flex-1 text-left">{t.name}</span>
-                {activeTheme === t.id && <Check className="h-4 w-4" />}
-              </button>
-            ))}
-          </div>
         </DialogContent>
       </Dialog>
 

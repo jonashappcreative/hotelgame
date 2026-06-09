@@ -1,16 +1,57 @@
 services:
-  lovable-app:
-    build: .
-    container_name: lovable-dev
-    ports:
-      - "5173:5173"
-    volumes:
-      # Mount source code for hot-reload
-      - .:/app
-      # Prevent overwriting node_modules
-      - /app/node_modules
+  postgres:
+    image: postgres:16-alpine
+    container_name: acquire-db
+    restart: unless-stopped
     environment:
-      - NODE_ENV=development
-    command: npm run dev -- --host 0.0.0.0
-    stdin_open: true
-    tty: true
+      POSTGRES_DB: acquire
+      POSTGRES_USER: acquire
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acquire"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: acquire-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://acquire:${POSTGRES_PASSWORD}@postgres:5432/acquire
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal, caddy]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: acquire-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./dist:/srv/hotelgame:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [backend]
+    networks: [caddy]
+
+networks:
+  internal:
+  caddy:
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

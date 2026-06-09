@@ -1,0 +1,24 @@
+hotelgame.jonashapp.com {
+    handle /socket.io/* {
+        reverse_proxy acquire-backend:3000
+    }
+    handle /api/* {
+        reverse_proxy acquire-backend:3000
+    }
+    handle /health {
+        reverse_proxy acquire-backend:3000
+    }
+
+    handle {
+        root * /srv/hotelgame
+        try_files {path} /index.html
+        file_server
+    }
+
+    header {
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+}

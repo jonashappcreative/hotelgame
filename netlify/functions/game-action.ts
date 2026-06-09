@@ -138,19 +138,13 @@ async function handleGameAction(opts: {
 
     const myPlayerIndex = playerData.player_index;
 
-    // Fetch current game state
-    const { data: gameState, error: stateError } = await adminClient
-      .from('game_states')
-      .select('*')
-      .eq('room_id', roomId)
-      .single();
-
-    // Fetch all players
-    const { data: allPlayers, error: playersError } = await adminClient
-      .from('game_players')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('player_index');
+    // Fetch game state and all players in parallel (player query already completed above)
+    const [stateResult, playersResult] = await Promise.all([
+      adminClient.from('game_states').select('*').eq('room_id', roomId).single(),
+      adminClient.from('game_players').select('*').eq('room_id', roomId).order('player_index'),
+    ]);
+    const { data: gameState, error: stateError } = stateResult;
+    const { data: allPlayers, error: playersError } = playersResult;
 
     if (playersError) {
       console.error('Players fetch error:', playersError);
@@ -1851,9 +1845,9 @@ async function handleGameAction(opts: {
         });
     }
 
-    // Fan out realtime events to the room (best-effort)
+    // Fan out realtime events to the room (best-effort, non-blocking)
     if (result.success) {
-      await notifyForAction(action, roomId);
+      notifyForAction(action, roomId).catch((err) => console.error('notify error:', err));
     }
 
     return new Response(JSON.stringify(result), {
@@ -1877,6 +1871,8 @@ async function handleGameAction(opts: {
 async function driveBots(roomId: string, corsHeaders: Record<string, string>): Promise<void> {
   const deadline = Date.now() + 8000;
   const MAX_MOVES = 60;
+  // Track retries per actorIndex to prevent infinite retry loops
+  const retryCount = new Map<number, number>();
 
   for (let i = 0; i < MAX_MOVES; i++) {
     if (Date.now() > deadline) return;
@@ -1913,10 +1909,51 @@ async function driveBots(roomId: string, corsHeaders: Record<string, string>): P
     });
 
     if (res.status !== 200) {
-      // A rejected bot move would loop forever — log and bail.
-      console.error('Bot move rejected:', difficulty, gameState.phase, move.action, res.status);
-      return;
+      const retries = (retryCount.get(actorIndex) ?? 0) + 1;
+      retryCount.set(actorIndex, retries);
+
+      if (retries > 3) {
+        console.error('Bot move rejected too many times, giving up:', gameState.phase, move.action);
+        return;
+      }
+
+      const isMergerPhase = ['merger_pay_bonuses', 'merger_handle_stock', 'merger_choose_survivor'].includes(gameState.phase);
+      if (!isMergerPhase) {
+        console.error('Bot move rejected:', difficulty, gameState.phase, move.action, res.status);
+        return;
+      }
+
+      // For merger phases: try a safe fallback action to prevent permanent freezes
+      let fallback: { action: string; payload?: any };
+      if (gameState.phase === 'merger_handle_stock') {
+        const defunctChain = gameState.merger?.currentDefunctChain;
+        const shares: number = actor.stocks?.[defunctChain] ?? 0;
+        fallback = { action: 'merger_stock_choice', payload: { decision: { sell: 0, trade: 0, keep: shares } } };
+      } else if (gameState.phase === 'merger_choose_survivor') {
+        const chains = gameState.chains ?? {};
+        const tiedChains = (gameState.merger?.defunctChains as string[] ?? []);
+        const survivor = [...tiedChains].sort(
+          (a: string, b: string) => (chains[b]?.tiles?.length ?? 0) - (chains[a]?.tiles?.length ?? 0)
+        )[0] ?? tiedChains[0];
+        fallback = { action: 'choose_merger_survivor', payload: { survivingChain: survivor } };
+      } else {
+        fallback = { action: 'pay_merger_bonuses' };
+      }
+
+      const fallbackRes = await handleGameAction({
+        corsHeaders,
+        body: { action: fallback.action, roomId, payload: fallback.payload },
+        actAsPlayerIndex: actorIndex,
+      });
+
+      if (fallbackRes.status !== 200) {
+        console.error('Bot fallback also rejected:', gameState.phase, fallback.action, fallbackRes.status);
+        return;
+      }
+      // Fallback succeeded — re-enter the loop to read fresh state
+      continue;
     }
+    retryCount.delete(actorIndex); // successful move clears retry counter
   }
 }
 

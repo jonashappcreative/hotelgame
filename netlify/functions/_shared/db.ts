@@ -16,37 +16,22 @@
 // parameters.
 // =============================================================================
 
-import { Pool, neonConfig, types } from '@neondatabase/serverless';
-
-// Run every pool.query() over HTTP fetch instead of the default WebSocket
-// transport. The Netlify function runtime can't open the Neon WebSocket
-// ("All attempts to open a WebSocket to connect to the database failed"), and
-// all our queries are one-shot (no pool.connect()/transactions), so the HTTP
-// path is both sufficient and faster to spin up in a serverless context.
-neonConfig.poolQueryViaFetch = true;
+import pg from 'pg';
+const { Pool, types } = pg;
 
 // int8 (bigint, OID 20) → JS number. Our only bigint is turn_deadline_epoch
 // (epoch seconds), well within Number.MAX_SAFE_INTEGER.
 types.setTypeParser(20, (v: string | null) => (v === null ? null : Number(v)));
 
-// The Netlify DB (Neon) integration auto-injects NETLIFY_DATABASE_URL /
-// NETLIFY_DATABASE_URL_UNPOOLED — it does NOT set DATABASE_URL. Accept either
-// so the functions work whether the var was set manually or by the integration.
-const connectionString =
-  process.env.DATABASE_URL ||
-  process.env.NETLIFY_DATABASE_URL ||
-  process.env.NETLIFY_DATABASE_URL_UNPOOLED;
+const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  // Surfaces clearly in the Netlify function log instead of a cryptic
-  // "connection string undefined" failure on the first query.
   console.error(
-    'db: no connection string — set DATABASE_URL (or provision Netlify DB, ' +
-      'which provides NETLIFY_DATABASE_URL) in the site environment.',
+    'db: no connection string — set DATABASE_URL in the environment.',
   );
 }
 
-const pool = new Pool({ connectionString });
+const pool = new Pool({ connectionString, max: 20, idleTimeoutMillis: 30000 });
 
 // Columns that are jsonb (must be JSON-encoded and cast ::jsonb).
 const JSONB_COLUMNS = new Set([

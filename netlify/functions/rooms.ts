@@ -140,7 +140,7 @@ export default async (req: Request): Promise<Response> => {
           throw err;
         }
 
-        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
         return jsonResponse({ success: true, playerIndex: seat }, 200, cors);
       }
 
@@ -177,7 +177,7 @@ export default async (req: Request): Promise<Response> => {
           'DELETE FROM game_players WHERE room_id = $1 AND player_index = $2 AND is_bot = true',
           [roomId, playerIndex],
         );
-        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
         return jsonResponse({ success: true }, 200, cors);
       }
 
@@ -274,7 +274,7 @@ export default async (req: Request): Promise<Response> => {
           await db.from('game_players')
             .update({ is_connected: true, last_seen_at: new Date().toISOString(), disconnected_at: null })
             .eq('id', existing.id);
-          await notifyWsServer(room.id, 'game:players_changed', { roomId: room.id });
+          notifyWsServer(room.id, 'game:players_changed', { roomId: room.id }).catch((err: unknown) => console.error('notify error:', err));
           return jsonResponse({
             success: true, roomId: room.id, playerIndex: existing.player_index,
             maxPlayers, isRejoin: room.status === 'playing',
@@ -310,7 +310,7 @@ export default async (req: Request): Promise<Response> => {
                RETURNING player_index`,
               [room.id, playerName, playerIndex, userId, sessionId],
             );
-            await notifyWsServer(room.id, 'game:players_changed', { roomId: room.id });
+            notifyWsServer(room.id, 'game:players_changed', { roomId: room.id }).catch((err: unknown) => console.error('notify error:', err));
             return jsonResponse({
               success: true, roomId: room.id, playerIndex: rows[0].player_index, maxPlayers,
             }, 200, cors);
@@ -338,7 +338,7 @@ export default async (req: Request): Promise<Response> => {
       case 'leave': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         await db.from('game_players').delete().eq('room_id', roomId).eq('user_id', userId);
-        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
         return jsonResponse({ success: true }, 200, cors);
       }
 
@@ -356,7 +356,7 @@ export default async (req: Request): Promise<Response> => {
         await db.from('game_players')
           .update({ is_connected: false, disconnected_at: new Date().toISOString() })
           .eq('room_id', roomId).eq('user_id', userId);
-        await notifyWsServer(roomId, 'game:players_changed', { roomId });
+        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
         return jsonResponse({ success: true }, 200, cors);
       }
 
