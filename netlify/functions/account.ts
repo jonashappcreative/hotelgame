@@ -16,7 +16,7 @@ export default async (req: Request): Promise<Response> => {
   if (!userId) return jsonResponse({ error: 'Unauthorized' }, 401, cors);
 
   try {
-    const body = await req.json();
+    const body = await req.json() as any;
     const op = body?.op as string;
 
     switch (op) {

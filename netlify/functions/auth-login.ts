@@ -13,7 +13,7 @@ export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, cors);
 
   try {
-    const { email, password } = await req.json();
+    const { email, password } = await req.json() as any;
     if (typeof email !== 'string' || typeof password !== 'string') {
       return jsonResponse({ error: 'Email and password are required' }, 400, cors);
     }

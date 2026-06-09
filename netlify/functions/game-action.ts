@@ -79,7 +79,7 @@ export default async (req: Request): Promise<Response> => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    body = await req.json();
+    body = await req.json() as GameActionRequest;
   } catch (error) {
     console.error('Bad request:', error);
     return new Response(JSON.stringify({ error: 'Bad request' }), {

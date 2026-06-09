@@ -15,7 +15,7 @@ export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, cors);
 
   try {
-    const { email, password, displayName } = await req.json();
+    const { email, password, displayName } = await req.json() as any;
 
     if (typeof email !== 'string' || !EMAIL_RE.test(email)) {
       return jsonResponse({ error: 'A valid email is required' }, 400, cors);

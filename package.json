@@ -78,6 +78,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/pg": "^8.11.14",
+    "socket.io": "^4.8.1",
     "@types/howler": "^2.2.13",
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",

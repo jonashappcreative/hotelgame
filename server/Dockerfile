@@ -23,9 +23,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Only production deps
-COPY server/package.json server/package-lock.json ./server/
-RUN cd server && npm ci --omit=dev --ignore-scripts
+# Install production deps at /app/node_modules so Node can find them at runtime
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 
 # Copy compiled output
 COPY --from=builder /app/dist ./dist
