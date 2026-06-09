@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 # Install server-specific deps
-COPY server/package.json ./server/
+COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --ignore-scripts
 
 # Copy source
@@ -24,8 +24,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Only production deps
-COPY server/package.json ./server/
-RUN cd server && npm ci --only=production --ignore-scripts
+COPY server/package.json server/package-lock.json ./server/
+RUN cd server && npm ci --omit=dev --ignore-scripts
 
 # Copy compiled output
 COPY --from=builder /app/dist ./dist
