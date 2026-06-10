@@ -45,3 +45,6 @@ notes/
 
 # Vite temp files
 vite.config.ts.timestamp-*
+
+# Deno
+deno.lock

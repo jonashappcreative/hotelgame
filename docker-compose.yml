@@ -18,6 +18,9 @@ services:
     networks: [internal]
 
   backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     image: acquire-backend:latest
     container_name: acquire-backend
     restart: unless-stopped
