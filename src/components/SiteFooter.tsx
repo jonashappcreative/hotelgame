@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
 const OWNER_NAME = 'Jonas Happ';
-const CONTACT_EMAIL = 'jonashapp.business@gmail.com';
+const CONTACT_EMAIL = 'hello@jonashapp.com';
 const CURRENT_YEAR = new Date().getFullYear();
 
 // Grouped so the About dialog stays readable and is trivial to extend.
@@ -225,9 +225,9 @@ export const SiteFooter = () => {
               <p className="text-muted-foreground leading-relaxed">
                 {OWNER_NAME}
                 <br />
-                Sample Street 1
+                Weidplan 82
                 <br />
-                12345 Sample City
+                22523 Hamburg
                 <br />
                 Germany
               </p>
@@ -245,13 +245,20 @@ export const SiteFooter = () => {
 
             <section>
               <h3 className="font-semibold mb-1">Disclaimer</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                This is sample placeholder content. Despite careful review, no
-                liability is assumed for the accuracy, completeness, or
-                timeliness of the information provided. External links point to
-                third-party content for which the respective operators are
-                solely responsible.
-              </p>
+              <div className="text-muted-foreground leading-relaxed space-y-2 text-xs">
+                <p>
+                  This web application is provided "as-is" without warranties of any kind, including fitness for a particular purpose. The application relies on real-time communication via WebSocket (Socket.IO) and may experience temporary unavailability due to server maintenance, network issues, or infrastructure constraints.
+                </p>
+                <p>
+                  Game sessions are stored in a PostgreSQL database. User data is retained only as necessary for gameplay and is not sold to third parties. No liability is assumed for loss of game sessions, data corruption, or service interruptions.
+                </p>
+                <p>
+                  The application is hosted on Hetzner Cloud infrastructure and uses Caddy for TLS termination and reverse proxying. Third-party services are used solely to maintain operations and comply with their respective terms of service.
+                </p>
+                <p>
+                  "Acquire" is a trademark of its respective owner. This is a non-commercial, fan-made project for educational and recreational purposes and is not affiliated with or endorsed by the rights holders.
+                </p>
+              </div>
             </section>
           </div>
         </DialogContent>
