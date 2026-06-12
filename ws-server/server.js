@@ -1,5 +1,5 @@
 // =============================================================================
-// Acquire — Hetzner WebSocket relay server
+// Hotel Game — Hetzner WebSocket relay server
 // =============================================================================
 // A pure message relay. It holds NO game state and never touches the database.
 //
@@ -93,5 +93,5 @@ app.get('/health', (_req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Acquire WS relay listening on :${PORT}`);
+  console.log(`Hotel Game WS relay listening on :${PORT}`);
 });

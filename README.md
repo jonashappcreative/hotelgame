@@ -1,10 +1,10 @@
-# Acquire - Online Board Game
+# Hotel Game - Online Board Game
 
-A digital implementation of the classic Acquire board game with real-time multiplayer support.
+A digital implementation of the classic hotel chain board game with real-time multiplayer support.
 
 ## Project Overview
 
-Acquire is a strategic hotel chain building game where players place tiles, found hotel chains, buy stocks, and merge companies to accumulate wealth. This implementation features both local (hot-seat) and online multiplayer modes with real-time synchronization.
+Hotel Game is a strategic hotel chain building game where players place tiles, found hotel chains, buy stocks, and merge companies to accumulate wealth. This implementation features both local (hot-seat) and online multiplayer modes with real-time synchronization.
 
 ## How can I edit this code?
 

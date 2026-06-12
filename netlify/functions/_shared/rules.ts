@@ -1,5 +1,5 @@
 // =============================================================================
-// rules — pure Acquire rule helpers shared by the game engine and the bot.
+// rules — pure Hotel Game rule helpers shared by the game engine and the bot.
 // =============================================================================
 // Extracted verbatim from game-action.ts so the bot evaluates move legality
 // and pricing with exactly the same logic the engine enforces. Nothing here

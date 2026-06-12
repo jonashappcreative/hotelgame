@@ -14,7 +14,7 @@ import { getCorsHeaders } from './_shared/cors';
 import { notifyWsServer } from './_shared/ws';
 import { decideBotMove, type BotDifficulty } from './_shared/bot';
 
-// Pure Acquire rule helpers, constants, and shared types now live in
+// Pure Hotel Game rule helpers, constants, and shared types now live in
 // _shared/rules.ts so the bot (_shared/bot.ts) evaluates moves with the exact
 // same logic this engine enforces.
 import {

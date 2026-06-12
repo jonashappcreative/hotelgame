@@ -2,7 +2,7 @@
 
 ## Context
 
-The Acquire multiplayer board game is currently split across Netlify (SPA + serverless functions + Neon Postgres) and Hetzner (WebSocket relay only). Netlify's credit-based billing charges for function compute, web requests, bandwidth, DB compute, and DB bandwidth — all of which add up for a real-time multiplayer game. The free tier's 300-credit hard limit is easy to exceed, and even the $9/mo Personal plan (1,000 credits) may not be enough.
+The Hotel Game multiplayer board game is currently split across Netlify (SPA + serverless functions + Neon Postgres) and Hetzner (WebSocket relay only). Netlify's credit-based billing charges for function compute, web requests, bandwidth, DB compute, and DB bandwidth — all of which add up for a real-time multiplayer game. The free tier's 300-credit hard limit is easy to exceed, and even the $9/mo Personal plan (1,000 credits) may not be enough.
 
 Additionally, players experience ~1 second latency per action due to: serverless cold starts, cross-internet WebSocket notifications that block the response, sequential DB queries, and HTTP-per-query overhead from the Neon serverless driver.
 

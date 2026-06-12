@@ -1,5 +1,5 @@
 // =============================================================================
-// Acquire — unified backend server
+// Hotel Game — unified backend server
 // Hono REST API + Socket.io WebSocket + cleanup scheduler, all in one process.
 // =============================================================================
 
@@ -80,5 +80,5 @@ setInterval(
 );
 
 nodeServer.listen(PORT, () => {
-  console.log(`Acquire backend listening on :${PORT}`);
+  console.log(`Hotel Game backend listening on :${PORT}`);
 });

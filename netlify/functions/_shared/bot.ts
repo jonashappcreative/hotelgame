@@ -1,5 +1,5 @@
 // =============================================================================
-// bot — server-side AI for Acquire bot players.
+// bot — server-side AI for Hotel Game bot players.
 // =============================================================================
 // `decideBotMove` is given the current DB state (the game_states row, all
 // game_players rows, and the acting bot's row) and returns ONE legal engine

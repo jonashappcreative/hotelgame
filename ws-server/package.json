@@ -1,7 +1,7 @@
 {
-  "name": "acquire-ws-server",
+  "name": "hotelgame-ws-server",
   "version": "1.0.0",
-  "description": "Acquire — Hetzner Socket.io relay server (room event fan-out)",
+  "description": "Hotel Game — Hetzner Socket.io relay server (room event fan-out)",
   "type": "module",
   "main": "server.js",
   "engines": {

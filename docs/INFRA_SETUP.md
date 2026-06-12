@@ -156,7 +156,7 @@ This builds the Node 20 image from the Dockerfile in ws-server/ and starts it de
 **Verify:**
 ```bash
 docker compose ps          # status should be "Up"
-docker compose logs -f     # should print: "Acquire WS relay listening on :3001"
+docker compose logs -f     # should print: "Hotel Game WS relay listening on :3001"
 curl http://localhost:3001/health
 # → {"status":"ok","connections":0}
 ```

@@ -1,7 +1,7 @@
 # Claude Code Project Instructions
 
 ## Project Context
-- This is an online multiplayer board game (Acquire)
+- This is an online multiplayer board game (Hotel Game)
 - Backend stack:
   - Auth: custom JWT via Netlify Functions (signed/verified with `jose`)
   - DB: Netlify DB (Neon Postgres)

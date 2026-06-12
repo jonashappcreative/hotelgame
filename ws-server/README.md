@@ -1,4 +1,4 @@
-# Acquire WebSocket Relay (Hetzner)
+# Hotel Game WebSocket Relay (Hetzner)
 
 A stateless Socket.io relay that fans out room events to connected browsers.
 It holds **no game state** and has **no database access** — game state lives in
@@ -43,7 +43,7 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-Then point a subdomain (e.g. `ws.acquiregame.jonashapp.com`) at the Hetzner IP
+Then point a subdomain (e.g. `ws.hotelgame.jonashapp.com`) at the Hetzner IP
 via DNS and terminate TLS in front of the container (Caddy / nginx / Traefik) so
 the browser can reach it over `wss://`. The container itself serves plain HTTP
 on port 3001.

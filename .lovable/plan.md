@@ -6,7 +6,7 @@
 
 ## Summary
 
-This plan addressed critical security vulnerabilities in the Acquire multiplayer game. All phases have been implemented successfully.
+This plan addressed critical security vulnerabilities in the Hotel Game multiplayer game. All phases have been implemented successfully.
 
 ## Security Checklist - All Complete
 

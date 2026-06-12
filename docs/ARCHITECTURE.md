@@ -1,4 +1,4 @@
-# Acquire — Architecture
+# Hotel Game — Architecture
 
 This document describes the **target architecture** the project is migrating to
 (Netlify DB + Hetzner WebSocket relay, no Supabase) and the status of that

@@ -6,7 +6,7 @@ export const tutorialSteps: TutorialStep[] = [
   // Step 1: Introduction
   {
     id: 1,
-    title: 'Welcome to Acquire!',
+    title: 'Welcome to Hotel Game!',
     content: `In this tutorial, you'll learn:
 
 • How to play tiles on the board
@@ -26,7 +26,7 @@ Ready to become a hotel tycoon?`,
   // Step 2: Game Objective
   {
     id: 2,
-    title: 'Goal of Acquire',
+    title: 'Goal of Hotel Game',
     content: `Your objective: **Become the richest player!**
 
 You'll earn money by:
@@ -93,7 +93,7 @@ Your playable tiles are highlighted on the board. Just click the tile location d
   // Step 6: Hotel Chain Concept
   {
     id: 6,
-    title: 'Hotel Chains - The Heart of Acquire',
+    title: 'Hotel Chains - The Heart of Hotel Game',
     content: `When **2 or more tiles** are next to each other (horizontally or vertically), they form a **HOTEL CHAIN**.
 
 Chains are powerful because:
@@ -159,7 +159,7 @@ Stocks are how you make money in this game.`,
   {
     id: 10,
     title: 'The 7 Hotel Chains',
-    content: `There are 7 hotel chains in Acquire:
+    content: `There are 7 hotel chains in Hotel Game:
 
 💎 **PREMIUM** (Most expensive)
 • Continental (Red)
@@ -421,7 +421,7 @@ Strategy tip: **Timing the end-game can give you an advantage!**`,
 ✅ How to handle mergers and bonuses
 ✅ How the game ends and scoring works
 
-**You're ready to play Acquire!**
+**You're ready to play Hotel Game!**
 
 What would you like to do?`,
     nextButtonLabel: 'Finish',

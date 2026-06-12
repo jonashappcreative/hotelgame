@@ -1,6 +1,6 @@
 # Deployment Guide - Netlify
 
-This guide covers deploying the Acquire board game application to Netlify.
+This guide covers deploying the Hotel Game board game application to Netlify.
 
 ## Overview
 

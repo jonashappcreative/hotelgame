@@ -390,7 +390,7 @@ export const OnlineLobby = ({
               <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
                 <Users className="h-8 w-8 text-primary" />
               </div>
-              <CardTitle className="text-3xl font-bold">Acquire</CardTitle>
+              <CardTitle className="text-3xl font-bold">Hotel Game</CardTitle>
               <p className="text-muted-foreground">Online Multiplayer</p>
             </CardHeader>
             <CardContent className="space-y-4">

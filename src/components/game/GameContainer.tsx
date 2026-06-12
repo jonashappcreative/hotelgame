@@ -273,7 +273,7 @@ export const GameContainer = ({
         {/* Header */}
         <header className="flex items-center justify-between mb-4 lg:mb-6">
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Acquire</h1>
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Hotel Game</h1>
             <p className="text-sm text-muted-foreground">
               Room: <span className="font-mono text-primary">{gameState.roomCode}</span>
             </p>

@@ -1,4 +1,4 @@
-// Core game types for Acquire
+// Core game types for Hotel Game
 
 export type Coordinate = {
   row: number; // 1-9

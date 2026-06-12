@@ -77,7 +77,7 @@ const VERSION_HISTORY: { version: string; date: string; summary: string; current
   { version: '0.4.0', date: '2026-01-31', summary: 'Supabase backend + local development; anonymous room joining; waiting-room UI.' },
   { version: '0.3.0', date: '2026-01-25', summary: 'Online-multiplayer foundation: lobby, auth & profiles, a secure server action layer, realtime sync, race-safe joins, and opponent-data masking.' },
   { version: '0.2.0', date: '2026-01-05', summary: 'Core game engine: chain founding, mergers, stock trading, and end-game scoring.' },
-  { version: '0.1.0', date: '2026-01-04', summary: 'Initial Acquire frontend scaffold (Vite + React + TypeScript + Tailwind + shadcn/ui).' },
+  { version: '0.1.0', date: '2026-01-04', summary: 'Initial Hotel Game frontend scaffold (Vite + React + TypeScript + Tailwind + shadcn/ui).' },
 ];
 
 export const SiteFooter = () => {
@@ -113,8 +113,8 @@ export const SiteFooter = () => {
           <DialogHeader>
             <DialogTitle>About this game</DialogTitle>
             <DialogDescription>
-              An online multiplayer adaptation of the classic hotel-empire
-              board game — place tiles, found chains, trade stocks, trigger
+              An online game inspired by the board game classic "Acquire"
+              — place tiles, found chains, trade stocks, trigger
               mergers, and finish with the greatest fortune.
             </DialogDescription>
           </DialogHeader>
