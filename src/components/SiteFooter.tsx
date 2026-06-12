@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -61,8 +62,8 @@ const CREDITS: { role: string; by: string }[] = [
 ];
 
 // Development timeline mapped from the git history. Newest first; the top entry
-// is the current release.
-const VERSION_HISTORY: { version: string; date: string; summary: string; current?: boolean }[] = [
+// is the current release. Also rendered on the /case-study page.
+export const VERSION_HISTORY: { version: string; date: string; summary: string; current?: boolean }[] = [
   { version: '1.3.0', date: '2026-06-09', current: true, summary: 'Full Hetzner migration: unified Hono + Socket.IO backend (no more Netlify Functions), standard Postgres, in-process WebSocket notifications, Caddy reverse proxy, turquoise theme finalised, Lovable branding removed, and improved merger stock decision UI (tick marks, numeric labels, post-trade portfolio preview).' },
   { version: '1.2.0', date: '2026-06-09', summary: 'Game-over → lobby fix, idle-room auto-cleanup (closes rooms after 10 min), site footer (About / Imprint / Version History), hidden login, lobby background image, and a green/turquoise theme system.' },
   { version: '1.1.0', date: '2026-06-08', summary: 'Sound-effects & music system, small-board rule set, automatic buy-phase completion, header reorder, and AI-bot tuning.' },
@@ -95,6 +96,9 @@ export const SiteFooter = () => {
         <div className="hidden sm:block order-2" />
 
         <nav className="flex items-center justify-center sm:justify-end gap-4 order-2 sm:order-3">
+          <Link to="/case-study" className={linkClass}>
+            The Story
+          </Link>
           <button onClick={() => setOpen('about')} className={linkClass}>
             About
           </button>

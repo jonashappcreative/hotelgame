@@ -12,6 +12,7 @@ import OnlineGame from "./pages/OnlineGame";
 import Auth from "./pages/Auth";
 import GameHistory from "./pages/GameHistory";
 import Tutorial from "./pages/Tutorial";
+import CaseStudy from "./pages/CaseStudy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/history" element={<GameHistory />} />
                 <Route path="/tutorial" element={<Tutorial />} />
+                <Route path="/case-study" element={<CaseStudy />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
