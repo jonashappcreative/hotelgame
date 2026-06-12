@@ -121,22 +121,29 @@ export const OnlineLobby = ({
   };
 
   const handleCreate = () => {
+    console.log(`[DEBUG UI] "Create Room" clicked — playerName="${playerName}", selectedPlayerCount=${selectedPlayerCount}`);
     if (!playerName.trim()) {
+      console.log('[DEBUG UI] Create aborted — empty player name');
       toast({ title: 'Enter your name', variant: 'destructive' });
       return;
     }
+    console.log(`[DEBUG UI] Calling onCreateRoom("${playerName.trim()}", ${parseInt(selectedPlayerCount)})`);
     onCreateRoom(playerName.trim(), parseInt(selectedPlayerCount), confirmedRules ?? DEFAULT_RULES);
   };
 
   const handleJoin = () => {
+    console.log(`[DEBUG UI] "Join Room" clicked — playerName="${playerName}", joinCode="${joinCode}"`);
     if (!playerName.trim()) {
+      console.log('[DEBUG UI] Join aborted — empty player name');
       toast({ title: 'Enter your name', variant: 'destructive' });
       return;
     }
     if (!joinCode.trim() || joinCode.length < 6) {
+      console.log(`[DEBUG UI] Join aborted — invalid code (length=${joinCode.length})`);
       toast({ title: 'Enter a valid room code', variant: 'destructive' });
       return;
     }
+    console.log(`[DEBUG UI] Calling onJoinRoom("${joinCode.trim()}", "${playerName.trim()}")`);
     onJoinRoom(joinCode.trim(), playerName.trim());
   };
 

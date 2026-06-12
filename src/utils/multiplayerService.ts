@@ -8,9 +8,20 @@ import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, Custo
 
 // Get or create an authenticated session (anonymous or existing user)
 export const getOrCreateAuthSession = async (): Promise<string | null> => {
+  console.log('[DEBUG AUTH] Checking for existing auth session...');
   const existing = getUserIdFromToken();
-  if (existing) return existing;
-  return await signInAnonymous();
+  if (existing) {
+    console.log(`[DEBUG AUTH] Existing session found — user_id=${existing}`);
+    return existing;
+  }
+  console.log('[DEBUG AUTH] No existing session. Signing in anonymously...');
+  const userId = await signInAnonymous();
+  if (userId) {
+    console.log(`[DEBUG AUTH] New anonymous user created — user_id=${userId}`);
+  } else {
+    console.error('[DEBUG AUTH] signInAnonymous() FAILED');
+  }
+  return userId;
 };
 
 // Get current user ID from the stored token (must be authenticated first)
@@ -24,6 +35,9 @@ export const getSessionId = (): string => {
   if (!sessionId) {
     sessionId = crypto.randomUUID();
     sessionStorage.setItem('acquire_session_id', sessionId);
+    console.log(`[DEBUG SESSION] New legacy session_id created: ${sessionId}`);
+  } else {
+    console.log(`[DEBUG SESSION] Existing legacy session_id found: ${sessionId}`);
   }
   return sessionId;
 };
@@ -75,22 +89,25 @@ export const clearActiveGameFromStorage = (): void => {
 
 // Create a new game room
 export const createRoom = async (maxPlayers: number = 4, customRules: CustomRules = DEFAULT_RULES): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
+  console.log(`[DEBUG CREATE_ROOM] Starting room creation with maxPlayers=${maxPlayers}`);
   // Ensure we're authenticated
   const userId = await getOrCreateAuthSession();
   if (!userId) {
-    console.error('Failed to authenticate');
+    console.error('[DEBUG CREATE_ROOM] FAILED — user not authenticated');
     return null;
   }
+  console.log(`[DEBUG CREATE_ROOM] Authenticated as user_id=${userId}`);
 
   const { ok, data, error } = await apiFetch<{ roomCode: string; roomId: string; maxPlayers: number }>(
     '/rooms', { op: 'create', maxPlayers, customRules },
   );
 
   if (!ok || !data) {
-    console.error('Error creating room:', error);
+    console.error('[DEBUG CREATE_ROOM] INSERT FAILED:', error);
     return null;
   }
 
+  console.log(`[DEBUG CREATE_ROOM] SUCCESS — room_id=${data.roomId}, room_code=${data.roomCode}, max_players=${data.maxPlayers}`);
   return { roomCode: data.roomCode, roomId: data.roomId, maxPlayers: data.maxPlayers };
 };
 
@@ -181,21 +198,30 @@ export const joinRoom = async (
   roomCode: string,
   playerName: string
 ): Promise<{ success: boolean; roomId?: string; playerIndex?: number; maxPlayers?: number; error?: string; isRejoin?: boolean }> => {
+  console.log(`[DEBUG JOIN] ========== JOIN ROOM START ==========`);
+  console.log(`[DEBUG JOIN] roomCode="${roomCode}", playerName="${playerName}"`);
   // Ensure we're authenticated
   const userId = await getOrCreateAuthSession();
   if (!userId) {
+    console.error('[DEBUG JOIN] ABORT — authentication failed, no user_id');
     return { success: false, error: 'Failed to authenticate' };
   }
+  console.log(`[DEBUG JOIN] Authenticated — user_id=${userId}`);
 
   const sessionId = getSessionId(); // Keep for backward compatibility
+  console.log(`[DEBUG JOIN] Legacy session_id=${sessionId}`);
 
   const { ok, data, error } = await apiFetch<{
     success: boolean; roomId: string; playerIndex: number; maxPlayers: number; isRejoin?: boolean;
   }>('/rooms', { op: 'join', roomCode: roomCode.toUpperCase(), playerName, sessionId });
 
   if (!ok || !data?.success) {
+    console.error(`[DEBUG JOIN] ========== JOIN ROOM END (FAILURE) — error="${error}" ==========`);
     return { success: false, error: error || 'Failed to join room' };
   }
+
+  console.log(`[DEBUG JOIN] SUCCESS — Player "${playerName}" joined room ${roomCode} at index ${data.playerIndex}`);
+  console.log(`[DEBUG JOIN] ========== JOIN ROOM END (SUCCESS) ==========`);
 
   // Save to localStorage for future recovery
   saveActiveGameToStorage({
@@ -216,9 +242,10 @@ export const joinRoom = async (
 
 // Leave a room
 export const leaveRoom = async (roomId: string): Promise<void> => {
+  console.log(`[DEBUG LEAVE] Leaving room_id=${roomId}`);
   await apiFetch('/rooms', { op: 'leave', roomId });
-  // Clear localStorage
   clearActiveGameFromStorage();
+  console.log('[DEBUG LEAVE] Successfully left room');
 };
 
 export interface RoomPlayer {
@@ -232,12 +259,14 @@ export interface RoomPlayer {
 
 // Get room players (public info only - excludes tiles for security)
 export const getRoomPlayers = async (roomId: string): Promise<RoomPlayer[]> => {
+  console.log(`[DEBUG GET_PLAYERS] Fetching players for room_id=${roomId}`);
   const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'list_players', roomId });
   if (!ok || !data?.players) {
+    console.error('[DEBUG GET_PLAYERS] FAILED or empty response');
     return [];
   }
 
-  return data.players.map((p) => ({
+  const result = data.players.map((p) => ({
     id: p.id || '',
     player_name: p.player_name || '',
     player_index: p.player_index ?? 0,
@@ -245,6 +274,8 @@ export const getRoomPlayers = async (roomId: string): Promise<RoomPlayer[]> => {
     is_bot: p.is_bot ?? false,
     bot_difficulty: p.bot_difficulty ?? null,
   }));
+  console.log(`[DEBUG GET_PLAYERS] Found ${result.length} players:`, result.map(p => `"${p.player_name}" (index=${p.player_index})`).join(', '));
+  return result;
 };
 
 // Add an AI bot to the room (host only). difficulty: 'easy' | 'medium' | 'hard'.
@@ -394,6 +425,7 @@ export const subscribeToRoom = (
   onGameStateChange: (state: any) => void,
   onRoomStatusChange: (status: string) => void
 ) => {
+  console.log(`[DEBUG SUBSCRIBE] Setting up realtime subscription for room_id=${roomId}`);
   const wsUrl = import.meta.env.VITE_WS_URL as string | undefined;
   if (!wsUrl) {
     console.error('[subscribeToRoom] VITE_WS_URL is not set; realtime disabled');
@@ -406,6 +438,7 @@ export const subscribeToRoom = (
   socket.on('connect', joinRoomChannel);
 
   socket.on('game:players_changed', async () => {
+    console.log(`[DEBUG SUBSCRIBE] game_players change detected`);
     const players = await getRoomPlayers(roomId);
     onPlayersChange(players);
   });
