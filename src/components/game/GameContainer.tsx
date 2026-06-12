@@ -68,9 +68,14 @@ export const GameContainer = ({
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const [showGameOver, setShowGameOver] = useState(true);
 
+  // Merger animation: track which tiles are currently animating
+  const [animatingTiles, setAnimatingTiles] = useState<Set<TileId>>(new Set());
+
   const { playSfx } = useAudio();
   const prevPhaseRef = useRef(gameState.phase);
   const prevPlayerIndexRef = useRef(gameState.currentPlayerIndex);
+  const prevBoardRef = useRef(gameState.board);
+  const mergerAnimationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   
   // Determine if we're in online mode (myPlayerIndex provided) or local mode
   const isOnlineMode = myPlayerIndexProp !== undefined;
@@ -140,6 +145,56 @@ export const GameContainer = ({
     }
     prevPlayerIndexRef.current = curr;
   }, [gameState.currentPlayerIndex, isOnlineMode, myPlayerIndex, playSfx]);
+
+  // Merger animation: animate tiles changing chains during a merger
+  useEffect(() => {
+    const prev = prevBoardRef.current;
+    const curr = gameState.board;
+
+    // Find tiles that changed their chain (from a non-null to a different non-null chain)
+    const changedTiles: TileId[] = [];
+    for (const [tileId, currTile] of curr) {
+      const prevTile = prev.get(tileId as TileId);
+      // Detect when a tile's chain changes (for merger)
+      if (prevTile?.chain && currTile?.chain && prevTile.chain !== currTile.chain) {
+        changedTiles.push(tileId as TileId);
+      }
+    }
+
+    prevBoardRef.current = curr;
+
+    // If tiles changed during a merger phase, animate them
+    if (changedTiles.length > 0 && (gameState.phase === 'merger_pay_bonuses' || gameState.phase === 'merger_handle_stock')) {
+      // Clear previous timers
+      mergerAnimationTimersRef.current.forEach(clearTimeout);
+      mergerAnimationTimersRef.current = [];
+
+      // Sort tiles for consistent animation order
+      const sortedTiles = changedTiles.sort();
+
+      // Animate tiles with staggered delays (500ms each, slower than case study's 160ms)
+      sortedTiles.forEach((tileId, index) => {
+        const timer = setTimeout(() => {
+          setAnimatingTiles(prev => new Set(prev).add(tileId));
+          // Remove animation flag after transition completes
+          const removeTimer = setTimeout(() => {
+            setAnimatingTiles(prev => {
+              const next = new Set(prev);
+              next.delete(tileId);
+              return next;
+            });
+          }, 1000); // Match the CSS transition duration
+          mergerAnimationTimersRef.current.push(removeTimer);
+        }, index * 500); // 500ms stagger between tiles (slower)
+        mergerAnimationTimersRef.current.push(timer);
+      });
+    }
+
+    return () => {
+      mergerAnimationTimersRef.current.forEach(clearTimeout);
+      mergerAnimationTimersRef.current = [];
+    };
+  }, [gameState.board, gameState.phase]);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]
@@ -316,6 +371,7 @@ export const GameContainer = ({
               isCurrentPlayer={isMyTurn}
               onTileClick={handleTileSelect}
               selectedTile={selectedTile}
+              animatingTiles={animatingTiles}
             />
 
             {/* Turn Timer — shown only to the active player when timer is enabled */}
