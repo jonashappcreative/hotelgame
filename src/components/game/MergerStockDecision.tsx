@@ -50,7 +50,7 @@ function SliderWithTicks({
       <Slider
         value={[value]}
         onValueChange={([v]) => onChange(v)}
-        max={max}
+        max={Math.max(max, 1)}
         step={step}
         disabled={disabled || max === 0}
         className="w-full"
@@ -121,7 +121,7 @@ export const MergerStockDecision = ({
   const keepShares = totalShares - sell - adjustedTrade;
 
   const maxSell = totalShares;
-  const maxTrade = Math.min(totalShares - sell, availableForTrade * 2);
+  const maxTrade = Math.min(totalShares, availableForTrade * 2);
 
   const saleValue = sell * defunctPrice;
   const existingSurviving = player.stocks[survivingChain] ?? 0;
@@ -138,7 +138,10 @@ export const MergerStockDecision = ({
 
   const handleTradeChange = (v: number) => {
     const even = Math.floor(v / 2) * 2;
-    setTrade(Math.min(even, totalShares - sell, maxTrade));
+    const capped = Math.min(even, maxTrade);
+    setTrade(capped);
+    const maxAllowedSell = totalShares - capped;
+    if (sell > maxAllowedSell) setSell(maxAllowedSell);
   };
 
   const handleConfirm = () => {
@@ -146,7 +149,7 @@ export const MergerStockDecision = ({
   };
 
   const sellAll  = () => { setSell(totalShares); setTrade(0); };
-  const tradeAll = () => { setSell(0); setTrade(Math.floor(Math.min(totalShares, maxTrade + sell) / 2) * 2); };
+  const tradeAll = () => { setSell(0); setTrade(Math.floor(maxTrade / 2) * 2); };
   const keepAll  = () => { setSell(0); setTrade(0); };
 
   return (
