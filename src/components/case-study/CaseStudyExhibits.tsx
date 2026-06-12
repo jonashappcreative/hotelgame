@@ -4,7 +4,7 @@ import { getStockPrice } from '@/utils/gameLogic';
 import { Button } from '@/components/ui/button';
 import { useAudio } from '@/contexts/AudioContext';
 import { cn } from '@/lib/utils';
-import { Minus, Plus, RotateCcw, ShoppingCart } from 'lucide-react';
+import { Building2, Minus, Plus, RotateCcw, ShoppingCart } from 'lucide-react';
 
 /* ----------------------------------------------------------------------------
    Self-contained, client-only slices of the real game for the case-study page.
@@ -21,9 +21,11 @@ interface MiniBoardProps {
   cols: string[];
   rows: number[];
   tiles: MiniBoardState;
+  highlightedCells?: Set<string>;
+  onCellClick?: (cellId: string) => void;
 }
 
-const MiniBoard = ({ cols, rows, tiles }: MiniBoardProps) => (
+const MiniBoard = ({ cols, rows, tiles, highlightedCells, onCellClick }: MiniBoardProps) => (
   <div className="bg-[hsl(var(--board-bg))] rounded-2xl p-3 md:p-4 shadow-lg">
     <div className="flex mb-1.5">
       <div className="w-6 md:w-8" />
@@ -42,21 +44,29 @@ const MiniBoard = ({ cols, rows, tiles }: MiniBoardProps) => (
           {cols.map(col => {
             const id = cellId(row, col);
             const tile = tiles[id];
+            const isHighlighted = highlightedCells?.has(id);
             return (
-              <div
+              <button
                 key={id}
+                onClick={() => isHighlighted && onCellClick?.(id)}
+                disabled={!isHighlighted}
                 className={cn(
                   'tile flex-1 aspect-[4/3] min-h-[22px] md:min-h-[30px] text-[9px] md:text-[11px] font-mono',
                   tile?.placed && !tile.chain && 'tile-placed animate-slide-up',
                   tile?.chain && `tile-chain chain-${tile.chain}`,
+                  isHighlighted && !tile?.placed && 'border-primary animate-pulse-subtle ring-1 ring-primary/50 cursor-pointer hover:scale-105 transition-transform',
                 )}
               >
-                {tile?.placed && (
-                  <span className={cn('font-semibold', tile.chain === 'tower' ? 'text-background' : 'text-foreground')}>
-                    {id}
-                  </span>
-                )}
-              </div>
+                <span className={cn(
+                  'font-semibold',
+                  tile?.chain === 'tower' ? 'text-background' :
+                  tile?.placed ? 'text-foreground' :
+                  isHighlighted ? 'text-primary' :
+                  'text-muted-foreground/25',
+                )}>
+                  {id}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -68,10 +78,11 @@ const MiniBoard = ({ cols, rows, tiles }: MiniBoardProps) => (
 interface HandTileProps {
   id: string;
   used: boolean;
+  isKey?: boolean;
   onClick: () => void;
 }
 
-const HandTile = ({ id, used, onClick }: HandTileProps) => (
+const HandTile = ({ id, used, isKey, onClick }: HandTileProps) => (
   <button
     onClick={onClick}
     disabled={used}
@@ -80,7 +91,9 @@ const HandTile = ({ id, used, onClick }: HandTileProps) => (
       'w-14 aspect-[4/3] rounded-md font-mono text-xs font-semibold border-2 transition-all duration-200 flex items-center justify-center',
       used
         ? 'bg-muted/40 border-border/50 border-dashed text-muted-foreground/50 cursor-default'
-        : 'bg-primary/20 border-primary text-primary cursor-pointer hover:bg-primary/30 hover:scale-105 animate-pulse-subtle',
+        : isKey
+        ? 'bg-primary/20 border-primary/60 text-primary cursor-pointer hover:bg-primary/30 hover:scale-105 shadow-[0_0_20px_rgba(var(--color-primary),0.4)]'
+        : 'bg-primary/20 border-primary text-primary cursor-pointer hover:bg-primary/30 hover:scale-105',
     )}
   >
     {id}
@@ -98,7 +111,7 @@ const ExhibitFrame = ({
   resetLabel?: string;
   children: React.ReactNode;
 }) => (
-  <div className="rounded-xl border border-border/60 p-4 md:p-5" style={{ background: 'var(--gradient-card)' }}>
+  <div className="relative rounded-xl border border-border/60 p-4 md:p-5" style={{ background: 'var(--gradient-card)' }}>
     <div className="flex items-center justify-between gap-3 mb-4">
       <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</span>
       <Button variant="ghost" size="sm" onClick={onReset}>
@@ -178,31 +191,46 @@ export const PlaceFoundExhibit = () => {
 
   return (
     <ExhibitFrame label="Exhibit — your opening move" onReset={reset}>
-      <MiniBoard cols={EX1_COLS} rows={EX1_ROWS} tiles={board} />
+      <MiniBoard cols={EX1_COLS} rows={EX1_ROWS} tiles={board} highlightedCells={!used.has(EX1_FOUNDER_TILE) ? new Set([EX1_FOUNDER_TILE]) : undefined} onCellClick={(id) => placeTile(id)} />
       <div className="mt-4">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Your tiles</p>
         <div className="flex flex-wrap gap-2">
           {EX1_HAND.map(id => (
-            <HandTile key={id} id={id} used={used.has(id)} onClick={() => placeTile(id)} />
+            <HandTile key={id} id={id} used={used.has(id)} isKey={id === EX1_FOUNDER_TILE && !founded} onClick={() => placeTile(id)} />
           ))}
         </div>
       </div>
       <p className="text-sm text-muted-foreground mt-3 min-h-[20px]" role="status" aria-live="polite">{status}</p>
       {chooserOpen && (
-        <div className="mt-3 rounded-xl border border-border bg-card/60 backdrop-blur p-4 animate-slide-up">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-            Found a hotel chain — choose the brand
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {EX1_CHOICES.map(chain => (
-              <Button key={chain} variant="outline" onClick={() => chooseChain(chain)}>
-                <span className={cn('w-3 h-3 rounded-full mr-1', `chain-${chain}`)} />
-                {CHAINS[chain].displayName}
-                <span className="text-muted-foreground text-xs ml-1">
-                  {CHAINS[chain].tier} · ${getStockPrice(chain, 2)}/share
-                </span>
-              </Button>
-            ))}
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/85 backdrop-blur-sm">
+          <div className="bg-card rounded-xl p-5 shadow-2xl border border-primary/50 animate-slide-up w-full max-w-sm mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base">Found a Hotel Chain!</h3>
+                <p className="text-sm text-muted-foreground">Choose which chain to establish. You'll receive 1 bonus share.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {EX1_CHOICES.map(chain => (
+                <Button
+                  key={chain}
+                  variant="outline"
+                  className="h-auto p-3 justify-start gap-3 hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+                  onClick={() => chooseChain(chain)}
+                >
+                  <span className={cn('w-5 h-5 rounded-full shrink-0', `chain-${chain}`)} />
+                  <div className="text-left">
+                    <p className="font-semibold text-sm">{CHAINS[chain].displayName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {CHAINS[chain].tier} · ${getStockPrice(chain, 2)}/share
+                    </p>
+                  </div>
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -278,11 +306,11 @@ export const MergerExhibit = () => {
 
   return (
     <ExhibitFrame label="Exhibit — the hostile takeover" onReset={reset} resetLabel="Replay">
-      <MiniBoard cols={EX2_COLS} rows={EX2_ROWS} tiles={board} />
+      <MiniBoard cols={EX2_COLS} rows={EX2_ROWS} tiles={board} highlightedCells={!placedBridge ? new Set([EX2_BRIDGE]) : undefined} onCellClick={() => trigger()} />
       <div className="flex items-end gap-5 flex-wrap mt-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Your tile</p>
-          <HandTile id={EX2_BRIDGE} used={placedBridge} onClick={trigger} />
+          <HandTile id={EX2_BRIDGE} used={placedBridge} isKey={!placedBridge} onClick={trigger} />
         </div>
         <p className="text-sm text-muted-foreground flex-1 min-w-[200px]" role="status" aria-live="polite">{status}</p>
       </div>

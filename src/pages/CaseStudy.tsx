@@ -97,20 +97,29 @@ const CaseStudy = () => (
         </div>
       </div>
 
+      {/* Gameplay screenshot */}
+      <img
+        src="/case-study-gameplay.webp"
+        alt="Hotel Game gameplay showing the board with hotel chains, player stocks, and tiles"
+        className="w-full rounded-2xl border border-border/60 shadow-lg"
+      />
+
       {/* Story */}
       <Section kicker="Origin" title="Six people, six cities, one board">
         <div className="space-y-4 text-muted-foreground leading-relaxed max-w-2xl">
           <p>
-            Between Christmas and New Year, my friends and I rented a house in the middle of nowhere.
-            Someone brought a battered copy of the 1964 hotel-empire classic, &quot;just in case&quot;.
-            We played it every single night — founding chains, forcing mergers, going to bed at 3 a.m.
-            arguing about who really held the majority.
+            Between Christmas and New Year, my friends and I rented a house in the middle of nowhere in Denmark.
+            One friend brought a piece of family history: a battered copy of the 1964 hotel-empire classic Acquire, &quot;just in case&quot;.
+            We played it every single night. Founding chains, forcing mergers, going to bed at 3 a.m.
+            calculating who really held the majority.
           </p>
+          <p>Ok, that is a little exaggerated, but you get the point. We had lots of fun.</p>
           <p>
             Then January came, and everyone scattered back to their own cities. The group chat kept
-            demanding &quot;one more round&quot;. A video call pointed at a photographed board didn&apos;t
-            survive the first merger. So I built the thing properly: a web version that feels like the
-            board on the table — not a spreadsheet with a chat window.
+            demanding &quot;one more round&quot;. Difficult, as there was no online version of it. 
+            So here the idea was born. I built the thing properly: a web version that feels like the
+            board on the table — not a spreadsheet with a chat window. With a developer mindset, AI, and the
+            heart of a UI/UX Designer.
           </p>
         </div>
       </Section>
@@ -220,7 +229,7 @@ const CaseStudy = () => (
               Start with the tutorial
             </Link>
           </Button>
-          <Button variant="ghost" asChild>
+          <Button variant="secondary" asChild>
             <a href="https://www.jonashapp.com/projects/acquire-game.html" target="_blank" rel="noopener noreferrer">
               Full case study
               <ExternalLink className="w-3.5 h-3.5 ml-2" />

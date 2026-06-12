@@ -8,12 +8,13 @@ interface GameBoardProps {
   isCurrentPlayer: boolean;
   onTileClick: (tileId: TileId) => void;
   selectedTile?: TileId | null;
+  animatingTiles?: Set<TileId>;
 }
 
 const DEFAULT_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 const DEFAULT_ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile }: GameBoardProps) => {
+export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile, animatingTiles }: GameBoardProps) => {
   const COLS = gameState.boardCols?.length ? gameState.boardCols : DEFAULT_COLS;
   const ROWS = gameState.boardRows
     ? Array.from({ length: gameState.boardRows }, (_, i) => i + 1)
@@ -67,6 +68,7 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
               const isPlaced = tile?.placed === true;  // Explicit boolean check
               const chainName = tile?.chain;
 
+              const isAnimating = animatingTiles?.has(tileId);
               return (
                 <button
                   key={tileId}
@@ -79,8 +81,10 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                     canPlace && "tile-playable cursor-pointer",
                     selectedTile === tileId && "ring-2 ring-primary scale-105",
                     isInHand && !tile?.placed && !selectedTile && "ring-1 ring-primary/30",
-                    !canPlace && !tile?.placed && "opacity-50"
+                    !canPlace && !tile?.placed && "opacity-50",
+                    isAnimating && "transition-all duration-1000"
                   )}
+                  style={isAnimating ? { transitionDuration: '1000ms' } : undefined}
                   title={tileId}
                 >
                   {/* Always show tile ID for placed tiles or playable tiles */}

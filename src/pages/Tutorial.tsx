@@ -131,7 +131,7 @@ const TutorialPage: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground text-center">
-              You've learned the basics of Acquire. Time to put your skills to the test!
+              You've learned the basics of Hotel Game. Time to put your skills to the test!
             </p>
             
             <div className="space-y-2">

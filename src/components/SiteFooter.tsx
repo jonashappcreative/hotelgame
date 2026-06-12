@@ -8,6 +8,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const OWNER_NAME = 'Jonas Happ';
@@ -83,6 +85,7 @@ export const VERSION_HISTORY: { version: string; date: string; summary: string; 
 
 export const SiteFooter = () => {
   const [open, setOpen] = useState<null | 'about' | 'imprint' | 'versions'>(null);
+  const [versionsExpanded, setVersionsExpanded] = useState(false);
 
   const linkClass = 'hover:text-foreground transition-colors';
 
@@ -166,7 +169,14 @@ export const SiteFooter = () => {
       </Dialog>
 
       {/* Version History */}
-      <Dialog open={open === 'versions'} onOpenChange={(o) => !o && setOpen(null)}>
+      <Dialog open={open === 'versions'} onOpenChange={(o) => {
+        if (!o) {
+          setOpen(null);
+          setVersionsExpanded(false);
+        } else {
+          setOpen('versions');
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Version history</DialogTitle>
@@ -179,37 +189,52 @@ export const SiteFooter = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                  <th className="py-2 pr-3 font-medium whitespace-nowrap">Version</th>
-                  <th className="py-2 pr-3 font-medium whitespace-nowrap">Date</th>
-                  <th className="py-2 font-medium">Changes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {VERSION_HISTORY.map((v) => (
-                  <tr key={v.version} className="border-b border-border/50 align-top">
-                    <td className="py-2 pr-3 whitespace-nowrap font-mono">
-                      <span className={cn(v.current && 'text-primary font-semibold')}>
-                        v{v.version}
-                      </span>
-                      {v.current && (
-                        <span className="ml-2 rounded-full bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 align-middle">
-                          current
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground font-mono">
-                      {v.date}
-                    </td>
-                    <td className="py-2 text-muted-foreground">{v.summary}</td>
+          <div className="space-y-4">
+            <ScrollArea className="max-h-[50vh] pr-4 border border-border/40 rounded-lg">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                    <th className="py-2 pr-3 font-medium whitespace-nowrap">Version</th>
+                    <th className="py-2 pr-3 font-medium whitespace-nowrap">Date</th>
+                    <th className="py-2 font-medium">Changes</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </ScrollArea>
+                </thead>
+                <tbody>
+                  {VERSION_HISTORY.slice(0, versionsExpanded ? VERSION_HISTORY.length : 5).map((v) => (
+                    <tr key={v.version} className="border-b border-border/50 align-top">
+                      <td className="py-2 pr-3 whitespace-nowrap font-mono">
+                        <span className={cn(v.current && 'text-primary font-semibold')}>
+                          v{v.version}
+                        </span>
+                        {v.current && (
+                          <span className="ml-2 rounded-full bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 align-middle">
+                            current
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground font-mono">
+                        {v.date}
+                      </td>
+                      <td className="py-2 text-muted-foreground">{v.summary}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollArea>
+            {!versionsExpanded && VERSION_HISTORY.length > 5 && (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVersionsExpanded(true)}
+                  className="gap-2"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                  Show {VERSION_HISTORY.length - 5} more versions
+                </Button>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -229,9 +254,9 @@ export const SiteFooter = () => {
               <p className="text-muted-foreground leading-relaxed">
                 {OWNER_NAME}
                 <br />
-                Sample Street 1
+                Weidplan 82
                 <br />
-                12345 Sample City
+                22523 Hamburg
                 <br />
                 Germany
               </p>
