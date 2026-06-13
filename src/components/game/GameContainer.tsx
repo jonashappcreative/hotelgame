@@ -135,18 +135,26 @@ export const GameContainer = ({
     }
   }, [gameState.phase, playSfx]);
 
-  // SFX: your-turn notification (online mode only)
+  // SFX: turn-change notification (online mode only). A distinct cue when it
+  // becomes the local player's turn, and a softer tick as the turn hands off to
+  // anyone else (e.g. each bot as it plays), so the table is audible to follow.
   useEffect(() => {
     if (!isOnlineMode) return;
     const prev = prevPlayerIndexRef.current;
     const curr = gameState.currentPlayerIndex;
-    if (prev !== curr && curr === myPlayerIndex) {
-      playSfx('your-turn');
+    if (prev !== curr) {
+      playSfx(curr === myPlayerIndex ? 'your-turn' : 'ui-click');
     }
     prevPlayerIndexRef.current = curr;
   }, [gameState.currentPlayerIndex, isOnlineMode, myPlayerIndex, playSfx]);
 
-  // Merger animation: animate tiles changing chains during a merger
+  // Merger animation: once a merger fully resolves, the absorbed tiles are
+  // reassigned to the surviving chain in a single board update (and the phase
+  // moves on to buy_stock/game_over). A tile changing from one non-null chain to
+  // a different one is uniquely that absorption, so detecting it here fires the
+  // animation exactly when the merger actions are done — then we flip the
+  // absorbed tiles one after another, ~200ms apart.
+  const MERGER_TILE_STAGGER_MS = 200;
   useEffect(() => {
     const prev = prevBoardRef.current;
     const curr = gameState.board;
@@ -155,7 +163,6 @@ export const GameContainer = ({
     const changedTiles: TileId[] = [];
     for (const [tileId, currTile] of curr) {
       const prevTile = prev.get(tileId as TileId);
-      // Detect when a tile's chain changes (for merger)
       if (prevTile?.chain && currTile?.chain && prevTile.chain !== currTile.chain) {
         changedTiles.push(tileId as TileId);
       }
@@ -163,38 +170,36 @@ export const GameContainer = ({
 
     prevBoardRef.current = curr;
 
-    // If tiles changed during a merger phase, animate them
-    if (changedTiles.length > 0 && (gameState.phase === 'merger_pay_bonuses' || gameState.phase === 'merger_handle_stock')) {
-      // Clear previous timers
-      mergerAnimationTimersRef.current.forEach(clearTimeout);
-      mergerAnimationTimersRef.current = [];
+    if (changedTiles.length === 0) return;
 
-      // Sort tiles for consistent animation order
-      const sortedTiles = changedTiles.sort();
+    // Clear any in-flight animation timers
+    mergerAnimationTimersRef.current.forEach(clearTimeout);
+    mergerAnimationTimersRef.current = [];
 
-      // Animate tiles with staggered delays (500ms each, slower than case study's 160ms)
-      sortedTiles.forEach((tileId, index) => {
-        const timer = setTimeout(() => {
-          setAnimatingTiles(prev => new Set(prev).add(tileId));
-          // Remove animation flag after transition completes
-          const removeTimer = setTimeout(() => {
-            setAnimatingTiles(prev => {
-              const next = new Set(prev);
-              next.delete(tileId);
-              return next;
-            });
-          }, 1000); // Match the CSS transition duration
-          mergerAnimationTimersRef.current.push(removeTimer);
-        }, index * 500); // 500ms stagger between tiles (slower)
-        mergerAnimationTimersRef.current.push(timer);
-      });
-    }
+    // Sort tiles for a consistent, readable sweep order
+    const sortedTiles = changedTiles.sort();
+
+    sortedTiles.forEach((tileId, index) => {
+      const timer = setTimeout(() => {
+        setAnimatingTiles(prev => new Set(prev).add(tileId));
+        // Remove the animation flag after the per-tile transition completes
+        const removeTimer = setTimeout(() => {
+          setAnimatingTiles(prev => {
+            const next = new Set(prev);
+            next.delete(tileId);
+            return next;
+          });
+        }, MERGER_TILE_STAGGER_MS); // match the CSS transition duration
+        mergerAnimationTimersRef.current.push(removeTimer);
+      }, index * MERGER_TILE_STAGGER_MS); // sequential, one tile after another
+      mergerAnimationTimersRef.current.push(timer);
+    });
 
     return () => {
       mergerAnimationTimersRef.current.forEach(clearTimeout);
       mergerAnimationTimersRef.current = [];
     };
-  }, [gameState.board, gameState.phase]);
+  }, [gameState.board]);
 
   // Calculate player rankings by net worth
   const playersByNetWorth = [...gameState.players]

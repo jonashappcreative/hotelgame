@@ -93,12 +93,14 @@ export default async (req: Request): Promise<Response> => {
 
   // On success, play out any consecutive bot turns server-side (this also
   // covers the toggle_ready that starts the game, so a bot in seat 0 opens).
+  // Detached on purpose: bots pace themselves (a few seconds per turn) and fan
+  // out their own realtime events, so the human's request returns immediately
+  // instead of blocking until every bot has moved. A per-room lock inside
+  // driveBots prevents overlapping runs (e.g. from bot_tick nudges).
   if (res.status === 200) {
-    try {
-      await driveBots(body.roomId, corsHeaders);
-    } catch (error) {
+    void driveBots(body.roomId, corsHeaders).catch((error) => {
       console.error('driveBots error:', error);
-    }
+    });
   }
   return res;
 };
@@ -199,8 +201,9 @@ async function handleGameAction(opts: {
           break;
         }
 
+        // Bots are always considered ready — only real players need to ready up.
         const allReady = freshPlayers.length === room.max_players &&
-          freshPlayers.every(p => p.is_ready);
+          freshPlayers.every(p => p.is_bot || p.is_ready);
 
         if (!allReady) {
           result = { success: true, data: { gameStarted: false, isReady: true } };
@@ -266,7 +269,9 @@ async function handleGameAction(opts: {
               tiles: playerTiles,
               cash: startingCash,
               stocks: { sackson: 0, tower: 0, worldwide: 0, american: 0, festival: 0, continental: 0, imperial: 0 },
-              is_ready: false,
+              // Bots stay ready so a re-created room (new_game) never gets stuck;
+              // only real players are reset and must ready up again.
+              is_ready: player.is_bot === true,
             })
             .eq('id', player.id);
         }
@@ -1863,16 +1868,41 @@ async function handleGameAction(opts: {
   }
 }
 
-// Play out consecutive bot turns until a human must act, the game ends, or the
-// per-invocation budget is spent. Each bot move runs through the real engine
-// (handleGameAction), so it is validated and fans out its own realtime event.
-// State is persisted after every single move, so hitting the budget never
-// corrupts a turn — the next human action (or `bot_tick` nudge) resumes here.
+// Pacing for bot play: each bot waits this long before taking its turn so a
+// human can watch the game unfold instead of bots resolving instantly.
+const BOT_TURN_DELAY_MS = 3000;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Rooms with a driveBots loop currently running. Because the Hetzner backend is
+// a single long-lived process, this in-memory set is enough to guarantee only
+// one bot loop runs per room at a time — bot_tick nudges that arrive during a
+// pacing delay are ignored rather than playing the same turn twice.
+const drivingRooms = new Set<string>();
+
+// Play out consecutive bot turns until a human must act or the game ends. Each
+// bot move runs through the real engine (handleGameAction), so it is validated
+// and fans out its own realtime event. State is persisted after every single
+// move, so an interrupted run never corrupts a turn — the next human action (or
+// `bot_tick` nudge) resumes here. Bots are paced (BOT_TURN_DELAY_MS per turn).
 async function driveBots(roomId: string, corsHeaders: Record<string, string>): Promise<void> {
-  const deadline = Date.now() + 8000;
+  if (drivingRooms.has(roomId)) return; // a loop is already pacing this room
+  drivingRooms.add(roomId);
+  try {
+    await driveBotsLoop(roomId, corsHeaders);
+  } finally {
+    drivingRooms.delete(roomId);
+  }
+}
+
+async function driveBotsLoop(roomId: string, corsHeaders: Record<string, string>): Promise<void> {
+  // Generous safety cap (the loop normally exits as soon as a human must act).
+  const deadline = Date.now() + 5 * 60 * 1000;
   const MAX_MOVES = 60;
   // Track retries per actorIndex to prevent infinite retry loops
   const retryCount = new Map<number, number>();
+  // The seat whose turn we last paced, so multiple actions within one bot turn
+  // (e.g. place tile + buy stock) only incur a single delay.
+  let lastActorIndex: number | null = null;
 
   for (let i = 0; i < MAX_MOVES; i++) {
     if (Date.now() > deadline) return;
@@ -1892,6 +1922,12 @@ async function driveBots(roomId: string, corsHeaders: Record<string, string>): P
 
     const actor = players.find((p: any) => p.player_index === actorIndex);
     if (!actor || !actor.is_bot) return; // a human must act — stop
+
+    // Pace one delay per bot turn (not per individual action within a turn).
+    if (lastActorIndex !== actorIndex) {
+      lastActorIndex = actorIndex;
+      await sleep(BOT_TURN_DELAY_MS);
+    }
 
     const difficulty = (actor.bot_difficulty as BotDifficulty) || 'medium';
     let move;

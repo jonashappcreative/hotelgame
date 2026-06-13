@@ -8,8 +8,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
-import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const OWNER_NAME = 'Jonas Happ';
@@ -66,7 +64,8 @@ const CREDITS: { role: string; by: string }[] = [
 // Development timeline mapped from the git history. Newest first; the top entry
 // is the current release. Also rendered on the /case-study page.
 export const VERSION_HISTORY: { version: string; date: string; summary: string; current?: boolean }[] = [
-  { version: '1.4.0', date: '2026-06-12', current: true, summary: 'Enhanced case study page with interactive exhibits (board visualization, clickable tiles, chain founder modal), merger animations in the main game (1-second smooth tile transitions), improved tile highlighting (cyan glow without flicker), and version history expansion ("show more" button).' },
+  { version: '1.4.1', date: '2026-06-13', current: true, summary: 'Bug fix: bots now stay ready in re-created rooms so a rematch no longer gets stuck. Bot turns are paced (~3s each) with an audible turn-change cue, merger tiles animate one-by-one (~200ms each) once the merger resolves, and the "hotel established" voice line is muted. Home screen polish: larger logo, removed the redundant tutorial card, and a WCAG-readable tutorial button hover. Footer shows the full version history again; the case-study timeline shows the latest 5 with a "show earlier" toggle.' },
+  { version: '1.4.0', date: '2026-06-12', summary: 'Enhanced case study page with interactive exhibits (board visualization, clickable tiles, chain founder modal), merger animations in the main game (1-second smooth tile transitions), improved tile highlighting (cyan glow without flicker), and version history expansion ("show more" button).' },
   { version: '1.3.0', date: '2026-06-09', summary: 'Full Hetzner migration: unified Hono + Socket.IO backend (no more Netlify Functions), standard Postgres, in-process WebSocket notifications, Caddy reverse proxy, turquoise theme finalised, Lovable branding removed, and improved merger stock decision UI (tick marks, numeric labels, post-trade portfolio preview).' },
   { version: '1.2.0', date: '2026-06-09', summary: 'Game-over → lobby fix, idle-room auto-cleanup (closes rooms after 10 min), site footer (About / Imprint / Version History), hidden login, lobby background image, and a green/turquoise theme system.' },
   { version: '1.1.0', date: '2026-06-08', summary: 'Sound-effects & music system, small-board rule set, automatic buy-phase completion, header reorder, and AI-bot tuning.' },
@@ -86,7 +85,6 @@ export const VERSION_HISTORY: { version: string; date: string; summary: string; 
 
 export const SiteFooter = () => {
   const [open, setOpen] = useState<null | 'about' | 'imprint' | 'versions'>(null);
-  const [versionsExpanded, setVersionsExpanded] = useState(false);
 
   const linkClass = 'hover:text-foreground transition-colors';
 
@@ -170,14 +168,7 @@ export const SiteFooter = () => {
       </Dialog>
 
       {/* Version History */}
-      <Dialog open={open === 'versions'} onOpenChange={(o) => {
-        if (!o) {
-          setOpen(null);
-          setVersionsExpanded(false);
-        } else {
-          setOpen('versions');
-        }
-      }}>
+      <Dialog open={open === 'versions'} onOpenChange={(o) => !o && setOpen(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Version history</DialogTitle>
@@ -190,52 +181,37 @@ export const SiteFooter = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <ScrollArea className="max-h-[50vh] pr-4 border border-border/40 rounded-lg">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                    <th className="py-2 pr-3 font-medium whitespace-nowrap">Version</th>
-                    <th className="py-2 pr-3 font-medium whitespace-nowrap">Date</th>
-                    <th className="py-2 font-medium">Changes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {VERSION_HISTORY.slice(0, versionsExpanded ? VERSION_HISTORY.length : 5).map((v) => (
-                    <tr key={v.version} className="border-b border-border/50 align-top">
-                      <td className="py-2 pr-3 whitespace-nowrap font-mono">
-                        <span className={cn(v.current && 'text-primary font-semibold')}>
-                          v{v.version}
+          <ScrollArea className="max-h-[50vh] pr-4 border border-border/40 rounded-lg">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                  <th className="py-2 pr-3 font-medium whitespace-nowrap">Version</th>
+                  <th className="py-2 pr-3 font-medium whitespace-nowrap">Date</th>
+                  <th className="py-2 font-medium">Changes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {VERSION_HISTORY.map((v) => (
+                  <tr key={v.version} className="border-b border-border/50 align-top">
+                    <td className="py-2 pr-3 whitespace-nowrap font-mono">
+                      <span className={cn(v.current && 'text-primary font-semibold')}>
+                        v{v.version}
+                      </span>
+                      {v.current && (
+                        <span className="ml-2 rounded-full bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 align-middle">
+                          current
                         </span>
-                        {v.current && (
-                          <span className="ml-2 rounded-full bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 align-middle">
-                            current
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground font-mono">
-                        {v.date}
-                      </td>
-                      <td className="py-2 text-muted-foreground">{v.summary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollArea>
-            {!versionsExpanded && VERSION_HISTORY.length > 5 && (
-              <div className="flex justify-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setVersionsExpanded(true)}
-                  className="gap-2"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                  Show {VERSION_HISTORY.length - 5} more versions
-                </Button>
-              </div>
-            )}
-          </div>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground font-mono">
+                      {v.date}
+                    </td>
+                    <td className="py-2 text-muted-foreground">{v.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
 

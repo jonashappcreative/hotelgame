@@ -27,7 +27,7 @@ const SFX_FILES: Record<SfxName, string> = {
 // Voice lines that play after their associated SFX
 const VOICE_FILES: Record<string, string> = {
   'merger-fanfare': '/sounds/voice/acquisition-triggered.mp3',
-  'chain-founded':  '/sounds/voice/hotel-established.mp3',
+  // 'hotel-established' voice line intentionally muted — the chain-founded SFX still plays.
 };
 
 const MUSIC_TRACKS = [

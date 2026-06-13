@@ -98,7 +98,7 @@ const Index = () => {
             <img
               src={logoMainScreen}
               alt="Hotel Game logo"
-              className="mx-auto mb-4 w-48 h-auto"
+              className="mx-auto mb-4 w-[230px] h-auto"
             />
             <p className="text-muted-foreground">
               The classic hotel empire building game
@@ -142,36 +142,19 @@ const Index = () => {
 
               <Button
                 variant="outline"
-                className="w-full h-20 flex flex-col items-center justify-center gap-2"
+                className="group w-full h-20 flex flex-col items-center justify-center gap-2"
                 onClick={() => navigate('/tutorial')}
               >
                 <div className="flex items-center gap-2">
                   <Monitor className="w-5 h-5" />
                   <span className="text-lg font-semibold">Tutorial</span>
                 </div>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground group-hover:text-accent-foreground">
                   Learn how to play the game
                 </span>
               </Button>
             </CardContent>
           </Card>
-
-          {/* Game Info */}
-          <div className="mt-6 p-4 rounded-xl bg-card/30 backdrop-blur-2xl border border-white/15 shadow-xl">
-            <h3 className="font-medium mb-2 text-sm">How to Play</h3>
-            <p className="text-xs text-muted-foreground mb-3">
-              Build a hotel empire by placing tiles, founding chains, and trading stocks. 
-              Merge rival chains for big bonuses and finish with the most wealth to win!
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full text-xs"
-              onClick={() => navigate('/tutorial')}
-            >
-              Tutorial
-            </Button>
-          </div>
         </div>
         </div>
         <SiteFooter />

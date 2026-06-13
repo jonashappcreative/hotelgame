@@ -82,9 +82,9 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                     selectedTile === tileId && "ring-2 ring-primary scale-105",
                     isInHand && !tile?.placed && !selectedTile && "ring-1 ring-primary/30",
                     !canPlace && !tile?.placed && "opacity-50",
-                    isAnimating && "transition-all duration-1000"
+                    isAnimating && "transition-all duration-200"
                   )}
-                  style={isAnimating ? { transitionDuration: '1000ms' } : undefined}
+                  style={isAnimating ? { transitionDuration: '200ms' } : undefined}
                   title={tileId}
                 >
                   {/* Always show tile ID for placed tiles or playable tiles */}

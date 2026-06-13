@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, VERSION_HISTORY } from '@/components/SiteFooter';
 import { PlaceFoundExhibit, MergerExhibit, StockExhibit } from '@/components/case-study/CaseStudyExhibits';
-import { ArrowLeft, ExternalLink, GraduationCap, Play } from 'lucide-react';
+import { ArrowLeft, ChevronUp, ExternalLink, GraduationCap, Play } from 'lucide-react';
 
 /* The story behind Hotel Game — a player-facing version of the portfolio
    case study at jonashapp.com/projects/acquire-game.html. Same exhibits,
@@ -72,12 +73,46 @@ const ARCH_ACTS: { name: string; stack: string; note: string; current?: boolean 
   },
 ];
 
+// Chronological timeline (oldest → newest). Shows the most recent versions by
+// default and lets the reader expand the full backlog.
+const RECENT_VERSION_COUNT = 5;
+
+const VersionTimeline = () => {
+  const [showAll, setShowAll] = useState(false);
+  const chronological = [...VERSION_HISTORY].reverse();
+  const hiddenCount = chronological.length - RECENT_VERSION_COUNT;
+  const shown = showAll ? chronological : chronological.slice(-RECENT_VERSION_COUNT);
+
+  return (
+    <div className="space-y-0">
+      {!showAll && hiddenCount > 0 && (
+        <div className="flex justify-center pb-4">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAll(true)}>
+            <ChevronUp className="w-4 h-4" />
+            Show {hiddenCount} earlier version{hiddenCount === 1 ? '' : 's'}
+          </Button>
+        </div>
+      )}
+      {shown.map(v => (
+        <div
+          key={v.version}
+          className="grid grid-cols-[72px_88px_1fr] max-sm:grid-cols-[72px_1fr] gap-3 py-3 border-b border-border/40 text-sm"
+        >
+          <span className={`font-mono ${v.current ? 'text-primary font-semibold' : ''}`}>v{v.version}</span>
+          <span className="font-mono text-muted-foreground max-sm:hidden">{v.date}</span>
+          <span className="text-muted-foreground leading-relaxed">{v.summary}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const CaseStudy = () => (
   <div className="min-h-screen flex flex-col bg-background">
     <div className="flex-1 w-full max-w-4xl mx-auto px-4 py-8 md:py-12 space-y-14 md:space-y-20">
       {/* Header */}
       <div className="space-y-8">
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="outline" size="sm" asChild>
           <Link to="/">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to lobby
@@ -195,18 +230,7 @@ const CaseStudy = () => (
 
       {/* Timeline */}
       <Section kicker="Timeline" title="Five months of evenings">
-        <div className="space-y-0">
-          {[...VERSION_HISTORY].reverse().map(v => (
-            <div
-              key={v.version}
-              className="grid grid-cols-[72px_88px_1fr] max-sm:grid-cols-[72px_1fr] gap-3 py-3 border-b border-border/40 text-sm"
-            >
-              <span className={`font-mono ${v.current ? 'text-primary font-semibold' : ''}`}>v{v.version}</span>
-              <span className="font-mono text-muted-foreground max-sm:hidden">{v.date}</span>
-              <span className="text-muted-foreground leading-relaxed">{v.summary}</span>
-            </div>
-          ))}
-        </div>
+        <VersionTimeline />
       </Section>
 
       {/* CTA */}
@@ -229,11 +253,20 @@ const CaseStudy = () => (
               Start with the tutorial
             </Link>
           </Button>
-          <Button variant="secondary" asChild>
+          <Button variant="outline" asChild>
             <a href="https://www.jonashapp.com/projects/acquire-game.html" target="_blank" rel="noopener noreferrer">
               Full case study
               <ExternalLink className="w-3.5 h-3.5 ml-2" />
             </a>
+          </Button>
+        </div>
+
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" asChild>
+            <Link to="/">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to lobby
+            </Link>
           </Button>
         </div>
       </section>
