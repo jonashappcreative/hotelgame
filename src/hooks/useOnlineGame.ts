@@ -395,17 +395,15 @@ export const useOnlineGame = () => {
   }, [gameState, roomId, myPlayerIndex, refreshGameState]);
 
   const handleChooseMergerSurvivor = useCallback(async (survivingChain: ChainName) => {
-    if (!gameState || !roomId || !gameState.mergerAdjacentChains) return;
+    if (!gameState || !roomId) return;
 
     if (gameState.currentPlayerIndex !== myPlayerIndex) {
       toast({ title: 'Not Your Turn', variant: 'destructive' });
       return;
     }
 
-    const result = await executeGameAction('choose_merger_survivor', roomId, { 
-      survivingChain,
-      adjacentChains: gameState.mergerAdjacentChains 
-    });
+    // Server recomputes adjacent chains from last_placed_tile — only survivingChain is needed
+    const result = await executeGameAction('choose_merger_survivor', roomId, { survivingChain });
     
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });

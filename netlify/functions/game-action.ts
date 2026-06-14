@@ -619,6 +619,7 @@ async function handleGameAction(opts: {
               last_placed_tile: tileId,
               pending_chain_foundation: pendingChainFoundation,
               merger,
+              merger_adjacent_chains: mergerAdjacentChains,
               game_log: gameLog,
             })
             .eq('room_id', roomId);
