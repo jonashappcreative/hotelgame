@@ -76,43 +76,6 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
 
               const displayChain = getDisplayChain(tileId);
 
-              // Melt effect: remove rounded corners toward adjacent same-display-chain neighbors.
-              // Neighbor display chains are also override-aware so the effect propagates
-              // correctly tile-by-tile as the animation sweeps through.
-              let meltStyle: React.CSSProperties | undefined;
-              if (displayChain) {
-                const colIndex = COLS.indexOf(col);
-                const topId = row > ROWS[0] ? `${row - 1}${col}` as TileId : null;
-                const bottomId = row < ROWS[ROWS.length - 1] ? `${row + 1}${col}` as TileId : null;
-                const leftId = colIndex > 0 ? `${row}${COLS[colIndex - 1]}` as TileId : null;
-                const rightId = colIndex < COLS.length - 1 ? `${row}${COLS[colIndex + 1]}` as TileId : null;
-
-                const sameTop    = topId    ? getDisplayChain(topId)    === displayChain : false;
-                const sameBottom = bottomId ? getDisplayChain(bottomId) === displayChain : false;
-                const sameLeft   = leftId   ? getDisplayChain(leftId)   === displayChain : false;
-                const sameRight  = rightId  ? getDisplayChain(rightId)  === displayChain : false;
-
-                if (sameTop || sameBottom || sameLeft || sameRight) {
-                  // 7px covers the max responsive gap (gap-1.5 = 6px) with 1px overlap
-                  // so no dark hairline appears between tiles. var(--chain-color) is set
-                  // by the chain-X CSS class applied to this tile.
-                  const G = 7;
-                  const shadows: string[] = [];
-                  if (sameRight)  shadows.push(`${G}px 0 0 0 var(--chain-color)`);
-                  if (sameLeft)   shadows.push(`-${G}px 0 0 0 var(--chain-color)`);
-                  if (sameBottom) shadows.push(`0 ${G}px 0 0 var(--chain-color)`);
-                  if (sameTop)    shadows.push(`0 -${G}px 0 0 var(--chain-color)`);
-
-                  meltStyle = {
-                    borderTopLeftRadius:     (sameTop    || sameLeft)  ? 0 : undefined,
-                    borderTopRightRadius:    (sameTop    || sameRight) ? 0 : undefined,
-                    borderBottomLeftRadius:  (sameBottom || sameLeft)  ? 0 : undefined,
-                    borderBottomRightRadius: (sameBottom || sameRight) ? 0 : undefined,
-                    boxShadow: shadows.join(', '),
-                  };
-                }
-              }
-
               return (
                 <button
                   key={tileId}
@@ -129,7 +92,6 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                     // Always transition chain tiles so merger color sweep is smooth
                     (displayChain || chainName) && "transition-all duration-200",
                   )}
-                  style={meltStyle}
                   title={tileId}
                 >
                   {/* Always show tile ID for placed tiles or playable tiles */}
