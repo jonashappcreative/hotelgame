@@ -407,14 +407,34 @@ export const GameContainer = ({
               {/* Current Action */}
               <div>
                 {gameState.phase === 'place_tile' && (
-                  <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <p className="text-lg font-semibold mb-2">Place a Tile</p>
-                      <p className="text-sm text-muted-foreground">
-                        Select a highlighted tile from your hand or the board
-                      </p>
+                  isMyTurn ? (
+                    <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-lg font-semibold mb-2">Place a Tile</p>
+                        <p className="text-sm text-muted-foreground">
+                          Select a highlighted tile from your hand or the board
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  ) : isOnlineMode ? (
+                    <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-lg font-semibold mb-2">Place a Tile</p>
+                        <p className="text-sm text-muted-foreground">
+                          Waiting for {currentPlayer.name} to place a tile...
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-lg font-semibold mb-2">Place a Tile</p>
+                        <p className="text-sm text-muted-foreground">
+                          Select a highlighted tile from your hand or the board
+                        </p>
+                      </div>
+                    </div>
+                  )
                 )}
 
                 {gameState.phase === 'merger_pay_bonuses' && gameState.merger?.currentDefunctChain && (
