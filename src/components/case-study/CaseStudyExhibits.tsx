@@ -4,7 +4,7 @@ import { getStockPrice } from '@/utils/gameLogic';
 import { Button } from '@/components/ui/button';
 import { useAudio } from '@/contexts/AudioContext';
 import { cn } from '@/lib/utils';
-import { Building2, Minus, Plus, RotateCcw, ShoppingCart } from 'lucide-react';
+import { Building2, Check, Minus, Plus, RotateCcw, ShoppingCart, Timer } from 'lucide-react';
 
 /* ----------------------------------------------------------------------------
    Self-contained, client-only slices of the real game for the case-study page.
@@ -472,6 +472,200 @@ export const StockExhibit = () => {
         </div>
       )}
       <p className="text-sm text-muted-foreground mt-3 min-h-[20px]" role="status" aria-live="polite">{status}</p>
+    </ExhibitFrame>
+  );
+};
+
+/* ----------------------------------------------------------------------------
+   Exhibit 4 — custom house rules
+   ---------------------------------------------------------------------------- */
+
+const BOARD_SIZES = [
+  { value: '5x7',  label: 'Small', sub: '5 × 7' },
+  { value: '9x12', label: 'Standard', sub: '9 × 12' },
+  { value: '10x16', label: 'Large', sub: '10 × 16' },
+] as const;
+type BoardSizeValue = typeof BOARD_SIZES[number]['value'];
+
+const CASH_OPTIONS = [3000, 6000, 9000, 12000];
+const TILE_OPTIONS = [4, 6, 8];
+
+const RuleToggle = ({
+  label,
+  sub,
+  enabled,
+  onToggle,
+}: {
+  label: string;
+  sub: string;
+  enabled: boolean;
+  onToggle: () => void;
+}) => (
+  <button
+    onClick={onToggle}
+    className={cn(
+      'flex items-start gap-3 rounded-lg border p-3 text-left transition-all w-full',
+      enabled
+        ? 'border-primary/60 bg-primary/5'
+        : 'border-border/60 bg-background/40 hover:border-border',
+    )}
+    aria-pressed={enabled}
+  >
+    <span
+      className={cn(
+        'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+        enabled ? 'border-primary bg-primary text-background' : 'border-border',
+      )}
+    >
+      {enabled && <Check className="w-2.5 h-2.5" strokeWidth={3} />}
+    </span>
+    <div>
+      <p className={cn('text-sm font-semibold leading-tight', enabled ? 'text-foreground' : 'text-muted-foreground')}>{label}</p>
+      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{sub}</p>
+    </div>
+  </button>
+);
+
+export const CustomRulesExhibit = () => {
+  const [boardSize, setBoardSize] = useState<BoardSizeValue>('9x12');
+  const [startCash, setStartCash] = useState(6000);
+  const [startTiles, setStartTiles] = useState(6);
+  const [timerEnabled, setTimerEnabled] = useState(false);
+  const [cashHidden, setCashHidden] = useState(false);
+
+  const isDefault =
+    boardSize === '9x12' &&
+    startCash === 6000 &&
+    startTiles === 6 &&
+    !timerEnabled &&
+    !cashHidden;
+
+  const reset = () => {
+    setBoardSize('9x12');
+    setStartCash(6000);
+    setStartTiles(6);
+    setTimerEnabled(false);
+    setCashHidden(false);
+  };
+
+  const summaryParts: string[] = [];
+  if (boardSize !== '9x12') summaryParts.push(`${BOARD_SIZES.find(b => b.value === boardSize)!.sub} board`);
+  if (startCash !== 6000) summaryParts.push(`$${startCash.toLocaleString()} to start`);
+  if (startTiles !== 6) summaryParts.push(`${startTiles} opening tiles`);
+  if (timerEnabled) summaryParts.push('60 s turn timer');
+  if (cashHidden) summaryParts.push("opponents' cash hidden");
+
+  return (
+    <ExhibitFrame label="Exhibit — configure your session" onReset={reset} resetLabel="Reset to defaults">
+      <div className="space-y-5">
+        {/* Board size */}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Board size</p>
+          <div className="grid grid-cols-3 gap-2">
+            {BOARD_SIZES.map(b => (
+              <button
+                key={b.value}
+                onClick={() => setBoardSize(b.value)}
+                className={cn(
+                  'rounded-lg border p-2.5 text-center transition-all',
+                  boardSize === b.value
+                    ? 'border-primary/60 bg-primary/5 text-foreground'
+                    : 'border-border/60 bg-background/40 text-muted-foreground hover:border-border',
+                )}
+              >
+                <p className="text-sm font-semibold">{b.label}</p>
+                <p className="font-mono text-xs mt-0.5">{b.sub}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Starting conditions */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Starting cash</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {CASH_OPTIONS.map(v => (
+                <button
+                  key={v}
+                  onClick={() => setStartCash(v)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 font-mono text-xs transition-all',
+                    startCash === v
+                      ? 'border-primary/60 bg-primary/5 text-foreground font-semibold'
+                      : 'border-border/60 text-muted-foreground hover:border-border',
+                  )}
+                >
+                  ${v.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Starting tiles</p>
+            <div className="flex gap-1.5">
+              {TILE_OPTIONS.map(v => (
+                <button
+                  key={v}
+                  onClick={() => setStartTiles(v)}
+                  className={cn(
+                    'rounded-md border px-3 py-1 font-mono text-xs transition-all',
+                    startTiles === v
+                      ? 'border-primary/60 bg-primary/5 text-foreground font-semibold'
+                      : 'border-border/60 text-muted-foreground hover:border-border',
+                  )}
+                >
+                  {v} tiles
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Toggleable rules */}
+        <div className="grid sm:grid-cols-2 gap-2">
+          <RuleToggle
+            label="Turn timer"
+            sub="60 seconds per move — keeps the game moving."
+            enabled={timerEnabled}
+            onToggle={() => setTimerEnabled(v => !v)}
+          />
+          <RuleToggle
+            label="Hidden cash"
+            sub="Opponents can't see each other's balances."
+            enabled={cashHidden}
+            onToggle={() => setCashHidden(v => !v)}
+          />
+        </div>
+
+        {/* Live summary */}
+        <div className={cn(
+          'rounded-lg border p-3 transition-all',
+          isDefault ? 'border-border/40 bg-background/20' : 'border-primary/40 bg-primary/5',
+        )}>
+          {isDefault ? (
+            <p className="text-sm text-muted-foreground">
+              Playing with standard rules. Adjust anything above to see your house rules take shape.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground shrink-0">Your rules</span>
+              {summaryParts.map(p => (
+                <span key={p} className="stock-badge bg-primary/10 border border-primary/30 text-primary text-xs">
+                  {p}
+                </span>
+              ))}
+            </div>
+          )}
+          {timerEnabled && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <Timer className="w-3.5 h-3.5 text-primary" />
+              <span className="font-mono text-sm font-semibold text-primary">0:60</span>
+              <span className="text-xs text-muted-foreground">— your clock starts when the turn lands on you</span>
+            </div>
+          )}
+        </div>
+      </div>
     </ExhibitFrame>
   );
 };

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { SiteFooter, VERSION_HISTORY } from '@/components/SiteFooter';
-import { PlaceFoundExhibit, MergerExhibit, StockExhibit } from '@/components/case-study/CaseStudyExhibits';
+import { PlaceFoundExhibit, MergerExhibit, StockExhibit, CustomRulesExhibit } from '@/components/case-study/CaseStudyExhibits';
 import { ArrowLeft, ChevronUp, ExternalLink, GraduationCap, Play } from 'lucide-react';
 
 /* The story behind Hotel Game — a player-facing version of the portfolio
@@ -56,7 +56,7 @@ const BUILD_NOTES: { kicker: string; title: string; body: string }[] = [
 
 const ARCH_ACTS: { name: string; stack: string; note: string; current?: boolean }[] = [
   {
-    name: 'Act I — Supabase',
+    name: 'Act I — Netlify + Supabase',
     stack: 'Netlify CDN · Supabase Postgres / Auth / Realtime · Edge Function',
     note: 'Fastest start, but the free tier pauses after 7 idle days. A game that falls asleep is a dead game.',
   },
@@ -68,7 +68,7 @@ const ARCH_ACTS: { name: string; stack: string; note: string; current?: boolean 
   {
     name: 'Act III — One box',
     stack: 'Caddy · Hono (REST + Socket.IO, one process) · Postgres 16 · Docker on Hetzner',
-    note: 'One server, one deploy, realtime in-process. Boring on purpose — boring is what survives.',
+    note: 'One server, one deploy, realtime in-process. One provider to monitor, one place to look when something breaks.',
     current: true,
   },
 ];
@@ -79,20 +79,12 @@ const RECENT_VERSION_COUNT = 5;
 
 const VersionTimeline = () => {
   const [showAll, setShowAll] = useState(false);
-  const chronological = [...VERSION_HISTORY].reverse();
-  const hiddenCount = chronological.length - RECENT_VERSION_COUNT;
-  const shown = showAll ? chronological : chronological.slice(-RECENT_VERSION_COUNT);
+  const latestFirst = VERSION_HISTORY;
+  const hiddenCount = latestFirst.length - RECENT_VERSION_COUNT;
+  const shown = showAll ? latestFirst : latestFirst.slice(0, RECENT_VERSION_COUNT);
 
   return (
     <div className="space-y-0">
-      {!showAll && hiddenCount > 0 && (
-        <div className="flex justify-center pb-4">
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAll(true)}>
-            <ChevronUp className="w-4 h-4" />
-            Show {hiddenCount} earlier version{hiddenCount === 1 ? '' : 's'}
-          </Button>
-        </div>
-      )}
       {shown.map(v => (
         <div
           key={v.version}
@@ -103,6 +95,19 @@ const VersionTimeline = () => {
           <span className="text-muted-foreground leading-relaxed">{v.summary}</span>
         </div>
       ))}
+      <div className="flex justify-center pt-4">
+        {showAll ? (
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAll(false)}>
+            <ChevronUp className="w-4 h-4" />
+            Show fewer versions
+          </Button>
+        ) : hiddenCount > 0 ? (
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAll(true)}>
+            <ChevronUp className="w-4 h-4 rotate-180" />
+            Show {hiddenCount} earlier version{hiddenCount === 1 ? '' : 's'}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 };
@@ -184,6 +189,16 @@ const CaseStudy = () => (
         <StockExhibit />
       </Section>
 
+      <Section kicker="Try it ④" title="Make it yours — introducing Custom House Rules">
+        <p className="text-muted-foreground max-w-2xl">
+          Every group plays differently. Before a session starts, the host can dial in their own
+          version of the game — shrink the board for a faster fight, hide balances for more
+          tension, or deal everyone extra tiles to open up the board. The rules engine enforces
+          whatever you set, server-side, for the whole session.
+        </p>
+        <CustomRulesExhibit />
+      </Section>
+
       {/* How it was built */}
       <Section kicker="Behind the scenes" title="One designer, an AI team">
         <div className="grid sm:grid-cols-2 gap-3">
@@ -203,7 +218,7 @@ const CaseStudy = () => (
       </Section>
 
       {/* Architecture */}
-      <Section kicker="Architecture" title="Three acts to boring">
+      <Section kicker="Architecture" title="Three acts, three stacks">
         <div className="grid md:grid-cols-3 gap-3">
           {ARCH_ACTS.map(a => (
             <div
@@ -260,16 +275,16 @@ const CaseStudy = () => (
             </a>
           </Button>
         </div>
-
-        <div className="flex justify-center pt-2">
-          <Button variant="outline" asChild>
-            <Link to="/">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to lobby
-            </Link>
-          </Button>
-        </div>
       </section>
+
+      <div className="flex justify-center">
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to lobby
+          </Link>
+        </Button>
+      </div>
     </div>
     <SiteFooter />
   </div>
