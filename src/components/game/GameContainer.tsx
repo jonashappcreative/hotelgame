@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
 import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
@@ -68,8 +68,9 @@ export const GameContainer = ({
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const [showGameOver, setShowGameOver] = useState(true);
 
-  // Merger animation: track which tiles are currently animating
-  const [animatingTiles, setAnimatingTiles] = useState<Set<TileId>>(new Set());
+  // Merger animation: tiles still showing their OLD chain color (pre-merger),
+  // removed one-by-one on a stagger to trigger a real CSS color transition.
+  const [mergerDisplayOverride, setMergerDisplayOverride] = useState<Map<TileId, ChainName>>(new Map());
 
   const { playSfx } = useAudio();
   const prevPhaseRef = useRef(gameState.phase);
@@ -148,23 +149,21 @@ export const GameContainer = ({
     prevPlayerIndexRef.current = curr;
   }, [gameState.currentPlayerIndex, isOnlineMode, myPlayerIndex, playSfx]);
 
-  // Merger animation: once a merger fully resolves, the absorbed tiles are
-  // reassigned to the surviving chain in a single board update (and the phase
-  // moves on to buy_stock/game_over). A tile changing from one non-null chain to
-  // a different one is uniquely that absorption, so detecting it here fires the
-  // animation exactly when the merger actions are done — then we flip the
-  // absorbed tiles one after another, ~200ms apart.
+  // Merger animation: once a merger fully resolves, absorbed tiles move to the
+  // surviving chain in one board update. We capture each tile's OLD chain and hold
+  // it in mergerDisplayOverride so the tile keeps showing the old color initially.
+  // Stagger timers then delete tiles from the map one-by-one, each triggering a
+  // 200ms CSS color+border-radius transition — the "fungus crawling" effect.
   const MERGER_TILE_STAGGER_MS = 200;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const prev = prevBoardRef.current;
     const curr = gameState.board;
 
-    // Find tiles that changed their chain (from a non-null to a different non-null chain)
-    const changedTiles: TileId[] = [];
+    const changedTiles: { tileId: TileId; oldChain: ChainName }[] = [];
     for (const [tileId, currTile] of curr) {
       const prevTile = prev.get(tileId as TileId);
       if (prevTile?.chain && currTile?.chain && prevTile.chain !== currTile.chain) {
-        changedTiles.push(tileId as TileId);
+        changedTiles.push({ tileId: tileId as TileId, oldChain: prevTile.chain as ChainName });
       }
     }
 
@@ -176,22 +175,25 @@ export const GameContainer = ({
     mergerAnimationTimersRef.current.forEach(clearTimeout);
     mergerAnimationTimersRef.current = [];
 
-    // Sort tiles for a consistent, readable sweep order
-    const sortedTiles = changedTiles.sort();
+    // Immediately show old chain colors so the first paint is correct
+    const initialOverride = new Map<TileId, ChainName>();
+    for (const { tileId, oldChain } of changedTiles) {
+      initialOverride.set(tileId, oldChain);
+    }
+    setMergerDisplayOverride(initialOverride);
 
-    sortedTiles.forEach((tileId, index) => {
+    // Sort tiles for a consistent, readable sweep order
+    const sortedTiles = [...changedTiles].sort((a, b) => a.tileId.localeCompare(b.tileId));
+
+    // Remove tiles from the override one-by-one, triggering the CSS transition
+    sortedTiles.forEach(({ tileId }, index) => {
       const timer = setTimeout(() => {
-        setAnimatingTiles(prev => new Set(prev).add(tileId));
-        // Remove the animation flag after the per-tile transition completes
-        const removeTimer = setTimeout(() => {
-          setAnimatingTiles(prev => {
-            const next = new Set(prev);
-            next.delete(tileId);
-            return next;
-          });
-        }, MERGER_TILE_STAGGER_MS); // match the CSS transition duration
-        mergerAnimationTimersRef.current.push(removeTimer);
-      }, index * MERGER_TILE_STAGGER_MS); // sequential, one tile after another
+        setMergerDisplayOverride(prev => {
+          const next = new Map(prev);
+          next.delete(tileId);
+          return next;
+        });
+      }, index * MERGER_TILE_STAGGER_MS);
       mergerAnimationTimersRef.current.push(timer);
     });
 
@@ -376,7 +378,7 @@ export const GameContainer = ({
               isCurrentPlayer={isMyTurn}
               onTileClick={handleTileSelect}
               selectedTile={selectedTile}
-              animatingTiles={animatingTiles}
+              mergerDisplayOverride={mergerDisplayOverride}
             />
 
             {/* Turn Timer — shown only to the active player when timer is enabled */}

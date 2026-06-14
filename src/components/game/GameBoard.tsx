@@ -1,5 +1,5 @@
 import { TileId, ChainName, GameState, CHAINS } from '@/types/game';
-import { analyzeTilePlacement, parseTileId } from '@/utils/gameLogic';
+import { analyzeTilePlacement } from '@/utils/gameLogic';
 import { cn } from '@/lib/utils';
 
 interface GameBoardProps {
@@ -8,17 +8,18 @@ interface GameBoardProps {
   isCurrentPlayer: boolean;
   onTileClick: (tileId: TileId) => void;
   selectedTile?: TileId | null;
-  animatingTiles?: Set<TileId>;
+  mergerDisplayOverride?: Map<TileId, ChainName>;
 }
 
 const DEFAULT_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 const DEFAULT_ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile, animatingTiles }: GameBoardProps) => {
+export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick, selectedTile, mergerDisplayOverride }: GameBoardProps) => {
   const COLS = gameState.boardCols?.length ? gameState.boardCols : DEFAULT_COLS;
   const ROWS = gameState.boardRows
     ? Array.from({ length: gameState.boardRows }, (_, i) => i + 1)
     : DEFAULT_ROWS;
+
   const canPlaceTile = (tileId: TileId): boolean => {
     if (!isCurrentPlayer || gameState.phase !== 'place_tile') return false;
     if (!playerTiles.includes(tileId)) return false;
@@ -30,9 +31,15 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
     return gameState.board.get(tileId);
   };
 
-  const getChainClass = (chainName: ChainName | null): string => {
+  const getChainClass = (chainName: ChainName | null | undefined): string => {
     if (!chainName) return '';
     return `chain-${chainName}`;
+  };
+
+  // Returns the visually displayed chain for a tile (override or actual).
+  const getDisplayChain = (id: TileId): ChainName | null | undefined => {
+    if (mergerDisplayOverride?.has(id)) return mergerDisplayOverride.get(id)!;
+    return gameState.board.get(id)?.chain;
   };
 
   return (
@@ -41,8 +48,8 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
       <div className="flex mb-2">
         <div className="w-8 md:w-10" /> {/* Empty corner */}
         {COLS.map(col => (
-          <div 
-            key={col} 
+          <div
+            key={col}
             className="flex-1 text-center text-xs md:text-sm font-medium text-muted-foreground"
           >
             {col}
@@ -58,17 +65,43 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
             <div className="w-8 md:w-10 flex items-center justify-center text-xs md:text-sm font-medium text-muted-foreground">
               {row}
             </div>
-            
+
             {/* Tiles */}
             {COLS.map(col => {
               const tileId = `${row}${col}` as TileId;
               const tile = getTileState(tileId);
               const isInHand = playerTiles.includes(tileId);
               const canPlace = canPlaceTile(tileId);
-              const isPlaced = tile?.placed === true;  // Explicit boolean check
               const chainName = tile?.chain;
 
-              const isAnimating = animatingTiles?.has(tileId);
+              const displayChain = getDisplayChain(tileId);
+
+              // Melt effect: remove rounded corners toward adjacent same-display-chain neighbors.
+              // Neighbor display chains are also override-aware so the effect propagates
+              // correctly tile-by-tile as the animation sweeps through.
+              let meltStyle: React.CSSProperties | undefined;
+              if (displayChain) {
+                const colIndex = COLS.indexOf(col);
+                const topId = row > ROWS[0] ? `${row - 1}${col}` as TileId : null;
+                const bottomId = row < ROWS[ROWS.length - 1] ? `${row + 1}${col}` as TileId : null;
+                const leftId = colIndex > 0 ? `${row}${COLS[colIndex - 1]}` as TileId : null;
+                const rightId = colIndex < COLS.length - 1 ? `${row}${COLS[colIndex + 1]}` as TileId : null;
+
+                const sameTop    = topId    ? getDisplayChain(topId)    === displayChain : false;
+                const sameBottom = bottomId ? getDisplayChain(bottomId) === displayChain : false;
+                const sameLeft   = leftId   ? getDisplayChain(leftId)   === displayChain : false;
+                const sameRight  = rightId  ? getDisplayChain(rightId)  === displayChain : false;
+
+                if (sameTop || sameBottom || sameLeft || sameRight) {
+                  meltStyle = {
+                    borderTopLeftRadius:     (sameTop    || sameLeft)  ? 0 : undefined,
+                    borderTopRightRadius:    (sameTop    || sameRight) ? 0 : undefined,
+                    borderBottomLeftRadius:  (sameBottom || sameLeft)  ? 0 : undefined,
+                    borderBottomRightRadius: (sameBottom || sameRight) ? 0 : undefined,
+                  };
+                }
+              }
+
               return (
                 <button
                   key={tileId}
@@ -76,22 +109,23 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                   disabled={!canPlace}
                   className={cn(
                     "tile flex-1 aspect-[4/3] min-h-[28px] md:min-h-[36px] text-[10px] md:text-xs font-mono",
-                    tile?.placed && !tile?.chain && "tile-placed",  // Explicit tile existence check
-                    tile?.chain && `tile-chain ${getChainClass(tile.chain)}`,  // Explicit chain check
+                    tile?.placed && !chainName && "tile-placed",
+                    displayChain && `tile-chain ${getChainClass(displayChain)}`,
                     canPlace && "tile-playable cursor-pointer",
                     selectedTile === tileId && "ring-2 ring-primary scale-105",
                     isInHand && !tile?.placed && !selectedTile && "ring-1 ring-primary/30",
                     !canPlace && !tile?.placed && "opacity-50",
-                    isAnimating && "transition-all duration-200"
+                    // Always transition chain tiles so merger color sweep is smooth
+                    (displayChain || chainName) && "transition-all duration-200",
                   )}
-                  style={isAnimating ? { transitionDuration: '200ms' } : undefined}
+                  style={meltStyle}
                   title={tileId}
                 >
                   {/* Always show tile ID for placed tiles or playable tiles */}
                   {(tile?.placed === true || canPlace) && (
                     <span className={cn(
-                      "font-semibold",  // Changed to semibold for better visibility
-                      chainName === 'tower' ? "text-background" : "text-foreground"
+                      "font-semibold",
+                      (displayChain ?? chainName) === 'tower' ? "text-background" : "text-foreground"
                     )}>
                       {tileId}
                     </span>
@@ -108,7 +142,7 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
         {Object.entries(CHAINS).map(([key, chain]) => {
           const chainState = gameState.chains[key as ChainName];
           const isActive = chainState.isActive;
-          
+
           return (
             <div
               key={key}
@@ -117,7 +151,7 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                 isActive ? "opacity-100" : "opacity-40"
               )}
             >
-              <div 
+              <div
                 className={cn(
                   "w-3 h-3 rounded-full",
                   `chain-${key}`
