@@ -596,7 +596,7 @@ async function handleGameAction(opts: {
           }));
           const winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
 
-          await adminClient
+          const { error: updateError } = await adminClient
             .from('game_states')
             .update({
               board: newBoard,
@@ -609,8 +609,15 @@ async function handleGameAction(opts: {
               winner,
             })
             .eq('room_id', roomId);
+
+          if (updateError) {
+            return new Response(JSON.stringify({ error: 'Failed to update game state', detail: updateError.message }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         } else {
-          await adminClient
+          const { error: updateError } = await adminClient
             .from('game_states')
             .update({
               board: newBoard,
@@ -619,10 +626,16 @@ async function handleGameAction(opts: {
               last_placed_tile: tileId,
               pending_chain_foundation: pendingChainFoundation,
               merger,
-              merger_adjacent_chains: mergerAdjacentChains,
               game_log: gameLog,
             })
             .eq('room_id', roomId);
+
+          if (updateError) {
+            return new Response(JSON.stringify({ error: 'Failed to update game state', detail: updateError.message }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         }
 
         // Update player tiles
