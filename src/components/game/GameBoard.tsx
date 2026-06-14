@@ -93,11 +93,22 @@ export const GameBoard = ({ gameState, playerTiles, isCurrentPlayer, onTileClick
                 const sameRight  = rightId  ? getDisplayChain(rightId)  === displayChain : false;
 
                 if (sameTop || sameBottom || sameLeft || sameRight) {
+                  // 7px covers the max responsive gap (gap-1.5 = 6px) with 1px overlap
+                  // so no dark hairline appears between tiles. var(--chain-color) is set
+                  // by the chain-X CSS class applied to this tile.
+                  const G = 7;
+                  const shadows: string[] = [];
+                  if (sameRight)  shadows.push(`${G}px 0 0 0 var(--chain-color)`);
+                  if (sameLeft)   shadows.push(`-${G}px 0 0 0 var(--chain-color)`);
+                  if (sameBottom) shadows.push(`0 ${G}px 0 0 var(--chain-color)`);
+                  if (sameTop)    shadows.push(`0 -${G}px 0 0 var(--chain-color)`);
+
                   meltStyle = {
                     borderTopLeftRadius:     (sameTop    || sameLeft)  ? 0 : undefined,
                     borderTopRightRadius:    (sameTop    || sameRight) ? 0 : undefined,
                     borderBottomLeftRadius:  (sameBottom || sameLeft)  ? 0 : undefined,
                     borderBottomRightRadius: (sameBottom || sameRight) ? 0 : undefined,
+                    boxShadow: shadows.join(', '),
                   };
                 }
               }
