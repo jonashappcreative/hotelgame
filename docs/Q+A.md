@@ -36,3 +36,25 @@ Login **isn't discarded**—just **hidden** behind a feature flag (`SHOW_ACCOUNT
 
 **Persistence:** Yes—identified by user_id across restarts via JWT token or localStorage fallback.
 
+---
+
+### Q3: What were the login/auth debugging fuckups?
+
+**Main issues during Supabase era (Jan 2026):**
+
+1. **Overly Restrictive RLS Policy** — `game_players` SELECT policy only allowed viewing own user_id record. Multiple anonymous users trying to join the same room couldn't see each other, so they all tried claiming the same `player_index` slot simultaneously.
+
+2. **Race Condition Hell** — When 2+ users joined concurrently:
+   - Both would find no players (due to RLS), assume they're player_0
+   - Both try to INSERT at player_index 0 → unique constraint violation
+   - No retry logic, both fail silently
+   - Game join appeared broken
+
+3. **Inadequate Retry Logic** — Initial retry was `100ms * attempt`. With 3 retries and 2+ concurrent joins, collisions happened faster than exponential backoff could handle. Solution: exponential backoff with **jitter** (randomized delay) to desynchronize concurrent requests.
+
+4. **Duplicate Realtime Publication Errors** — Migrations ran idempotently but didn't handle pre-existing publications. Running migration twice = `duplicate_object` error. Fixed with `DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL;` blocks.
+
+5. **Missing Unique Constraint** — No database-level protection against the same user joining a room twice (race condition where tab 1 + tab 2 both try to join). Added: `UNIQUE (room_id, user_id)`.
+
+**Debugging artifacts:** commit `dbd5e25` ("Add comprehensive debug logging...") added extensive `console.log` statements to trace auth session creation, room joining, and retry logic—these are still in the codebase at `src/utils/multiplayerService.ts`.
+
