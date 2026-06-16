@@ -19,3 +19,20 @@ The architecture follows a **notification + refetch pattern**: Socket.io emits l
 - Pattern: Signal → Refetch (instead of pushing full state updates)
 - Security: JWT tokens validate every API call; tile_bag never sent to client
 
+---
+
+### Q2: Why did we discard the login feature and what are we doing instead to identify players?
+
+Login **isn't discarded**—just **hidden** behind a feature flag (`SHOW_ACCOUNT_UI = false`). The auth system remains intact for future use.
+
+**Current player identification: Anonymous JWT + persistent localStorage**
+- Players join **without signup/login** → automatic anonymous session creation (`getOrCreateAuthSession`)
+- Each gets a **JWT token** stored in localStorage, decoded on app load to restore identity
+- **Rejoin logic** (priority order):
+  1. Check if registered user (JWT token + valid expiry)
+  2. Check localStorage for saved game info (valid 48 hours)
+  3. Verify player still exists in room by name
+- Anonymous users have `is_anonymous = true` in database, persist via user_id
+
+**Persistence:** Yes—identified by user_id across restarts via JWT token or localStorage fallback.
+
