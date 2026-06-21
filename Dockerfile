@@ -11,27 +11,22 @@ RUN npm ci --ignore-scripts
 COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --ignore-scripts
 
-# Copy backend + shared function source
+# Copy all source (backend, shared functions, frontend)
 COPY server/ ./server/
 COPY netlify/functions/ ./netlify/functions/
-
-# Build backend TypeScript → dist/server/
-RUN cd server && npm run build
-
-# Copy frontend source
 COPY src/ ./src/
 COPY public/ ./public/
-COPY index.html ./
-COPY vite.config.ts ./
-COPY tsconfig.json ./
-COPY tsconfig.app.json ./
-COPY tsconfig.node.json ./
-COPY tailwind.config.ts ./
-COPY postcss.config.js ./
+COPY index.html vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json tailwind.config.ts postcss.config.js ./
 
-# Build Vite frontend → dist/ (VITE_WS_URL baked in at build time)
+# Build frontend FIRST. `vite build` empties dist/ before writing, so it MUST
+# run before the backend compile — otherwise it would wipe dist/server/server.js.
+# VITE_WS_URL is baked into the JS bundle at build time.
 ARG VITE_WS_URL=wss://hotelgame.jonashapp.com
 RUN VITE_WS_URL=$VITE_WS_URL npm run build
+
+# Build backend SECOND. tsc writes dist/server/ + dist/netlify/ WITHOUT emptying
+# dist/, so the frontend output from the previous step survives intact.
+RUN cd server && npm run build
 
 # Stage 2: runtime
 FROM node:20-alpine
@@ -42,7 +37,10 @@ WORKDIR /app
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
-# Copy compiled backend (dist/server/) + built frontend (dist/index.html, dist/assets/)
+# Copy everything built above:
+#   dist/server/server.js   ← backend entry
+#   dist/netlify/functions/ ← shared API handlers
+#   dist/index.html, dist/assets/ ← Vite frontend
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
