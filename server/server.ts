@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { createAdaptorServer } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Server as SocketServer } from 'socket.io';
 import { setSocketServer } from '../netlify/functions/_shared/ws';
@@ -47,6 +48,10 @@ app.all('/api/rooms',          handler(rooms));
 app.all('/api/account',        handler(account));
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
+
+// Serve Vite-built frontend; fallback to index.html for client-side routing
+app.use('/*', serveStatic({ root: './dist' }));
+app.use('/*', serveStatic({ path: './dist/index.html' }));
 
 // Create an http.Server backed by Hono, then attach Socket.io to the same server
 const nodeServer = createAdaptorServer({ fetch: app.fetch.bind(app) });
