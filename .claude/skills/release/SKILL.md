@@ -1,13 +1,17 @@
 ---
 name: release
-description: Promote work up the branch chain (feature → dev → staging → main). On staging it cuts a release — runs the gates, bumps the version, writes the changelog entry shown on the site, and opens the PR to main. Use when Jonas says "release", "cut a release", "promote to staging", "ship it", or "ready for main".
+description: Promote work up the branch chain (feature → staging → main). On staging it cuts a release — runs the gates, bumps the version, writes the changelog entry shown on the site, and opens the PR to main. Use when Jonas says "release", "cut a release", "promote to staging", "ship it", or "ready for main".
 ---
 
 # Release & promotion
 
-This project ships through `feature/* → dev → staging → main`. A push to `main`
+This project ships through `feature/* → staging → main`. A push to `main`
 auto-deploys to production via Coolify, so `main` is only ever reached through a
 reviewed PR from `staging`.
+
+`staging` is the single pre-production branch. It is ruleset-protected, so
+**nothing can be committed to it directly** — every change into `staging`,
+including the release commit itself, arrives by PR from a branch.
 
 **Never push directly to `main`.** A hook blocks it; that is intentional, not a
 bug to route around. If Jonas explicitly wants a direct push, he removes the
@@ -19,9 +23,9 @@ Run `git branch --show-current` and `git status --short`.
 
 | Current branch | What `/release` does |
 |---|---|
-| `feature/*`, `fix/*` | Gates, then PR into `dev` |
-| `dev` | Gates, then PR into `staging` (no version bump yet) |
-| `staging` | **Cut a release**: gates → version bump → changelog → PR into `main` |
+| `feature/*`, `fix/*` | Gates, then PR into `staging` (no version bump) |
+| `release/*` | Gates, then PR into `staging` — this is a release commit in flight |
+| `staging` | **Cut a release**: gates → version bump → changelog on a `release/vX.Y.Z` branch → PR into `staging` → PR into `main` |
 | `main` | Stop. Explain that releases start from `staging`. |
 
 If the working tree is dirty, stop and ask what to do with the changes first.
@@ -42,7 +46,7 @@ npm run build        # blocking
 Report the results honestly, including "still broken". Do not describe a gate as
 passing when it was skipped.
 
-## Step 2 — promotion PRs (feature → dev, dev → staging)
+## Step 2 — promotion PRs (feature → staging)
 
 No version work. Push the branch and open the PR:
 
@@ -125,20 +129,39 @@ npm version <new-version> --no-git-tag-version
 CI's release-guard job fails the PR if `package.json` and the top changelog
 entry disagree, so this is not optional.
 
-### 3e. Commit and open the PR
+### 3e. Commit on a release branch, then open two PRs
+
+`staging` is ruleset-protected — `git push origin staging` is refused with
+`GH013: Repository rule violations found`. The release commit therefore needs its
+own branch, and a release is **two** PRs.
 
 ```bash
+git checkout -b "release/v<version>"
 git add src/data/versionHistory.ts package.json package-lock.json
 git commit -m "chore(release): v<version>"
-git push origin staging
+git push -u origin "release/v<version>"
 ```
+
+If the version work was already committed onto local `staging` before you noticed
+the ruleset, move it without touching the working tree — `git reset --hard` would
+discard Jonas's unrelated modified files:
+
+```bash
+git checkout -b "release/v<version>"      # carries the commit
+git branch -f staging origin/staging      # rewind staging; safe, you are not on it
+```
+
+Then, in order:
+
+1. PR `release/v<version>` → `staging`. Wait for **Quality gates**, merge.
+2. `git checkout staging && git pull --ff-only origin staging`
+3. PR `staging` → `main`, body listing the commits since the last tag under a
+   short summary. Wait for **Quality gates** *and* **Release guard** — the guard
+   only runs on PRs into `main`, so this is the first time it is exercised.
 
 Do **not** create the git tag locally — the deploy workflow tags `main` after a
 successful deploy and health check. Creating it early causes the release-guard
 "version must not already be released" check to fail.
-
-Then open the PR to `main` with `gh` (same call as Step 2, `--base main`), with a
-body listing the commits since the last tag under a short summary.
 
 ## Step 4 — hand back
 

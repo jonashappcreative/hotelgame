@@ -1,12 +1,12 @@
-# Quality gates. Runs on every long-lived branch and every PR between them.
+# Quality gates. Runs on both long-lived branches and every PR into them.
 # Deployment lives in deploy.yml and only ever fires on main.
 name: CI
 
 on:
   push:
-    branches: [main, staging, dev]
+    branches: [main, staging]
   pull_request:
-    branches: [main, staging, dev]
+    branches: [main, staging]
 
 # A new push to the same branch/PR supersedes the in-flight run.
 concurrency:

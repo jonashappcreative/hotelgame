@@ -135,9 +135,13 @@ does in production, so the frontend code makes the same calls in both.
 
 ## Development workflow
 
-Work flows `feature/* → dev → staging → main`. **A push to `main` auto-deploys to
+Work flows `feature/* → staging → main`. **A push to `main` auto-deploys to
 production**, so `main` is only reached by merging a reviewed PR from `staging`.
 `main` and `staging` are protected by GitHub rulesets; direct pushes are refused.
+
+`staging` is the single pre-production branch — it is where features integrate
+*and* what gets promoted. Feature branches merge into it by PR for anything
+substantive; a typo or a doc tweak can be pushed straight to it.
 
 Every PR runs type check, lint, tests, and build — all blocking. PRs into `main`
 additionally must update `src/data/versionHistory.ts` and keep the

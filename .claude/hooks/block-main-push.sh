@@ -37,7 +37,7 @@ fi
 
 reason='Blocked: pushing to main triggers the Coolify production deploy.
 
-This project ships feature/* -> dev -> staging -> main, and main is only reached
+This project ships feature/* -> staging -> main, and main is only reached
 by merging an approved PR from staging. Run /release from the current branch to
 gate, version, changelog and open the right PR.
 

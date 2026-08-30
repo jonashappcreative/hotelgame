@@ -3,28 +3,38 @@
 ## Branch model
 
 ```
-feature/* ──▶ dev ──▶ staging ──▶ main ──▶ Coolify (production)
-   PR          PR        PR         auto-deploy
+feature/* ──▶ staging ──▶ main ──▶ Coolify (production)
+   PR           PR         auto-deploy
 ```
 
 | Branch | Purpose | Protected |
 |---|---|---|
 | `feature/*`, `fix/*` | One change in progress | no |
-| `dev` | Integration — where features land and mix | no |
-| `staging` | Release candidate — tested locally before it goes up | yes |
+| `staging` | Pre-production — features integrate here, and this is what gets promoted | yes |
 | `main` | Production. **Every push auto-deploys.** | yes |
 
 Nothing reaches `main` except a merged PR from `staging`.
 
+There used to be a separate `dev` branch between features and `staging`. It was
+dropped: with one developer the two branches held identical commits within
+minutes of each other, so every change paid for an extra branch, merge and PR
+that gated nothing new. Reintroduce it if a second contributor starts landing
+work in parallel — that is the case it actually solves.
+
+Because `staging` is ruleset-protected, **you cannot commit to it directly** —
+including the release commit. Anything that has to land on `staging` needs its
+own branch and a PR. Use a PR for anything substantive; a typo or doc tweak is
+fine pushed to a short-lived branch and merged straight through.
+
 ## What runs when
 
-**[`ci.yml`](../.github/workflows/ci.yml)** — pushes and PRs on `dev`, `staging`, `main`:
+**[`ci.yml`](../.github/workflows/ci.yml)** — pushes and PRs on `staging` and `main`:
 
 | Step | Blocking |
 |---|---|
 | Type check (`tsc --noEmit`) | yes |
 | Lint (`eslint .`) | yes — on errors |
-| Test (`vitest run`, 202 tests) | yes |
+| Test (`vitest run`, 235 tests) | yes |
 | Build (`vite build`) | yes |
 
 The `release-guard` job runs only on PRs into `main` and blocks the merge unless:
@@ -46,11 +56,21 @@ This is a ratchet, not an amnesty: everything else lints at error level, so no *
 
 The suite runs on the `forks` pool (`vite.config.ts`). vitest 4's default `threads` pool fails to spawn workers on macOS here and silently reports 0 tests — which is what made the suite look broken. It was never broken; CI on Ubuntu ran it fine the whole time. Don't switch the pool back.
 
-## Branch protection (do this once, in the GitHub UI)
+## Branch protection — done, both rulesets active
 
-`gh` is not installed on this machine, so these rules have to be clicked. Without them, the branch model is a convention, not a guarantee — anyone (including Claude) can still push straight to `main`.
+Both rulesets are configured and enforcing. Verify any time with:
 
-**Settings → Rules → Rulesets → New branch ruleset**
+```bash
+gh api repos/jonashappcreative/hotelgame/rulesets \
+  --jq '.[] | "\(.name): target=\(.target) enforcement=\(.enforcement)"'
+```
+
+They are not decorative: a direct `git push origin staging` is refused with
+`GH013: Repository rule violations found`, which is why a release commit needs
+its own `release/vX.Y.Z` branch.
+
+Recorded below as configured (**Settings → Rules → Rulesets**), in case either
+has to be rebuilt:
 
 Ruleset 1 — name `main`, target branch `main`, enforcement Active:
 - ✅ Restrict deletions
@@ -67,7 +87,7 @@ Ruleset 2 — name `staging`, target branch `staging`, enforcement Active:
 
 Status checks only appear in the picker after a workflow has reported them at least once, so open the first PR before adding them.
 
-If you install `gh` later (`brew install gh && gh auth login`), the same rules can be applied from the CLI, and `/release` will open PRs automatically instead of printing compare links.
+`gh` is installed and authenticated on this machine, so `/release` opens PRs directly rather than printing compare links.
 
 ## Also verify: Coolify's own auto-deploy
 
@@ -79,9 +99,13 @@ Run `/release` in Claude Code from the branch you want to promote. It picks the 
 
 | On | Does |
 |---|---|
-| `feature/*` | gates → PR into `dev` |
-| `dev` | gates → PR into `staging` |
-| `staging` | gates → version bump → changelog entry → PR into `main` |
+| `feature/*` | gates → PR into `staging` |
+| `staging` | gates → version bump → changelog entry on a `release/vX.Y.Z` branch → PR into `staging`, then PR into `main` |
+
+A release is **two** PRs, not one: `staging` is ruleset-protected, so the version
+bump and changelog cannot be committed to it directly. They go on a
+`release/vX.Y.Z` branch, merge into `staging` by PR, and only then does the
+`staging → main` PR open.
 
 Version bumps follow the rules in [CLAUDE.md](./CLAUDE.md): `0.0.1` bug fixes, `0.1.0` features, `1.0.0` milestones (recommended to Jonas, never chosen unilaterally).
 
