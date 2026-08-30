@@ -465,7 +465,11 @@ export const useOnlineGame = () => {
     }
 
     await refreshGameState();
-    
+
+    // The turn only ends here when the buy used up the per-turn cap or left
+    // nothing affordable; otherwise the player stays in the buy phase.
+    if (result.turnEnded === false) return;
+
     // Show next player's turn
     const nextPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
     toast({ title: 'Turn Complete', description: `${gameState.players[nextPlayerIndex].name}'s turn` });

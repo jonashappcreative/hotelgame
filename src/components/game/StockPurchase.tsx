@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChainName, GameState, CHAINS, MAX_STOCKS_PER_TURN, STOCKS_PER_CHAIN } from '@/types/game';
-import { getStockPrice } from '@/utils/gameLogic';
+import { getStockPrice, getRemainingStockAllowance } from '@/utils/gameLogic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Minus, Plus, ShoppingCart } from 'lucide-react';
@@ -9,9 +9,11 @@ interface StockPurchaseProps {
   gameState: GameState;
   playerCash: number;
   onPurchase: (purchases: { chain: ChainName; quantity: number }[]) => void;
+  /** Reports shares picked but not yet confirmed, so End Turn can warn about them. */
+  onPendingChange?: (pending: { shares: number; cost: number }) => void;
 }
 
-export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurchaseProps) => {
+export const StockPurchase = ({ gameState, playerCash, onPurchase, onPendingChange }: StockPurchaseProps) => {
   const [selections, setSelections] = useState<Record<ChainName, number>>({
     sackson: 0,
     tower: 0,
@@ -24,6 +26,8 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurcha
   const [hasPurchased, setHasPurchased] = useState(false);
 
   const totalSelected = Object.values(selections).reduce((a, b) => a + b, 0);
+  // Shares left in the per-turn cap after what's already been bought this turn.
+  const allowance = getRemainingStockAllowance(gameState);
 
   // All chains for display (active first, then inactive/sold out)
   const allChains = (Object.keys(gameState.chains) as ChainName[]);
@@ -51,7 +55,11 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurcha
 
   const totalCost = getTotalCost();
   const canAfford = totalCost <= playerCash;
-  const remainingPurchases = MAX_STOCKS_PER_TURN - totalSelected;
+  const remainingPurchases = allowance - totalSelected;
+
+  useEffect(() => {
+    onPendingChange?.({ shares: totalSelected, cost: totalCost });
+  }, [totalSelected, totalCost, onPendingChange]);
 
   const soldOutChains = allChains
     .filter(chain => gameState.chains[chain].isActive && gameState.stockBank[chain] === 0);
@@ -62,7 +70,7 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurcha
     const newQty = Math.max(0, Math.min(currentQty + delta, available));
     
     // Check if adding would exceed max purchases
-    if (delta > 0 && totalSelected >= MAX_STOCKS_PER_TURN) return;
+    if (delta > 0 && totalSelected >= allowance) return;
     
     // Check if can afford
     if (delta > 0) {
@@ -120,7 +128,7 @@ export const StockPurchase = ({ gameState, playerCash, onPurchase }: StockPurcha
           const price = getStockPrice(chain, chainState.tiles.length);
           const available = gameState.stockBank[chain];
           const selected = selections[chain];
-          const canBuyMore = selected < available && totalSelected < MAX_STOCKS_PER_TURN && totalCost + price <= playerCash;
+          const canBuyMore = selected < available && totalSelected < allowance && totalCost + price <= playerCash;
 
           return (
             <div

@@ -70,6 +70,7 @@ export const CHAINS: Record<ChainName, { displayName: string; tier: 'budget' | '
 };
 
 export const END_GAME_CHAIN_SIZE = 41;
+export const MAX_STOCKS_PER_TURN = 3;
 export const CHAIN_SIZE_BRACKETS = [2, 3, 5, 10, 20, 30, 40, Infinity] as const;
 export const BASE_PRICES: Record<'budget' | 'midrange' | 'premium', number[]> = {
   budget: [200, 300, 400, 500, 600, 700, 800, 900],

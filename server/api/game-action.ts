@@ -24,6 +24,7 @@ import {
   type MergerStockDecision,
   DEFAULT_RULES,
   CHAINS,
+  MAX_STOCKS_PER_TURN,
   getSafeChainSize,
   getBoardDimensions,
   getEligibleChains,
@@ -164,7 +165,7 @@ async function handleGameAction(opts: {
     const globalBonusTier: string = getBonusTier(globalRulesSnap);
 
     // Handle different actions
-    let result: { success: boolean; error?: string; data?: any } = { success: false };
+    let result: { success: boolean; error?: string; data?: any; turnEnded?: boolean } = { success: false };
 
     switch (action) {
       case 'toggle_ready': {
@@ -1189,9 +1190,11 @@ async function handleGameAction(opts: {
 
         const purchases = payload?.purchases as { chain: ChainName; quantity: number }[];
 
-        // Validate total quantity does not exceed 3 per turn
+        // Validate total quantity does not exceed 3 per turn. Buying is
+        // incremental, so this counts what the player already bought this turn.
         const totalQuantity = (purchases || []).reduce((sum, p) => sum + p.quantity, 0);
-        if (totalQuantity > 3) {
+        const alreadyPurchased = gameState.stocks_purchased_this_turn ?? 0;
+        if (alreadyPurchased + totalQuantity > MAX_STOCKS_PER_TURN) {
           return new Response(JSON.stringify({ error: 'Cannot buy more than 3 stocks per turn' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1250,6 +1253,31 @@ async function handleGameAction(opts: {
           });
         }
 
+        // A purchase no longer ends the turn: the player keeps buying until the
+        // per-turn cap is spent or nothing left in the bank is affordable.
+        const purchasedThisTurn = alreadyPurchased + totalQuantity;
+        const canBuyMore = purchasedThisTurn < MAX_STOCKS_PER_TURN &&
+          (Object.keys(CHAINS) as ChainName[]).some(c =>
+            gameState.chains[c]?.isActive &&
+            newStockBank[c] > 0 &&
+            getStockPrice(c, gameState.chains[c].tiles.length) <= newCash
+          );
+
+        if (canBuyMore) {
+          // Same player, same turn deadline — only the bank and counter move.
+          await adminClient
+            .from('game_states')
+            .update({
+              stock_bank: newStockBank,
+              stocks_purchased_this_turn: purchasedThisTurn,
+              game_log: gameLog,
+            })
+            .eq('room_id', roomId);
+
+          result = { success: true, turnEnded: false };
+          break;
+        }
+
         // End turn: draw tile, advance player
         const tileBag = [...gameState.tile_bag];
         const drawnTile = tileBag.pop();
@@ -1301,7 +1329,7 @@ async function handleGameAction(opts: {
           })
           .eq('room_id', roomId);
 
-        result = { success: true };
+        result = { success: true, turnEnded: true };
         break;
       }
 
