@@ -321,7 +321,7 @@ export const executeGameAction = async (
   action: string,
   roomId: string,
   payload?: any
-): Promise<{ success: boolean; error?: string; data?: any }> => {
+): Promise<{ success: boolean; error?: string; data?: any; turnEnded?: boolean }> => {
   const { ok, data, error } = await apiFetch('/game-action', { action, roomId, payload });
 
   if (!ok) {

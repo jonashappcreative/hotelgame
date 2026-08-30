@@ -29,15 +29,18 @@ Never stash or discard Jonas's uncommitted work on your own initiative.
 
 ## Step 1 — gates (all paths)
 
+All four are blocking steps in CI (`.github/workflows/ci.yml`), so a failure here
+is a failure on the PR:
+
 ```bash
-npx tsc --noEmit     # must pass — blocking
-npm run build        # must pass — blocking
-npm run lint         # advisory: report the error count, do not block
-npm run test:run     # advisory until the vitest worker bug is fixed
+npx tsc --noEmit     # blocking
+npm run lint         # blocking on errors; ~115 `any` warnings are expected and do not fail
+npm run test:run     # blocking
+npm run build        # blocking
 ```
 
-Report lint/test results honestly, including "still broken". Do not describe a
-gate as passing when it was skipped.
+Report the results honestly, including "still broken". Do not describe a gate as
+passing when it was skipped.
 
 ## Step 2 — promotion PRs (feature → dev, dev → staging)
 
@@ -47,10 +50,24 @@ No version work. Push the branch and open the PR:
 git push -u origin "$(git branch --show-current)"
 ```
 
-Then, if `gh` is installed, `gh pr create --base <target> --fill`. If it is not
-(currently the case on this machine), print the compare URL for Jonas to click:
+Then open the PR with `gh` (installed and authenticated on this machine):
+
+```bash
+gh pr create --base <target> --head "$(git branch --show-current)" \
+  --title "<title>" --body "<body>"
+```
+
+Write a real body — what changed and why, and the gate results — rather than
+`--fill`, which just concatenates commit messages.
+
+If `gh` ever fails (not authenticated, network), fall back to printing the
+compare URL for Jonas to click:
 
 `https://github.com/jonashappcreative/hotelgame/compare/<target>...<branch>?expand=1`
+
+A push that dies with `RPC failed; HTTP 400` is git's 1MB post buffer, not a
+broken remote — usually a large asset in the commit. Fix with
+`git config http.postBuffer 524288000` and push again.
 
 ## Step 3 — cutting a release (staging → main)
 
@@ -120,8 +137,8 @@ Do **not** create the git tag locally — the deploy workflow tags `main` after 
 successful deploy and health check. Creating it early causes the release-guard
 "version must not already be released" check to fail.
 
-Then open the PR to `main` (or print the compare URL), with a body listing the
-commits since the last tag under a short summary.
+Then open the PR to `main` with `gh` (same call as Step 2, `--base main`), with a
+body listing the commits since the last tag under a short summary.
 
 ## Step 4 — hand back
 

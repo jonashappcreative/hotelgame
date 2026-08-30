@@ -29,6 +29,7 @@ import {
   getBonuses,
   getAdjacentTiles,
   getStockholderRankings,
+  MAX_STOCKS_PER_TURN,
 } from './rules';
 
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
@@ -270,6 +271,11 @@ function decideMergerStock(diff: BotDifficulty, gameState: any, actor: any): Bot
 }
 
 function decideBuy(diff: BotDifficulty, gameState: any, actor: any): BotMove {
+  // Buying is incremental for humans, but a bot commits its whole purchase in a
+  // single action — once it has bought this turn, end the turn rather than
+  // re-entering this decision on the next drive-loop tick.
+  if ((gameState.stocks_purchased_this_turn ?? 0) > 0) return { action: 'skip_buy' };
+
   const r = rules(gameState);
   const bonusTier = getBonusTier(r);
   const chains = gameState.chains ?? {};
@@ -307,7 +313,7 @@ function decideBuy(diff: BotDifficulty, gameState: any, actor: any): BotMove {
     return size * price * 0.02 + held * 30 + bonuses.majority * 0.01 - price * 0.05;
   };
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < MAX_STOCKS_PER_TURN; i++) {
     const candidates = active.filter((c) => priceOf(c) <= cash && remainingBank[c] > 0);
     if (candidates.length === 0) break;
     const pick = [...candidates].sort((a, b) => desirability(b) - desirability(a))[0];

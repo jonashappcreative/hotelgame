@@ -9,6 +9,7 @@ import {
   BASE_PRICES,
   CHAIN_SIZE_BRACKETS,
   STOCKS_PER_CHAIN,
+  MAX_STOCKS_PER_TURN,
   SAFE_CHAIN_SIZE,
   END_GAME_CHAIN_SIZE,
   CustomRules,
@@ -463,6 +464,29 @@ export const growChain = (state: GameState, chainName: ChainName): GameState => 
   return newState;
 };
 
+// Shares the current player may still buy this turn. Buying no longer ends the
+// turn, so this is what gates both the +/- controls and the automatic turn end.
+export const getRemainingStockAllowance = (state: GameState): number =>
+  Math.max(0, MAX_STOCKS_PER_TURN - state.stocksPurchasedThisTurn);
+
+// True when the player could still buy at least one more share: allowance left,
+// and an active chain with stock in the bank priced within their cash. Once this
+// is false the buy phase has nothing left to offer and the turn ends on its own.
+export const canBuyMoreStock = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): boolean => {
+  if (getRemainingStockAllowance(state) === 0) return false;
+  const cash = state.players[playerIndex]?.cash ?? 0;
+  if (cash <= 0) return false;
+
+  return (Object.keys(state.chains) as ChainName[]).some(chain =>
+    state.chains[chain].isActive &&
+    state.stockBank[chain] > 0 &&
+    getStockPrice(chain, state.chains[chain].tiles.length) <= cash
+  );
+};
+
 // Buy stocks
 export const buyStocks = (
   state: GameState,
@@ -485,6 +509,8 @@ export const buyStocks = (
   currentPlayer.cash -= totalCost;
   currentPlayer.stocks = newStocks;
   newState.stockBank = newStockBank;
+  newState.stocksPurchasedThisTurn =
+    state.stocksPurchasedThisTurn + purchases.reduce((sum, p) => sum + p.quantity, 0);
 
   newState.players = [...newState.players];
   newState.players[newState.currentPlayerIndex] = currentPlayer;
