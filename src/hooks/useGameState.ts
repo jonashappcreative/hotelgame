@@ -11,6 +11,7 @@ import {
   foundChain,
   growChain,
   buyStocks,
+  canBuyMoreStock,
   endTurn,
   analyzeTilePlacement,
   getAvailableChainsForFoundation,
@@ -294,8 +295,16 @@ export const useGameState = () => {
     if (!gameState) return;
 
     let newState = buyStocks(gameState, purchases);
+
+    // Buying doesn't end the turn on its own: stay in the buy phase for as long
+    // as the player has allowance left and can afford another share.
+    if (canBuyMoreStock(newState)) {
+      setGameState(newState);
+      return;
+    }
+
     newState = endTurn(newState);
-    
+
     // Check for game end
     if (checkGameEnd(newState)) {
       newState.phase = 'game_over';
