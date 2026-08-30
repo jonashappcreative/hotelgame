@@ -197,6 +197,75 @@ CREATE TABLE IF NOT EXISTS game_history (
 );
 
 -- -----------------------------------------------------------------------------
+-- game_results / game_result_players — durable statistics record (Epic 16)
+-- -----------------------------------------------------------------------------
+-- game_history above is superseded and no longer read: it never had a writer,
+-- and its ON DELETE CASCADE against game_rooms meant any row would be deleted
+-- by cleanup-rooms within ~10 minutes of the game ending.
+--
+-- These tables hold NO foreign key to game_rooms — a finished game is an
+-- immutable fact that must outlive the room. source_room_id is a bare UUID kept
+-- only so recording is idempotent; users are referenced ON DELETE SET NULL.
+-- Written by server/lib/results.ts, read by server/api/stats.ts.
+-- See db/migrations/2026-08-31-epic16-game-results.sql.
+CREATE TABLE IF NOT EXISTS game_results (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_room_id     UUID NOT NULL UNIQUE,
+  room_code          VARCHAR(8),
+  started_at         TIMESTAMPTZ,
+  ended_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  duration_seconds   INTEGER,
+  rounds             INTEGER,
+  end_reason         VARCHAR(16) NOT NULL DEFAULT 'unknown',
+  player_count       INTEGER NOT NULL,
+  human_count        INTEGER NOT NULL,
+  bot_count          INTEGER NOT NULL,
+  winner_name        VARCHAR(50),
+  winner_is_bot      BOOLEAN,
+  winner_difficulty  VARCHAR(10),
+  winning_total      INTEGER,
+  rules              JSONB NOT NULL DEFAULT '{}'::jsonb,
+  final_chains       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  mergers_count      INTEGER NOT NULL DEFAULT 0,
+  largest_chain      VARCHAR(20),
+  largest_chain_size INTEGER,
+  app_version        VARCHAR(16),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'valid_end_reason') THEN
+    ALTER TABLE game_results
+      ADD CONSTRAINT valid_end_reason
+      CHECK (end_reason IN ('threshold', 'vote', 'auto', 'unknown'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_game_results_ended_at ON game_results (ended_at DESC);
+
+CREATE TABLE IF NOT EXISTS game_result_players (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  result_id         UUID NOT NULL REFERENCES game_results(id) ON DELETE CASCADE,
+  user_id           UUID REFERENCES users(id) ON DELETE SET NULL,
+  display_name      VARCHAR(50) NOT NULL,
+  seat_index        INTEGER NOT NULL,
+  is_bot            BOOLEAN NOT NULL DEFAULT false,
+  bot_difficulty    VARCHAR(10),
+  final_cash        INTEGER NOT NULL DEFAULT 0,
+  final_stock_value INTEGER NOT NULL DEFAULT 0,
+  final_bonus_total INTEGER NOT NULL DEFAULT 0,
+  final_total       INTEGER NOT NULL DEFAULT 0,
+  placement         INTEGER NOT NULL,
+  stocks            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT unique_seat_per_result UNIQUE (result_id, seat_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_result_players_result ON game_result_players (result_id);
+CREATE INDEX IF NOT EXISTS idx_game_result_players_user
+  ON game_result_players (user_id) WHERE user_id IS NOT NULL;
+
+-- -----------------------------------------------------------------------------
 -- Public views — the browser-facing projection that strips sensitive columns.
 -- Without RLS these are plain views; the API layer queries them
 -- (instead of the base tables) whenever it returns data to the client.

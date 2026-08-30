@@ -16,6 +16,7 @@ import authLogin from './api/auth-login';
 import gameAction from './api/game-action';
 import rooms from './api/rooms';
 import account from './api/account';
+import stats from './api/stats';
 import cleanupRooms from './api/cleanup-rooms';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -46,6 +47,8 @@ app.all('/api/auth/login',     handler(authLogin));
 app.all('/api/game-action',    handler(gameAction));
 app.all('/api/rooms',          handler(rooms));
 app.all('/api/account',        handler(account));
+// Public: the statistics dashboard is viewable without an account (Epic 16).
+app.all('/api/stats',          handler(stats));
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 

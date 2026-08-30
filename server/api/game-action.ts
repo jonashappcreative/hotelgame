@@ -14,6 +14,7 @@ import { getCorsHeaders } from '../lib/cors';
 import { notifyWsServer } from '../lib/ws';
 import { decideBotMove, type BotDifficulty } from '../lib/bot';
 import { MIN_PLAYERS_TO_START, reindexPlayers } from '../lib/players';
+import { recordIfFinished, endReasonForAction } from '../lib/results';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
 // ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
@@ -2030,6 +2031,16 @@ async function handleGameAction(opts: {
     // Fan out realtime events to the room (best-effort, non-blocking)
     if (result.success) {
       notifyForAction(action, roomId).catch((err) => console.error('notify error:', err));
+    }
+
+    // Record the game for the statistics dashboard the moment it ends (Epic 16).
+    // Hooked here, at the single exit point, rather than at each of the seven
+    // sites that set phase = 'game_over' — so a path added later is still
+    // captured. The gate is one indexed lookup when the game was already
+    // running, and skipped entirely once the game is over. Awaited on purpose:
+    // 'new_game' deletes the game_states row, and the record is built from it.
+    if (result.success && gameState && gameState.phase !== 'game_over') {
+      await recordIfFinished(roomId, endReasonForAction(action));
     }
 
     return new Response(JSON.stringify(result), {

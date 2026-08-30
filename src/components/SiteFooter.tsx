@@ -85,6 +85,9 @@ export const SiteFooter = () => {
           <Link to="/case-study" className={linkClass}>
             The Story
           </Link>
+          <Link to="/dashboard" className={linkClass}>
+            Statistics
+          </Link>
           <button onClick={() => setOpen('about')} className={linkClass}>
             About
           </button>
