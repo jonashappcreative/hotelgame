@@ -9,15 +9,11 @@ export default defineConfig(({ mode }) => ({
     host: "localhost",
     port: 5173,
     proxy: {
-      // Forward /api/* to the local Netlify functions server (netlify functions:serve).
-      // Replicates the redirects in netlify.toml without going through netlify dev,
-      // which breaks Vite's HMR by applying the SPA catch-all to Vite module requests.
-      '/api/auth/anonymous': { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/auth-anonymous' },
-      '/api/auth/signup':    { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/auth-signup' },
-      '/api/auth/login':     { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/auth-login' },
-      '/api/game-action':    { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/game-action' },
-      '/api/rooms':          { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/rooms' },
-      '/api/account':        { target: 'http://localhost:9999', rewrite: () => '/.netlify/functions/account' },
+      // Forward /api/* and Socket.IO to the local Hono backend (server/server.ts,
+      // `cd server && npm start`). The backend mounts these paths directly, so no
+      // rewrite is needed — this mirrors what Caddy does in production.
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      '/socket.io': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
     },
   },
   plugins: [react()],
