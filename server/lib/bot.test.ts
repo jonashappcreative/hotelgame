@@ -142,6 +142,18 @@ describe('decideBotMove — buy stock', () => {
     const move = decideBotMove('hard', 'buy_stock', gs, players, actorOf(players));
     expect(move.action).toBe('skip_buy');
   });
+
+  // Buying no longer ends the turn, so the drive loop re-enters the buy phase.
+  // A bot commits its whole purchase at once and must then end the turn.
+  for (const diff of DIFFS) {
+    it(`${diff}: ends the turn instead of buying again in the same turn`, () => {
+      const chains = makeChains({ tower: ['1A', '1B'], continental: ['2A', '2B', '2C', '2D'] });
+      const players = [{ player_index: 0, cash: 6000, stocks: zeroStocks(), tiles: [], is_bot: true, bot_difficulty: diff }];
+      const gs = baseState({ phase: 'buy_stock', chains, stocks_purchased_this_turn: 1 });
+      const move = decideBotMove(diff, 'buy_stock', gs, players, actorOf(players));
+      expect(move.action).toBe('skip_buy');
+    });
+  }
 });
 
 describe('decideBotMove — pay merger bonuses', () => {

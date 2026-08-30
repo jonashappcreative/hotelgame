@@ -11,16 +11,16 @@ migration. For the step-by-step migration plan see
 
 ```
                          ┌─────────────────────────────────────────┐
-                         │            Browser (React SPA)           │
-                         │   Vite build, served by Netlify CDN      │
+                         │            Browser (React SPA)          │
+                         │   Vite build, served by Netlify CDN     │
                          └───────┬───────────────────────┬─────────┘
                                  │                        │
                   HTTPS (REST)   │                        │  WSS (realtime)
                                  ▼                        ▼
               ┌──────────────────────────────┐   ┌──────────────────────────┐
-              │   Netlify Serverless Funcs    │   │   Hetzner WS relay        │
-              │   /api/game-action            │   │   (Socket.io, Docker)     │
-              │   /api/auth/*                  │   │   stateless, no DB        │
+              │   Netlify Serverless Funcs   │   │   Hetzner WS relay       │
+              │   /api/game-action           │   │   (Socket.io, Docker)    │
+              │   /api/auth/*                │   │   stateless, no DB       │
               └───────────────┬──────────────┘   └────────────▲─────────────┘
                               │                                │
                   SQL (Neon   │       POST /internal/notify    │

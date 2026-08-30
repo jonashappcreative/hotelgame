@@ -1,5 +1,5 @@
 // =============================================================================
-// game-action — Netlify Function (Node 20, Functions v2 / Web Request API)
+// game-action — the game engine endpoint (Node 20, Web Request/Response API)
 // =============================================================================
 // Ported from supabase/functions/game-action/index.ts (Deno). The game logic is
 // identical; only the infrastructure boundary changed:
@@ -8,14 +8,14 @@
 //   * after each mutation        ->  notifyWsServer() fans out to the Hetzner relay
 // =============================================================================
 
-import { db } from './_shared/db';
-import { verifyAuth } from './_shared/auth';
-import { getCorsHeaders } from './_shared/cors';
-import { notifyWsServer } from './_shared/ws';
-import { decideBotMove, type BotDifficulty } from './_shared/bot';
+import { db } from '../lib/db';
+import { verifyAuth } from '../lib/auth';
+import { getCorsHeaders } from '../lib/cors';
+import { notifyWsServer } from '../lib/ws';
+import { decideBotMove, type BotDifficulty } from '../lib/bot';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
-// _shared/rules.ts so the bot (_shared/bot.ts) evaluates moves with the exact
+// ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
 // same logic this engine enforces.
 import {
   type ChainName,
@@ -24,6 +24,7 @@ import {
   type MergerStockDecision,
   DEFAULT_RULES,
   CHAINS,
+  MAX_STOCKS_PER_TURN,
   getSafeChainSize,
   getBoardDimensions,
   getEligibleChains,
@@ -36,7 +37,7 @@ import {
   checkGameEnd,
   getStockholderRankings,
   calculateFinalScores,
-} from './_shared/rules';
+} from '../lib/rules';
 
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
@@ -164,7 +165,7 @@ async function handleGameAction(opts: {
     const globalBonusTier: string = getBonusTier(globalRulesSnap);
 
     // Handle different actions
-    let result: { success: boolean; error?: string; data?: any } = { success: false };
+    let result: { success: boolean; error?: string; data?: any; turnEnded?: boolean } = { success: false };
 
     switch (action) {
       case 'toggle_ready': {
@@ -228,7 +229,7 @@ async function handleGameAction(opts: {
         const initEligibleChains = getEligibleChains(rules);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
+        const tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -339,7 +340,7 @@ async function handleGameAction(opts: {
         const playerNames = allPlayers.map(p => p.player_name);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles());
+        const tileBag = shuffle(generateAllTiles());
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -511,7 +512,7 @@ async function handleGameAction(opts: {
 
         // Determine action and new phase
         let newPhase = gameState.phase;
-        let newChains = { ...chains };
+        const newChains = { ...chains };
         let pendingChainFoundation = null;
         let mergerAdjacentChains = null;
         let merger = null;
@@ -712,7 +713,7 @@ async function handleGameAction(opts: {
 
         // Give founding bonus
         const newStockBank = { ...gameState.stock_bank };
-        let playerStocks = { ...playerData.stocks };
+        const playerStocks = { ...playerData.stocks };
 
         if (newStockBank[chainName] > 0) {
           playerStocks[chainName] = (playerStocks[chainName] || 0) + 1;
@@ -991,7 +992,7 @@ async function handleGameAction(opts: {
           }
         } else {
           // Find first player with shares starting from current player
-          let startIdx = myPlayerIndex;
+          const startIdx = myPlayerIndex;
           for (let i = 0; i < allPlayers.length; i++) {
             const idx = (startIdx + i) % allPlayers.length;
             if (allPlayers[idx].stocks[defunctChain] > 0) {
@@ -1066,7 +1067,7 @@ async function handleGameAction(opts: {
 
         // Process decision
         const salePrice = getStockPrice(defunctChain, gameState.chains[defunctChain].tiles.length);
-        let newCash = playerData.cash + (decision.sell * salePrice);
+        const newCash = playerData.cash + (decision.sell * salePrice);
 
         const sharesToReceive = decision.trade / 2;
         const availableShares = Math.min(sharesToReceive, gameState.stock_bank[survivingChain]);
@@ -1189,9 +1190,11 @@ async function handleGameAction(opts: {
 
         const purchases = payload?.purchases as { chain: ChainName; quantity: number }[];
 
-        // Validate total quantity does not exceed 3 per turn
+        // Validate total quantity does not exceed 3 per turn. Buying is
+        // incremental, so this counts what the player already bought this turn.
         const totalQuantity = (purchases || []).reduce((sum, p) => sum + p.quantity, 0);
-        if (totalQuantity > 3) {
+        const alreadyPurchased = gameState.stocks_purchased_this_turn ?? 0;
+        if (alreadyPurchased + totalQuantity > MAX_STOCKS_PER_TURN) {
           return new Response(JSON.stringify({ error: 'Cannot buy more than 3 stocks per turn' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1250,6 +1253,31 @@ async function handleGameAction(opts: {
           });
         }
 
+        // A purchase no longer ends the turn: the player keeps buying until the
+        // per-turn cap is spent or nothing left in the bank is affordable.
+        const purchasedThisTurn = alreadyPurchased + totalQuantity;
+        const canBuyMore = purchasedThisTurn < MAX_STOCKS_PER_TURN &&
+          (Object.keys(CHAINS) as ChainName[]).some(c =>
+            gameState.chains[c]?.isActive &&
+            newStockBank[c] > 0 &&
+            getStockPrice(c, gameState.chains[c].tiles.length) <= newCash
+          );
+
+        if (canBuyMore) {
+          // Same player, same turn deadline — only the bank and counter move.
+          await adminClient
+            .from('game_states')
+            .update({
+              stock_bank: newStockBank,
+              stocks_purchased_this_turn: purchasedThisTurn,
+              game_log: gameLog,
+            })
+            .eq('room_id', roomId);
+
+          result = { success: true, turnEnded: false };
+          break;
+        }
+
         // End turn: draw tile, advance player
         const tileBag = [...gameState.tile_bag];
         const drawnTile = tileBag.pop();
@@ -1301,7 +1329,7 @@ async function handleGameAction(opts: {
           })
           .eq('room_id', roomId);
 
-        result = { success: true };
+        result = { success: true, turnEnded: true };
         break;
       }
 
@@ -1592,8 +1620,8 @@ async function handleGameAction(opts: {
         const autoBonusTier: string = getBonusTier(autoRules);
         const autoBoard = { ...gameState.board };
         const autoChains = { ...gameState.chains };
-        let autoStockBank = { ...gameState.stock_bank };
-        let autoTileBag = [...gameState.tile_bag];
+        const autoStockBank = { ...gameState.stock_bank };
+        const autoTileBag = [...gameState.tile_bag];
         const autoPlayerTiles: string[] = playerData.tiles || [];
 
         const autoGameLog = [...gameState.game_log, {

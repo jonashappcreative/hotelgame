@@ -2,10 +2,10 @@
 // Creates an anonymous user row and returns a short-lived (48h) JWT.
 // Mirrors Supabase's signInAnonymously().
 
-import { query } from './_shared/db';
-import { signToken } from './_shared/auth';
-import { getCorsHeaders, jsonResponse } from './_shared/cors';
-import { serverError } from './_shared/errors';
+import { query } from '../lib/db';
+import { signToken } from '../lib/auth';
+import { getCorsHeaders, jsonResponse } from '../lib/cors';
+import { serverError } from '../lib/errors';
 
 export default async (req: Request): Promise<Response> => {
   const cors = getCorsHeaders(req);

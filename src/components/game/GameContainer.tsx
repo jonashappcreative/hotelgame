@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
 import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
@@ -15,12 +15,13 @@ import { MergerStockDecision as MergerStockDecisionComponent } from './MergerSto
 import { EndGameVote } from './EndGameVote';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
+import { EndTurnConfirmModal } from './EndTurnConfirmModal';
 import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
 import { Clock, WifiOff, ArrowRight, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getStockPrice } from '@/utils/gameLogic';
+import { canBuyMoreStock } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
@@ -68,6 +69,11 @@ export const GameContainer = ({
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const [showGameOver, setShowGameOver] = useState(true);
 
+  // End Turn confirmation, plus the shares picked but never confirmed in the
+  // buy panel so the warning can name what's about to be discarded.
+  const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
+  const [pendingPurchase, setPendingPurchase] = useState({ shares: 0, cost: 0 });
+
   // Merger animation: tiles still showing their OLD chain color (pre-merger),
   // removed one-by-one on a stagger to trigger a real CSS color transition.
   const [mergerDisplayOverride, setMergerDisplayOverride] = useState<Map<TileId, ChainName>>(new Map());
@@ -101,15 +107,10 @@ export const GameContainer = ({
     isMyTurn &&
     !hasPlayableTiles(gameState, gameState.currentPlayerIndex);
 
-  // Auto-complete the buy phase when the player can't afford any available stock.
+  // Auto-complete the buy phase once the player has spent their per-turn
+  // allowance or can't afford any available stock.
   const buyPhaseActive = gameState.phase === 'buy_stock' && isMyTurn;
-  const canBuyAnything = buyPhaseActive && (() => {
-    const activeChains = (Object.keys(gameState.chains) as ChainName[])
-      .filter(c => gameState.chains[c].isActive && gameState.stockBank[c] > 0);
-    return myPlayer.cash > 0 && activeChains.some(
-      c => getStockPrice(c, gameState.chains[c].tiles.length) <= myPlayer.cash
-    );
-  })();
+  const canBuyAnything = buyPhaseActive && canBuyMoreStock(gameState, myPlayerIndex);
 
   useEffect(() => {
     if (buyPhaseActive && !canBuyAnything) {
@@ -117,6 +118,29 @@ export const GameContainer = ({
       return () => clearTimeout(t);
     }
   }, [buyPhaseActive, canBuyAnything]);
+
+  // Leaving the buy phase (turn ended, timer expired) clears the confirmation so
+  // it can't reappear on the player's next turn.
+  useEffect(() => {
+    if (!buyPhaseActive) {
+      setShowEndTurnConfirm(false);
+      setPendingPurchase({ shares: 0, cost: 0 });
+    }
+  }, [buyPhaseActive]);
+
+  // Stable identity so the buy panel's report doesn't re-fire the effect, and a
+  // bail-out so an unchanged selection doesn't spin a render loop.
+  const handlePendingChange = useCallback((pending: { shares: number; cost: number }) => {
+    setPendingPurchase(prev =>
+      prev.shares === pending.shares && prev.cost === pending.cost ? prev : pending
+    );
+  }, []);
+
+  const handleConfirmEndTurn = () => {
+    setShowEndTurnConfirm(false);
+    setPendingPurchase({ shares: 0, cost: 0 });
+    onEndTurn();
+  };
 
   // SFX: watch phase transitions
   useEffect(() => {
@@ -305,6 +329,19 @@ export const GameContainer = ({
         </div>
       )}
 
+      {/* End Turn Confirmation - warns when stock is still affordable */}
+      {showEndTurnConfirm && buyPhaseActive && canBuyAnything && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+          <EndTurnConfirmModal
+            purchasedThisTurn={gameState.stocksPurchasedThisTurn}
+            pendingShares={pendingPurchase.shares}
+            pendingCost={pendingPurchase.cost}
+            onConfirm={handleConfirmEndTurn}
+            onCancel={() => setShowEndTurnConfirm(false)}
+          />
+        </div>
+      )}
+
       {/* Merger Survivor Choice Modal - Only show to current player */}
       {gameState.phase === 'merger_choose_survivor' && isMyTurn && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
@@ -482,6 +519,7 @@ export const GameContainer = ({
                       gameState={gameState}
                       playerCash={myPlayer.cash}
                       onPurchase={handleBuyStocksWithSfx}
+                      onPendingChange={handlePendingChange}
                     />
                   ) : isOnlineMode ? (
                     <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
@@ -497,6 +535,7 @@ export const GameContainer = ({
                       gameState={gameState}
                       playerCash={myPlayer.cash}
                       onPurchase={handleBuyStocksWithSfx}
+                      onPendingChange={handlePendingChange}
                     />
                   )
                 )}
@@ -561,7 +600,7 @@ export const GameContainer = ({
               {/* End Turn — shown below tiles during the buy phase */}
               {buyPhaseActive && (
                 canBuyAnything ? (
-                  <Button size="lg" className="w-full" onClick={onEndTurn}>
+                  <Button size="lg" className="w-full" onClick={() => setShowEndTurnConfirm(true)}>
                     <ArrowRight className="w-4 h-4 mr-2" />
                     End Turn
                   </Button>

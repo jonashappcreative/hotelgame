@@ -13,6 +13,8 @@ import {
   foundChain,
   growChain,
   buyStocks,
+  canBuyMoreStock,
+  getRemainingStockAllowance,
   drawTile,
   discardTile,
   endTurn,
@@ -846,6 +848,154 @@ describe('gameLogic', () => {
       const newState = buyStocks(gameState, []);
 
       expect(newState.gameLog).toHaveLength(originalLogLength);
+    });
+
+    it('should count the shares against the per-turn allowance', () => {
+      const newState = buyStocks(gameState, [{ chain: 'sackson', quantity: 2 }]);
+
+      expect(newState.stocksPurchasedThisTurn).toBe(2);
+    });
+
+    it('should accumulate across several purchases in the same turn', () => {
+      let newState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+      newState = buyStocks(newState, [{ chain: 'sackson', quantity: 2 }]);
+
+      expect(newState.stocksPurchasedThisTurn).toBe(3);
+    });
+  });
+
+  describe('getRemainingStockAllowance', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+    });
+
+    it('should start the turn with the full allowance', () => {
+      expect(getRemainingStockAllowance(gameState)).toBe(3);
+    });
+
+    it('should shrink as shares are bought', () => {
+      gameState.stocksPurchasedThisTurn = 2;
+
+      expect(getRemainingStockAllowance(gameState)).toBe(1);
+    });
+
+    it('should never go negative', () => {
+      gameState.stocksPurchasedThisTurn = 5;
+
+      expect(getRemainingStockAllowance(gameState)).toBe(0);
+    });
+  });
+
+  describe('canBuyMoreStock', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+    });
+
+    it('should be true with allowance left and an affordable chain', () => {
+      expect(canBuyMoreStock(gameState)).toBe(true);
+    });
+
+    it('should be false once the per-turn allowance is spent', () => {
+      gameState.stocksPurchasedThisTurn = 3;
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should still be true with one share of allowance left', () => {
+      gameState.stocksPurchasedThisTurn = 2;
+
+      expect(canBuyMoreStock(gameState)).toBe(true);
+    });
+
+    it('should be false when the player cannot afford any share', () => {
+      gameState.players[0].cash = 100; // sackson at size 2 costs $200
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should be false when no chain is active', () => {
+      gameState.chains.sackson.isActive = false;
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should be false when the only active chain is sold out', () => {
+      gameState.stockBank.sackson = 0;
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should evaluate the player index it is given', () => {
+      gameState.players[1].cash = 0;
+
+      expect(canBuyMoreStock(gameState, 1)).toBe(false);
+      expect(canBuyMoreStock(gameState, 0)).toBe(true);
+    });
+  });
+
+  // Mirrors the rule both the local hook and the server enforce: a purchase
+  // leaves the turn open, and the turn only ends once no further buy is possible.
+  describe('incremental buying across a turn', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.phase = 'buy_stock';
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+    });
+
+    it('should stay open after the first and second share, and close on the third', () => {
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+      expect(canBuyMoreStock(gameState)).toBe(true);
+
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+      expect(canBuyMoreStock(gameState)).toBe(true);
+
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+      expect(gameState.stocksPurchasedThisTurn).toBe(3);
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should close the turn early when cash runs out before the cap', () => {
+      gameState.players[0].cash = 250; // one $200 share, then nothing affordable
+
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+
+      expect(gameState.stocksPurchasedThisTurn).toBe(1);
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should close the turn early when the last shares are bought out', () => {
+      gameState.stockBank.sackson = 1;
+
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 1 }]);
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+    });
+
+    it('should give the next player a full allowance', () => {
+      gameState = buyStocks(gameState, [{ chain: 'sackson', quantity: 3 }]);
+      expect(canBuyMoreStock(gameState)).toBe(false);
+
+      const nextTurn = endTurn(gameState);
+
+      expect(nextTurn.stocksPurchasedThisTurn).toBe(0);
+      expect(canBuyMoreStock(nextTurn)).toBe(true);
     });
   });
 

@@ -3,8 +3,9 @@
 ## Project Context
 - This is an online multiplayer board game (Hotel Game)
 - **Everything runs on one Hetzner server.** There is no Netlify deploy and no
-  Supabase anymore. (The `netlify/functions/` directory is just shared backend
-  source code compiled into the Hetzner backend — not a live Netlify service.)
+  Supabase anymore. The backend lives entirely under `server/`: `server.ts` is
+  the entrypoint, `server/api/` holds one handler per endpoint, and `server/lib/`
+  holds the shared modules (db, auth, rules, bot, CORS, errors, Socket.IO).
 - Backend stack (all on Hetzner, in Docker):
   - API + Auth: Hono server (`server/server.ts`), custom JWT signed/verified with `jose`
   - Realtime: Socket.io served by that same backend on `:3000`
@@ -26,17 +27,28 @@
 - `deploy.sh` is the single source of truth for deploy steps. Don't invent
   ad-hoc deploy commands — update `deploy.sh` instead.
 
-## Before pushing anything to main
-- PLease check if Jonas really wants tu push to main, as this triggers an auto deploy. We prever a structure like:
-
-Main < Staging < Development < Feature Branches
-
-- Only wen staging works and is tested locally, push to main upon request.
-
-- When we push a new version to the Server, usually increase the version history by:
-- 0.0.1 for bug fixes
-- 0.1.0 for new features
-- 1.0.0 for major updates (recommend it to me when you feel like its a thing or wait for my request)
+## Branching and releases
+- **Full process: [`docs/CI_CD.md`](./CI_CD.md).** Read it before promoting anything.
+- The flow is `feature/* → dev → staging → main`. A push to `main` auto-deploys
+  to production, so `main` is only ever reached by merging an approved PR from
+  `staging`, once staging has been tested locally.
+- **Never push directly to `main`.** A PreToolUse hook
+  (`.claude/hooks/block-main-push.sh`) blocks it. That is intentional — don't
+  route around it. If Jonas wants a direct push, he removes the hook himself.
+- Use the **`/release`** skill to promote a branch. It runs the gates, picks the
+  version bump, writes the changelog entry, and opens the right PR.
+- Version bumps:
+  - 0.0.1 for bug fixes
+  - 0.1.0 for new features
+  - 1.0.0 for major updates (recommend it to me when you feel like its a thing
+    or wait for my request — never pick it yourself)
+- The changelog shown on the site lives in `src/data/versionHistory.ts` — the
+  single source of truth, re-exported by `SiteFooter.tsx` and rendered on
+  `/case-study`. Edit the data file, never the component. CI blocks any PR into
+  `main` that doesn't update it, or whose `package.json` version disagrees with
+  the newest entry.
+- Don't create version tags by hand — `deploy.yml` tags `main` after the deploy
+  passes its health check.
 
 
 ## Testing Requirements

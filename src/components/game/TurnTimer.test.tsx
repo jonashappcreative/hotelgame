@@ -1,9 +1,19 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// TurnTimer plays a warning cue at 10s, so it depends on AudioProvider. Stub the
+// hook rather than mounting the real provider — this keeps the countdown a unit
+// test and gives us a handle to assert the cue fires.
+const { playSfx } = vi.hoisted(() => ({ playSfx: vi.fn() }));
+vi.mock('@/contexts/AudioContext', () => ({
+  useAudio: () => ({ playSfx }),
+}));
+
 import { TurnTimer } from './TurnTimer';
 
 describe('TurnTimer', () => {
   beforeEach(() => {
+    playSfx.mockClear();
     vi.useFakeTimers();
   });
 
