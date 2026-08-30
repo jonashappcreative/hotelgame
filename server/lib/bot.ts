@@ -20,7 +20,7 @@ import {
   type ChainName,
   type TileId,
   type CustomRules,
-  DEFAULT_RULES,
+  normalizeRules,
   getSafeChainSize,
   getBoardDimensions,
   getEligibleChains,
@@ -45,8 +45,10 @@ function rnd<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// Bots read the same normalised rules the engine does, so a legacy v1 snapshot
+// never has the bot playing by different rules from the humans at the table.
 function rules(gameState: any): CustomRules {
-  return { ...DEFAULT_RULES, ...(gameState.rules_snapshot ?? {}) };
+  return normalizeRules(gameState.rules_snapshot);
 }
 
 // Tier ranking used by the founding heuristic (premium chains are worth more).

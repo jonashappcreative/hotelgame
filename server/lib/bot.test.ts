@@ -148,7 +148,7 @@ describe('decideBotMove — buy stock', () => {
   for (const diff of DIFFS) {
     it(`${diff}: plays a normal buy turn with stock selling enabled, never selling`, () => {
       const chains = makeChains({ tower: ['1A', '1B'], continental: ['2A', '2B', '2C', '2D'] });
-      const rules_snapshot = { stockSellingEnabled: true, sellPriceFactor: '75' };
+      const rules_snapshot = { stockSelling: '75' };
 
       for (let i = 0; i < 30; i++) {
         const players = [{
@@ -180,7 +180,7 @@ describe('decideBotMove — buy stock', () => {
     const gs = baseState({
       phase: 'buy_stock',
       chains,
-      rules_snapshot: { stockSellingEnabled: true, sellPriceFactor: '50' },
+      rules_snapshot: { stockSelling: '50' },
     });
     expect(decideBotMove('hard', 'buy_stock', gs, players, actorOf(players)).action).toBe('skip_buy');
   });

@@ -158,3 +158,24 @@ export async function query<T = Row>(text: string, params: any[] = []): Promise<
   const res = await pool.query(text, params);
   return res.rows as T[];
 }
+
+// Run several statements on one connection inside a single transaction.
+// Needed wherever a multi-statement write must be atomic — reindexing seats
+// temporarily violates unique_player_per_room unless the whole two-phase
+// update commits or rolls back together.
+export async function withTransaction<T>(
+  fn: (exec: (text: string, params?: any[]) => Promise<Row[]>) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(async (text, params = []) => (await client.query(text, params)).rows as Row[]);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}

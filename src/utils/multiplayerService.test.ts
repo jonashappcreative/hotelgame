@@ -150,9 +150,10 @@ describe('multiplayerService', () => {
         error: null,
       });
 
-      const result = await createRoom(4);
+      const result = await createRoom();
       expect(result).toEqual({ roomCode: 'ABC123', roomId: 'room-id', maxPlayers: 4 });
-      expect(mockApiFetch).toHaveBeenCalledWith('/rooms', expect.objectContaining({ op: 'create', maxPlayers: 4 }));
+      // No maxPlayers in the payload — the server always creates at capacity.
+      expect(mockApiFetch).toHaveBeenCalledWith('/rooms', { op: 'create', customRules: DEFAULT_RULES });
     });
 
     it('returns null when authentication fails', async () => {
@@ -168,18 +169,18 @@ describe('multiplayerService', () => {
     });
 
     it('passes customRules to the API', async () => {
-      const rules: CustomRules = { ...DEFAULT_RULES, turnTimerEnabled: true, turnTimer: '30' };
+      const rules: CustomRules = { ...DEFAULT_RULES, turnTimer: '30' };
       mockApiFetch.mockResolvedValue({
-        ok: true, data: { roomCode: 'XYZ', roomId: 'r1', maxPlayers: 4 }, error: null,
+        ok: true, data: { roomCode: 'XYZ', roomId: 'r1', maxPlayers: 6 }, error: null,
       });
-      await createRoom(4, rules);
+      await createRoom(rules);
       expect(mockApiFetch).toHaveBeenCalledWith('/rooms', expect.objectContaining({ customRules: rules }));
     });
   });
 
   describe('fetchRoomRules', () => {
     it('returns stored rules when they exist', async () => {
-      const stored: CustomRules = { ...DEFAULT_RULES, turnTimerEnabled: true };
+      const stored: CustomRules = { ...DEFAULT_RULES, turnTimer: '60' };
       mockApiFetch.mockResolvedValue({ ok: true, data: { customRules: stored }, error: null });
       expect(await fetchRoomRules('room-id')).toEqual(stored);
     });
@@ -346,20 +347,21 @@ describe('multiplayerService', () => {
   });
 
   describe('getSecurePlayerData', () => {
-    it('returns player list from API', async () => {
+    // Since Epic 15 this also reports the caller's own seat, resolved
+    // server-side, so the client never has to trust a cached index.
+    it('returns the player list and the caller\'s seat', async () => {
       const players = [
         { id: 'p1', player_name: 'Alice', player_index: 0, tiles: ['1A', '2B'], cash: 6000, stocks: {} },
         { id: 'p2', player_name: 'Bob',   player_index: 1, tiles: [], cash: 5500, stocks: {} },
       ];
-      mockApiFetch.mockResolvedValue({ ok: true, data: { players }, error: null });
-      const result = await getSecurePlayerData('room-id');
-      expect(result).toEqual(players);
+      mockApiFetch.mockResolvedValue({ ok: true, data: { players, myPlayerIndex: 1 }, error: null });
+      expect(await getSecurePlayerData('room-id')).toEqual({ players, myPlayerIndex: 1 });
       expect(mockApiFetch).toHaveBeenCalledWith('/rooms', expect.objectContaining({ op: 'get_players', roomId: 'room-id' }));
     });
 
-    it('returns empty array on error', async () => {
+    it('returns an empty roster on error', async () => {
       mockApiFetch.mockResolvedValue({ ok: false, data: null, error: 'err' });
-      expect(await getSecurePlayerData('room-id')).toEqual([]);
+      expect(await getSecurePlayerData('room-id')).toEqual({ players: [], myPlayerIndex: null });
     });
   });
 
@@ -405,17 +407,23 @@ describe('multiplayerService', () => {
       vi.unstubAllEnvs();
     });
 
-    it('fetches players from API when game:players_changed fires', async () => {
+    it('fetches the roster from the API when game:players_changed fires', async () => {
       vi.stubEnv('VITE_WS_URL', 'wss://test.example.com');
       const onPlayers = vi.fn();
       mockApiFetch.mockResolvedValue({
         ok: true,
-        data: { players: [{ id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true }] },
+        data: {
+          players: [{ id: 'p1', player_name: 'Alice', player_index: 0, is_ready: true }],
+          myPlayerIndex: 0,
+        },
         error: null,
       });
       subscribeToRoom('room-id', onPlayers, vi.fn(), vi.fn());
       await socketListeners['game:players_changed']?.();
-      expect(onPlayers).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: 'p1' })]));
+      expect(onPlayers).toHaveBeenCalledWith(expect.objectContaining({
+        players: expect.arrayContaining([expect.objectContaining({ id: 'p1' })]),
+        myPlayerIndex: 0,
+      }));
       vi.unstubAllEnvs();
     });
 
@@ -529,11 +537,7 @@ describe('multiplayerService', () => {
       const custom = dbToGameState(
         {
           ...base,
-          rules_snapshot: {
-            ...DEFAULT_RULES,
-            bonusTierEnabled: true, bonusTier: 'aggressive',
-            chainFoundingEnabled: true, maxChains: '5',
-          },
+          rules_snapshot: { ...DEFAULT_RULES, bonusTier: 'aggressive', maxChains: '5' },
         },
         [],
         'ABC123'

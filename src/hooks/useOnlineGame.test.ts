@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ChainName } from '@/types/game';
+import { DEFAULT_RULES } from '@/types/game';
 
 // The hook talks to the server only through multiplayerService; dbToGameState
 // is pure, so it stays real and the fixture below is a genuine DB row shape.
@@ -13,10 +14,13 @@ vi.mock('@/utils/multiplayerService', async () => {
     joinRoom: vi.fn(),
     createRoom: vi.fn(),
     leaveRoom: vi.fn(),
-    getRoomPlayers: vi.fn(async () => [
-      { id: 'a', player_name: 'Alice', player_index: 0, is_ready: true },
-      { id: 'b', player_name: 'Bob', player_index: 1, is_ready: true },
-    ]),
+    getRoomRoster: vi.fn(async () => ({
+      players: [
+        { id: 'a', player_name: 'Alice', player_index: 0, is_ready: true },
+        { id: 'b', player_name: 'Bob', player_index: 1, is_ready: true },
+      ],
+      myPlayerIndex: 0,
+    })),
     getSecurePlayerData: vi.fn(),
     executeGameAction: vi.fn(),
     addBot: vi.fn(),
@@ -30,7 +34,16 @@ vi.mock('@/utils/multiplayerService', async () => {
     markDisconnected: vi.fn(),
     clearActiveGameFromStorage: vi.fn(),
     getPublicGameState: vi.fn(),
-    getRoomStatus: vi.fn(async () => ({ status: 'playing', max_players: 2 })),
+    getRoomStatus: vi.fn(async () => ({
+      status: 'playing',
+      max_players: 6,
+      customRules: DEFAULT_RULES,
+      turnOrderMode: 'random',
+      isHost: true,
+    })),
+    updateRoomRules: vi.fn(async () => ({ success: true })),
+    setPlayerOrder: vi.fn(async () => ({ success: true })),
+    setTurnOrderMode: vi.fn(async () => ({ success: true })),
   };
 });
 
@@ -96,7 +109,9 @@ const joinGameInProgress = async (currentPlayerIndex: number) => {
     success: true, roomId: 'room-1', playerIndex: 0, maxPlayers: 2,
   } as never);
   vi.mocked(getPublicGameState).mockResolvedValue(dbState(currentPlayerIndex));
-  vi.mocked(getSecurePlayerData).mockResolvedValue(dbPlayers());
+  // getSecurePlayerData now also reports the caller's own seat, resolved
+  // server-side on every fetch (Epic 15 story 15.0).
+  vi.mocked(getSecurePlayerData).mockResolvedValue({ players: dbPlayers(), myPlayerIndex: 0 });
 
   const hook = renderHook(() => useOnlineGame());
   await act(async () => {
@@ -109,7 +124,7 @@ const joinGameInProgress = async (currentPlayerIndex: number) => {
 describe('useOnlineGame — handleSellStocks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getSecurePlayerData).mockResolvedValue(dbPlayers());
+    vi.mocked(getSecurePlayerData).mockResolvedValue({ players: dbPlayers(), myPlayerIndex: 0 });
   });
 
   it('is a no-op when it is not the local player\'s turn', async () => {

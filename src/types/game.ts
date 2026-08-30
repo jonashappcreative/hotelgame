@@ -149,47 +149,50 @@ export const ELIGIBLE_CHAINS_5: ChainName[] = ['sackson', 'tower', 'worldwide', 
 export const ELIGIBLE_CHAINS_6: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
 export const ELIGIBLE_CHAINS_7: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
+// -----------------------------------------------------------------------------
+// Custom rules (v2) — the single source of truth for both engines
+// -----------------------------------------------------------------------------
+// v1 modelled every rule as a `*Enabled` boolean plus a value, which meant
+// "disabled" had a different meaning per rule (and, for chain safety, the
+// opposite of what the lobby printed). v2 deletes the boolean layer: a rule is
+// a value, and "off"/"standard" is one of its values.
+//
+// server/lib/rules.ts imports these rather than re-declaring them; legacy v1
+// blobs are translated on read by normalizeRules() in ./rules-normalize.
 export interface CustomRules {
-  startWithTileOnBoard: boolean;
-  turnTimerEnabled: boolean;
-  turnTimer: string;
+  // ---- Basic ----
+  /** 'large' = 9x12, 'small' = 6x10. */
+  boardSize: 'large' | 'small';
+  /** Percent of market price the bank pays back; 'off' disables selling. */
+  stockSelling: 'off' | '100' | '90' | '75' | '50';
+  /** Chain size at which a chain becomes safe; 'none' = Aggressive. */
+  chainSafety: 'none' | '9' | '11' | '13' | '15';
+
+  // ---- Advanced ----
+  /** Seconds per turn; 'off' disables the timer. */
+  turnTimer: 'off' | '30' | '60' | '90';
   disableTimerFirstRounds: boolean;
-  chainSafetyEnabled: boolean;
-  chainSafetyThreshold: string;
-  cashVisibilityEnabled: boolean;
-  cashVisibility: string;
-  bonusTierEnabled: boolean;
-  bonusTier: string;
-  boardSizeEnabled: boolean;
-  boardSize: string;
-  chainFoundingEnabled: boolean;
-  maxChains: string;
-  startingConditionsEnabled: boolean;
-  startingCash: string;
-  startingTiles: string;
-  stockSellingEnabled: boolean;
-  /** Percent of market price the bank pays back: '100' | '90' | '75' | '50'. */
-  sellPriceFactor: string;
+  cashVisibility: 'visible' | 'hidden' | 'aggregate';
+  bonusTier: 'standard' | 'flat' | 'aggressive';
+  maxChains: '5' | '6' | '7';
+  startingCash: '4000' | '6000' | '8000';
+  startingTiles: '5' | '6' | '7';
+  startWithTileOnBoard: boolean;
 }
 
+// Chain safety defaults to 'none' because that is what every room has actually
+// played since launch — v1's `chainSafetyEnabled: false` made getSafeChainSize
+// return null. v2 adopts the behaviour and labels it honestly.
 export const DEFAULT_RULES: CustomRules = {
-  startWithTileOnBoard: true,
-  turnTimerEnabled: false,
-  turnTimer: '60',
+  boardSize: 'large',
+  stockSelling: 'off',
+  chainSafety: 'none',
+  turnTimer: 'off',
   disableTimerFirstRounds: true,
-  chainSafetyEnabled: false,
-  chainSafetyThreshold: 'none',
-  cashVisibilityEnabled: false,
-  cashVisibility: 'hidden',
-  bonusTierEnabled: false,
+  cashVisibility: 'visible',
   bonusTier: 'standard',
-  boardSizeEnabled: false,
-  boardSize: '9x12',
-  chainFoundingEnabled: false,
   maxChains: '7',
-  startingConditionsEnabled: false,
   startingCash: '6000',
   startingTiles: '6',
-  stockSellingEnabled: false,
-  sellPriceFactor: '75',
+  startWithTileOnBoard: true,
 };

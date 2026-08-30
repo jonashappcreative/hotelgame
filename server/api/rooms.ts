@@ -5,6 +5,14 @@
 // the browser used to perform. Every op requires a valid JWT; data returned to
 // the browser comes only from the *_public views (tiles / tile_bag stripped),
 // except a player's own tiles (served via WHERE user_id = <jwt sub>).
+//
+// Epic 15 notes:
+//   * The host is `game_rooms.host_user_id`, never seat 0 — that is what lets
+//     the host sit anywhere in the turn order.
+//   * Rules are validated against an allowlist before they touch JSONB, and
+//     stay editable (op: 'update_rules') until the game starts.
+//   * Any change to the group clears every human's ready flag, so "ready"
+//     means "ready to play with exactly this group".
 // =============================================================================
 
 import { randomUUID } from 'node:crypto';
@@ -13,11 +21,19 @@ import { verifyAuth } from '../lib/auth';
 import { getCorsHeaders, jsonResponse } from '../lib/cors';
 import { serverError } from '../lib/errors';
 import { notifyWsServer } from '../lib/ws';
+import { normalizeRules, validateRules } from '../lib/rules';
+import {
+  ROOM_CAPACITY,
+  reindexPlayers,
+  resetReadyFlags,
+  transferHost,
+} from '../lib/players';
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_ACTIVE_ROOMS_PER_USER = 5;
 const BOT_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 const BOT_NAMES = ['Aria', 'Byte', 'Cortex', 'Delta', 'Echo', 'Flux'];
+const TURN_ORDER_MODES = new Set(['random', 'manual']);
 
 function generateRoomCode(): string {
   let code = '';
@@ -25,6 +41,54 @@ function generateRoomCode(): string {
     code += ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)];
   }
   return code;
+}
+
+interface HostRoom {
+  id: string;
+  status: string;
+  max_players: number;
+  host_user_id: string | null;
+  turn_order_mode: string;
+}
+
+/**
+ * Load a room and assert the caller may reconfigure it: they must be the host
+ * and the game must not have started. Returns either the room or the Response
+ * to send back, so each host-only op is one guard clause.
+ */
+async function requireWaitingHost(
+  roomId: string,
+  userId: string,
+  cors: Record<string, string>,
+): Promise<{ room: HostRoom } | { error: Response }> {
+  if (!roomId) return { error: jsonResponse({ error: 'roomId required' }, 400, cors) };
+
+  const { data: room } = await db.from('game_rooms')
+    .select('id, status, max_players, host_user_id, turn_order_mode')
+    .eq('id', roomId).single();
+
+  if (!room) return { error: jsonResponse({ error: 'Room not found' }, 404, cors) };
+  if (room.host_user_id !== userId) {
+    return { error: jsonResponse({ error: 'Only the host can do that' }, 403, cors) };
+  }
+  if (room.status !== 'waiting') {
+    return { error: jsonResponse({ error: 'The game has already started' }, 409, cors) };
+  }
+  return { room: room as HostRoom };
+}
+
+/** Seats 0..n-1 with no gaps, in current seat order — call after anyone leaves. */
+async function compactSeats(roomId: string): Promise<void> {
+  const rows = await query<{ id: string }>(
+    'SELECT id FROM game_players WHERE room_id = $1 ORDER BY player_index',
+    [roomId],
+  );
+  await reindexPlayers(roomId, rows.map((r) => r.id));
+}
+
+function broadcastPlayers(roomId: string): void {
+  notifyWsServer(roomId, 'game:players_changed', { roomId })
+    .catch((err: unknown) => console.error('notify error:', err));
 }
 
 export default async (req: Request): Promise<Response> => {
@@ -43,16 +107,21 @@ export default async (req: Request): Promise<Response> => {
     switch (op) {
       // ---- create a room -----------------------------------------------------
       case 'create': {
-        const maxPlayers = Math.min(6, Math.max(2, Number(body.maxPlayers) || 4));
-        const customRules = body.customRules ?? null;
+        // Rules are validated against an explicit allowlist before they are
+        // stringified into JSONB — an out-of-range value is a 400 here rather
+        // than a NaN surfacing mid-game.
+        const validation = validateRules(body.customRules ?? null);
+        if (!validation.ok) {
+          return jsonResponse({ error: `Invalid rules: ${validation.errors.join('; ')}` }, 400, cors);
+        }
+        const customRules = validation.rules;
 
         // Enforce the active-room limit (was a DB trigger under Supabase).
+        // Counts rooms the caller *hosts*, which is now an explicit column.
         const limitRows = await query<{ count: string }>(
           `SELECT COUNT(*)::int AS count
-             FROM game_players gp
-             JOIN game_rooms gr ON gr.id = gp.room_id
-            WHERE gp.user_id = $1 AND gp.player_index = 0
-              AND gr.status IN ('waiting', 'playing')`,
+             FROM game_rooms
+            WHERE host_user_id = $1 AND status IN ('waiting', 'playing')`,
           [userId],
         );
         if (Number(limitRows[0]?.count ?? 0) >= MAX_ACTIVE_ROOMS_PER_USER) {
@@ -67,10 +136,10 @@ export default async (req: Request): Promise<Response> => {
           const roomCode = generateRoomCode();
           try {
             const rows = await query<{ id: string; room_code: string; max_players: number }>(
-              `INSERT INTO game_rooms (room_code, max_players, custom_rules)
-               VALUES ($1, $2, $3::jsonb)
+              `INSERT INTO game_rooms (room_code, max_players, custom_rules, host_user_id)
+               VALUES ($1, $2, $3::jsonb, $4)
                RETURNING id, room_code, max_players`,
-              [roomCode, maxPlayers, customRules === null ? null : JSON.stringify(customRules)],
+              [roomCode, ROOM_CAPACITY, JSON.stringify(customRules), userId],
             );
             const room = rows[0];
             return jsonResponse(
@@ -85,6 +154,80 @@ export default async (req: Request): Promise<Response> => {
         return jsonResponse({ error: 'Failed to generate a unique room code' }, 500, cors);
       }
 
+      // ---- edit the rules of a waiting room (host only) ----------------------
+      case 'update_rules': {
+        const guard = await requireWaitingHost(roomId, userId, cors);
+        if ('error' in guard) return guard.error;
+
+        const validation = validateRules(body.customRules ?? null);
+        if (!validation.ok) {
+          return jsonResponse({ error: `Invalid rules: ${validation.errors.join('; ')}` }, 400, cors);
+        }
+
+        await query(
+          'UPDATE game_rooms SET custom_rules = $1::jsonb WHERE id = $2',
+          [JSON.stringify(validation.rules), roomId],
+        );
+        // Rules changed under everyone's feet — re-reading the player list is
+        // how clients notice, and the rules panel refetches with it.
+        broadcastPlayers(roomId);
+        return jsonResponse({ success: true, customRules: validation.rules }, 200, cors);
+      }
+
+      // ---- arrange the turn order by hand (host only) ------------------------
+      case 'set_player_order': {
+        const guard = await requireWaitingHost(roomId, userId, cors);
+        if ('error' in guard) return guard.error;
+
+        const orderedIds = body.playerIds;
+        if (!Array.isArray(orderedIds) || orderedIds.some((id) => typeof id !== 'string')) {
+          return jsonResponse({ error: 'playerIds must be an array of player ids' }, 400, cors);
+        }
+
+        // The list must be exactly this room's players: no partial order, no
+        // duplicate, no id from another room.
+        const current = await query<{ id: string }>(
+          'SELECT id FROM game_players WHERE room_id = $1',
+          [roomId],
+        );
+        const currentIds = new Set(current.map((r) => r.id));
+        const givenIds = new Set<string>(orderedIds);
+        const sameSet = givenIds.size === orderedIds.length
+          && currentIds.size === givenIds.size
+          && [...givenIds].every((id) => currentIds.has(id));
+        if (!sameSet) {
+          return jsonResponse(
+            { error: 'playerIds must list exactly the players currently in this room' },
+            400, cors,
+          );
+        }
+
+        await reindexPlayers(roomId, orderedIds);
+        // Arranging seats by hand is what 'manual' means — a later shuffle at
+        // game start would throw the arrangement away.
+        await query(
+          `UPDATE game_rooms SET turn_order_mode = 'manual' WHERE id = $1`,
+          [roomId],
+        );
+        broadcastPlayers(roomId);
+        return jsonResponse({ success: true }, 200, cors);
+      }
+
+      // ---- random vs manual turn order (host only) ---------------------------
+      case 'set_turn_order_mode': {
+        const guard = await requireWaitingHost(roomId, userId, cors);
+        if ('error' in guard) return guard.error;
+
+        const mode = String(body.mode ?? '');
+        if (!TURN_ORDER_MODES.has(mode)) {
+          return jsonResponse({ error: `mode must be one of ${[...TURN_ORDER_MODES].join(', ')}` }, 400, cors);
+        }
+
+        await query('UPDATE game_rooms SET turn_order_mode = $1 WHERE id = $2', [mode, roomId]);
+        broadcastPlayers(roomId);
+        return jsonResponse({ success: true, turnOrderMode: mode }, 200, cors);
+      }
+
       // ---- add a bot player (host only, waiting room) -------------------------
       case 'add_bot': {
         const difficulty = String(body.difficulty || 'medium');
@@ -92,21 +235,9 @@ export default async (req: Request): Promise<Response> => {
           return jsonResponse({ error: 'Invalid difficulty' }, 400, cors);
         }
 
-        const { data: room } = await db.from('game_rooms')
-          .select('id, status, max_players').eq('id', roomId).single();
-        if (!room) return jsonResponse({ error: 'Room not found' }, 404, cors);
-        if (room.status !== 'waiting') {
-          return jsonResponse({ error: 'Cannot add bots after the game has started' }, 400, cors);
-        }
-
-        // Only the host (seat 0) may manage bots.
-        const caller = await query<{ player_index: number }>(
-          'SELECT player_index FROM game_players WHERE room_id = $1 AND user_id = $2',
-          [roomId, userId],
-        );
-        if (caller[0]?.player_index !== 0) {
-          return jsonResponse({ error: 'Only the host can add bots' }, 403, cors);
-        }
+        const guard = await requireWaitingHost(roomId, userId, cors);
+        if ('error' in guard) return guard.error;
+        const room = guard.room;
 
         // Pick the lowest free seat.
         const seats = await query<{ player_index: number }>(
@@ -140,7 +271,8 @@ export default async (req: Request): Promise<Response> => {
           throw err;
         }
 
-        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
+        await resetReadyFlags(roomId);
+        broadcastPlayers(roomId);
         return jsonResponse({ success: true, playerIndex: seat }, 200, cors);
       }
 
@@ -151,20 +283,8 @@ export default async (req: Request): Promise<Response> => {
           return jsonResponse({ error: 'playerIndex required' }, 400, cors);
         }
 
-        const { data: room } = await db.from('game_rooms')
-          .select('status').eq('id', roomId).single();
-        if (!room) return jsonResponse({ error: 'Room not found' }, 404, cors);
-        if (room.status !== 'waiting') {
-          return jsonResponse({ error: 'Cannot remove bots after the game has started' }, 400, cors);
-        }
-
-        const caller = await query<{ player_index: number }>(
-          'SELECT player_index FROM game_players WHERE room_id = $1 AND user_id = $2',
-          [roomId, userId],
-        );
-        if (caller[0]?.player_index !== 0) {
-          return jsonResponse({ error: 'Only the host can remove bots' }, 403, cors);
-        }
+        const guard = await requireWaitingHost(roomId, userId, cors);
+        if ('error' in guard) return guard.error;
 
         const target = await query<{ is_bot: boolean }>(
           'SELECT is_bot FROM game_players WHERE room_id = $1 AND player_index = $2',
@@ -177,7 +297,9 @@ export default async (req: Request): Promise<Response> => {
           'DELETE FROM game_players WHERE room_id = $1 AND player_index = $2 AND is_bot = true',
           [roomId, playerIndex],
         );
-        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
+        await compactSeats(roomId);
+        await resetReadyFlags(roomId);
+        broadcastPlayers(roomId);
         return jsonResponse({ success: true }, 200, cors);
       }
 
@@ -185,16 +307,26 @@ export default async (req: Request): Promise<Response> => {
       case 'get_room': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data } = await db.from('game_rooms')
-          .select('id, room_code, status, max_players, custom_rules')
+          .select('id, room_code, status, max_players, custom_rules, host_user_id, turn_order_mode')
           .eq('id', roomId).single();
-        return jsonResponse({ room: data ?? null }, 200, cors);
+        if (!data) return jsonResponse({ room: null }, 200, cors);
+        return jsonResponse({
+          room: {
+            ...data,
+            // v1 blobs are translated here so no client ever sees the old shape.
+            custom_rules: normalizeRules(data.custom_rules),
+            turn_order_mode: data.turn_order_mode ?? 'random',
+            // Host status is told to the client, never inferred from a seat.
+            isHost: data.host_user_id === userId,
+          },
+        }, 200, cors);
       }
 
       case 'get_rules': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data } = await db.from('game_rooms')
           .select('custom_rules').eq('id', roomId).single();
-        return jsonResponse({ customRules: data?.custom_rules ?? null }, 200, cors);
+        return jsonResponse({ customRules: normalizeRules(data?.custom_rules) }, 200, cors);
       }
 
       // ---- find the user's active game (reconnection) ------------------------
@@ -213,12 +345,23 @@ export default async (req: Request): Promise<Response> => {
       }
 
       // ---- public player list ------------------------------------------------
+      // myPlayerIndex is resolved server-side and returned with every list, so
+      // the client re-derives its seat on each refresh instead of trusting the
+      // value it cached at join. Seats move now (reorder, start-time shuffle)
+      // and a stale index would make a player act as somebody else.
       case 'list_players': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data } = await db.from('game_players_public')
           .select('id, player_name, player_index, cash, stocks, is_connected, is_ready, is_bot, bot_difficulty, created_at')
           .eq('room_id', roomId).order('player_index');
-        return jsonResponse({ players: data ?? [] }, 200, cors);
+
+        const { data: me } = await db.from('game_players')
+          .select('player_index').eq('room_id', roomId).eq('user_id', userId).single();
+
+        return jsonResponse(
+          { players: data ?? [], myPlayerIndex: me?.player_index ?? null },
+          200, cors,
+        );
       }
 
       // ---- secure player list (own tiles included) ---------------------------
@@ -238,7 +381,10 @@ export default async (req: Request): Promise<Response> => {
           ...p,
           tiles: p.player_index === myIndex ? myTiles : [],
         }));
-        return jsonResponse({ players }, 200, cors);
+        return jsonResponse(
+          { players, myPlayerIndex: me?.player_index ?? null },
+          200, cors,
+        );
       }
 
       // ---- public game state -------------------------------------------------
@@ -259,13 +405,14 @@ export default async (req: Request): Promise<Response> => {
         }
 
         const { data: room } = await db.from('game_rooms')
-          .select('id, room_code, status, max_players')
+          .select('id, room_code, status, max_players, host_user_id')
           .eq('room_code', roomCode).single();
         if (!room) return jsonResponse({ error: 'Room not found' }, 404, cors);
 
-        const maxPlayers = room.max_players || 4;
+        const maxPlayers = room.max_players || ROOM_CAPACITY;
 
         // Already a player? → reconnect (allowed regardless of room status).
+        // A reconnect is not a group change, so ready flags are left alone.
         const { data: existing } = await db.from('game_players')
           .select('id, player_index, player_name')
           .eq('room_id', room.id).eq('user_id', userId).single();
@@ -274,10 +421,11 @@ export default async (req: Request): Promise<Response> => {
           await db.from('game_players')
             .update({ is_connected: true, last_seen_at: new Date().toISOString(), disconnected_at: null })
             .eq('id', existing.id);
-          notifyWsServer(room.id, 'game:players_changed', { roomId: room.id }).catch((err: unknown) => console.error('notify error:', err));
+          broadcastPlayers(room.id);
           return jsonResponse({
             success: true, roomId: room.id, playerIndex: existing.player_index,
             maxPlayers, isRejoin: room.status === 'playing',
+            isHost: room.host_user_id === userId,
           }, 200, cors);
         }
 
@@ -310,9 +458,13 @@ export default async (req: Request): Promise<Response> => {
                RETURNING player_index`,
               [room.id, playerName, playerIndex, userId, sessionId],
             );
-            notifyWsServer(room.id, 'game:players_changed', { roomId: room.id }).catch((err: unknown) => console.error('notify error:', err));
+            // The group changed: everyone re-readies, so nobody is dragged into
+            // a game with a player who arrived after they clicked ready.
+            await resetReadyFlags(room.id);
+            broadcastPlayers(room.id);
             return jsonResponse({
               success: true, roomId: room.id, playerIndex: rows[0].player_index, maxPlayers,
+              isHost: room.host_user_id === userId,
             }, 200, cors);
           } catch (err: any) {
             if (err?.code === '23505') {
@@ -322,6 +474,7 @@ export default async (req: Request): Promise<Response> => {
               if (nowExisting) {
                 return jsonResponse({
                   success: true, roomId: room.id, playerIndex: nowExisting.player_index, maxPlayers,
+                  isHost: room.host_user_id === userId,
                 }, 200, cors);
               }
               const backoff = 150 * Math.pow(2, attempt) + Math.random() * 100;
@@ -337,8 +490,23 @@ export default async (req: Request): Promise<Response> => {
       // ---- leave -------------------------------------------------------------
       case 'leave': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
+
+        const { data: room } = await db.from('game_rooms')
+          .select('status, host_user_id').eq('id', roomId).single();
+
         await db.from('game_players').delete().eq('room_id', roomId).eq('user_id', userId);
-        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
+
+        if (room?.status === 'waiting') {
+          // Close the gap the departure left, or the vacated seat index would
+          // have no player behind it when the game starts.
+          await compactSeats(roomId);
+          await resetReadyFlags(roomId);
+          // A room must never be left hostless — the next-earliest human takes
+          // over every host control.
+          if (room.host_user_id === userId) await transferHost(roomId);
+        }
+
+        broadcastPlayers(roomId);
         return jsonResponse({ success: true }, 200, cors);
       }
 
@@ -356,7 +524,7 @@ export default async (req: Request): Promise<Response> => {
         await db.from('game_players')
           .update({ is_connected: false, disconnected_at: new Date().toISOString() })
           .eq('room_id', roomId).eq('user_id', userId);
-        notifyWsServer(roomId, 'game:players_changed', { roomId }).catch((err: unknown) => console.error('notify error:', err));
+        broadcastPlayers(roomId);
         return jsonResponse({ success: true }, 200, cors);
       }
 

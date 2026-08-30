@@ -13,6 +13,7 @@ import { verifyAuth } from '../lib/auth';
 import { getCorsHeaders } from '../lib/cors';
 import { notifyWsServer } from '../lib/ws';
 import { decideBotMove, type BotDifficulty } from '../lib/bot';
+import { MIN_PLAYERS_TO_START, reindexPlayers } from '../lib/players';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
 // ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
@@ -22,7 +23,9 @@ import {
   type TileId,
   type CustomRules,
   type MergerStockDecision,
-  DEFAULT_RULES,
+  normalizeRules,
+  coerceBoardSizeCoupling,
+  getTurnTimerSeconds,
   CHAINS,
   MAX_STOCKS_PER_TURN,
   getSafeChainSize,
@@ -143,6 +146,15 @@ async function handleGameAction(opts: {
 
     const myPlayerIndex = playerData.player_index;
 
+    // Host privilege is the room's owner column, never seat 0 — the host can
+    // sit anywhere in the turn order, and the start-time shuffle moves them.
+    // Read lazily so the per-turn actions don't pay for a query they never use.
+    const isCallerHost = async (): Promise<boolean> => {
+      const { data: room } = await adminClient
+        .from('game_rooms').select('host_user_id').eq('id', roomId).single();
+      return room?.host_user_id != null && room.host_user_id === opts.actorUserId;
+    };
+
     // Fetch game state and all players in parallel (player query already completed above)
     const [stateResult, playersResult] = await Promise.all([
       adminClient.from('game_states').select('*').eq('room_id', roomId).single(),
@@ -160,7 +172,7 @@ async function handleGameAction(opts: {
     }
 
     // Derive rule-based values from rules snapshot
-    const globalRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState?.rules_snapshot as Partial<CustomRules> ?? {}) };
+    const globalRulesSnap: CustomRules = normalizeRules(gameState?.rules_snapshot);
     const safeChainSize: number | null = getSafeChainSize(globalRulesSnap);
     const { boardRows: globalBoardRows, boardColsCount: globalBoardColsCount } = getBoardDimensions(globalRulesSnap);
     const globalEligibleChains: ChainName[] = getEligibleChains(globalRulesSnap);
@@ -186,10 +198,10 @@ async function handleGameAction(opts: {
           break;
         }
 
-        // Check if all players are ready and room is full
+        // Check whether the room can start
         const { data: room } = await adminClient
           .from('game_rooms')
-          .select('max_players, custom_rules')
+          .select('max_players, custom_rules, turn_order_mode')
           .eq('id', roomId)
           .single();
 
@@ -205,8 +217,12 @@ async function handleGameAction(opts: {
           break;
         }
 
-        // Bots are always considered ready — only real players need to ready up.
-        const allReady = freshPlayers.length === room.max_players &&
+        // Epic 15: rooms no longer have a fixed player count, so the start
+        // condition is "at least two players and every human ready". Bots are
+        // always ready. Any join or leave clears every ready flag (see
+        // rooms.ts), which is what makes readying up mean "ready to play with
+        // exactly this group" and removes the last-second-joiner race.
+        const allReady = freshPlayers.length >= MIN_PLAYERS_TO_START &&
           freshPlayers.every(p => p.is_bot || p.is_ready);
 
         if (!allReady) {
@@ -217,12 +233,22 @@ async function handleGameAction(opts: {
         // All players ready — start the game!
         console.log('All players ready, starting game for room:', roomId);
 
-        // Resolve custom rules: merge room's custom_rules over DEFAULT_RULES
-        const rules: CustomRules = { ...DEFAULT_RULES, ...(room.custom_rules as Partial<CustomRules> ?? {}) };
+        // v1 blobs are translated on read; the small board drops Max Chains
+        // from the default 7 to 5 here as well as in the rules form.
+        const rules: CustomRules = coerceBoardSizeCoupling(normalizeRules(room.custom_rules));
 
-        // Board-size coupling: small board forces maxChains to 5 when chain founding is enabled
-        if (rules.boardSize === '6x10' && rules.chainFoundingEnabled && rules.maxChains === '7') {
-          rules.maxChains = '5';
+        // Turn order. In 'random' mode (the default) the seats are shuffled
+        // now, host included — this MUST happen before the dealing loop below,
+        // which walks players in seat order. In 'manual' mode the host already
+        // arranged the seats and we deal in the order they set.
+        let seatedPlayers = freshPlayers;
+        if ((room.turn_order_mode ?? 'random') === 'random' && freshPlayers.length > 1) {
+          const shuffledIds: string[] = shuffle((freshPlayers as any[]).map((p) => String(p.id)));
+          await reindexPlayers(roomId, shuffledIds);
+          seatedPlayers = shuffledIds.map((id, index) => ({
+            ...freshPlayers.find((p: any) => p.id === id),
+            player_index: index,
+          }));
         }
 
         // Derive starting parameters from rules
@@ -264,8 +290,9 @@ async function handleGameAction(opts: {
           festival: 25, continental: 25, imperial: 25,
         };
 
-        // Deal tiles to players and reset ready state
-        for (const player of freshPlayers) {
+        // Deal tiles to players and reset ready state. seatedPlayers is in
+        // final seat order, so hand N goes to seat N.
+        for (const player of seatedPlayers) {
           const playerTiles = tileBag.splice(0, startingTiles);
           await adminClient
             .from('game_players')
@@ -290,9 +317,10 @@ async function handleGameAction(opts: {
         };
 
         // Compute turn deadline for the first turn
+        const firstTurnSeconds = getTurnTimerSeconds(rules);
         const firstTurnDeadline: number | null =
-          rules.turnTimerEnabled && !rules.disableTimerFirstRounds
-            ? Math.floor(Date.now() / 1000) + parseInt(rules.turnTimer)
+          firstTurnSeconds !== null && !rules.disableTimerFirstRounds
+            ? Math.floor(Date.now() / 1000) + firstTurnSeconds
             : null;
 
         // Create game state with rules_snapshot
@@ -332,8 +360,8 @@ async function handleGameAction(opts: {
       }
 
       case 'start_game': {
-        // Kept for backward compatibility but toggle_ready is the preferred way
-        if (myPlayerIndex !== 0) {
+        // Kept for backward compatibility but toggle_ready is the preferred way.
+        if (!await isCallerHost()) {
           return new Response(JSON.stringify({ error: 'Only host can start game' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1302,10 +1330,11 @@ async function handleGameAction(opts: {
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
         const currentRoundNumber = gameState.round_number ?? 0;
         const newRoundNumber = currentRoundNumber + (nextPlayerIndex === 0 ? 1 : 0);
-        const rulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const rulesSnap: CustomRules = normalizeRules(gameState.rules_snapshot);
+        const turnSeconds = getTurnTimerSeconds(rulesSnap);
         const newDeadline: number | null =
-          rulesSnap.turnTimerEnabled && !(rulesSnap.disableTimerFirstRounds && newRoundNumber < 2)
-            ? Math.floor(Date.now() / 1000) + parseInt(rulesSnap.turnTimer)
+          turnSeconds !== null && !(rulesSnap.disableTimerFirstRounds && newRoundNumber < 2)
+            ? Math.floor(Date.now() / 1000) + turnSeconds
             : null;
 
         let newPhase = 'place_tile';
@@ -1461,10 +1490,11 @@ async function handleGameAction(opts: {
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
         const skipCurrentRound = gameState.round_number ?? 0;
         const skipNewRound = skipCurrentRound + (nextPlayerIndex === 0 ? 1 : 0);
-        const skipRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const skipRulesSnap: CustomRules = normalizeRules(gameState.rules_snapshot);
+        const skipTurnSeconds = getTurnTimerSeconds(skipRulesSnap);
         const skipNewDeadline: number | null =
-          skipRulesSnap.turnTimerEnabled && !(skipRulesSnap.disableTimerFirstRounds && skipNewRound < 2)
-            ? Math.floor(Date.now() / 1000) + parseInt(skipRulesSnap.turnTimer)
+          skipTurnSeconds !== null && !(skipRulesSnap.disableTimerFirstRounds && skipNewRound < 2)
+            ? Math.floor(Date.now() / 1000) + skipTurnSeconds
             : null;
 
         let newPhase = 'place_tile';
@@ -1637,7 +1667,7 @@ async function handleGameAction(opts: {
 
       case 'new_game': {
         // Only host can start new game
-        if (myPlayerIndex !== 0) {
+        if (!await isCallerHost()) {
           return new Response(JSON.stringify({ error: 'Only host can start new game' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1659,8 +1689,8 @@ async function handleGameAction(opts: {
       }
 
       case 'update_room_status': {
-        // Security: Only host (player_index 0) can update room status
-        if (myPlayerIndex !== 0) {
+        // Security: only the room's host may change its status
+        if (!await isCallerHost()) {
           return new Response(JSON.stringify({ error: 'Only host can update room status' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1713,7 +1743,7 @@ async function handleGameAction(opts: {
           });
         }
 
-        const autoRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const autoRules: CustomRules = normalizeRules(gameState.rules_snapshot);
         const autoSafeChainSize: number | null = getSafeChainSize(autoRules);
         const { boardRows: autoBoardRows, boardColsCount: autoBoardColsCount } = getBoardDimensions(autoRules);
         const autoEligibleChains: ChainName[] = getEligibleChains(autoRules);
@@ -1755,9 +1785,10 @@ async function handleGameAction(opts: {
           const npi = (myPlayerIndex + 1) % allPlayers.length;
           const curRound = gameState.round_number ?? 0;
           const nrn = curRound + (npi === 0 ? 1 : 0);
+          const autoTurnSeconds = getTurnTimerSeconds(autoRules);
           const nd: number | null =
-            autoRules.turnTimerEnabled && !(autoRules.disableTimerFirstRounds && nrn < 2)
-              ? Math.floor(Date.now() / 1000) + parseInt(autoRules.turnTimer)
+            autoTurnSeconds !== null && !(autoRules.disableTimerFirstRounds && nrn < 2)
+              ? Math.floor(Date.now() / 1000) + autoTurnSeconds
               : null;
           let phase = 'place_tile';
           let autoWinner: string | null = null;
@@ -2152,7 +2183,7 @@ async function completeMergerInDb(
   const lastTile = gameState.last_placed_tile;
 
   // Derive board dimensions for adjacency calculation
-  const completeMergerRulesForBoard: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const completeMergerRulesForBoard: CustomRules = normalizeRules(gameState.rules_snapshot);
   const { boardRows: cmBoardRows, boardColsCount: cmBoardColsCount } = getBoardDimensions(completeMergerRulesForBoard);
 
   // Collect all tiles to add
@@ -2177,7 +2208,7 @@ async function completeMergerInDb(
   }
 
   // Update chains
-  const completeMergerRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const completeMergerRules: CustomRules = normalizeRules(gameState.rules_snapshot);
   const completeMergerSafeSize: number | null = getSafeChainSize(completeMergerRules);
   const completeMergerBonusTier: string = getBonusTier(completeMergerRules);
   const newChains = { ...gameState.chains };

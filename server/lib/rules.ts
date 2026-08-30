@@ -11,50 +11,27 @@ export type ChainName =
   | 'festival' | 'continental' | 'imperial';
 export type TileId = string;
 
-// Mirror of src/types/game.ts CustomRules — keep in sync (founderFreeStock intentionally excluded)
-export interface CustomRules {
-  startWithTileOnBoard: boolean;
-  turnTimerEnabled: boolean;
-  turnTimer: string;
-  disableTimerFirstRounds: boolean;
-  chainSafetyEnabled: boolean;
-  chainSafetyThreshold: string;
-  cashVisibilityEnabled: boolean;
-  cashVisibility: string;
-  bonusTierEnabled: boolean;
-  bonusTier: string;
-  boardSizeEnabled: boolean;
-  boardSize: string;
-  chainFoundingEnabled: boolean;
-  maxChains: string;
-  startingConditionsEnabled: boolean;
-  startingCash: string;
-  startingTiles: string;
-  stockSellingEnabled: boolean;
-  sellPriceFactor: string;
-}
-
-export const DEFAULT_RULES: CustomRules = {
-  startWithTileOnBoard: true,
-  turnTimerEnabled: false,
-  turnTimer: '60',
-  disableTimerFirstRounds: true,
-  chainSafetyEnabled: false,
-  chainSafetyThreshold: 'none',
-  cashVisibilityEnabled: false,
-  cashVisibility: 'hidden',
-  bonusTierEnabled: false,
-  bonusTier: 'standard',
-  boardSizeEnabled: false,
-  boardSize: '9x12',
-  chainFoundingEnabled: false,
-  maxChains: '7',
-  startingConditionsEnabled: false,
-  startingCash: '6000',
-  startingTiles: '6',
-  stockSellingEnabled: false,
-  sellPriceFactor: '75',
-};
+// Rules model, normalisation, validation and the derived getters all live in
+// src/types/rules-normalize.ts so the browser engine and this one read the same
+// definitions. They are re-exported here because every server module already
+// imports its rule helpers from `../lib/rules`.
+export type { CustomRules } from '../../src/types/game';
+export { DEFAULT_RULES } from '../../src/types/game';
+export {
+  normalizeRules,
+  validateRules,
+  isLegacyRules,
+  coerceBoardSizeCoupling,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getMaxChains,
+  getBonusTier,
+  getSellPriceFactor,
+  getTurnTimerSeconds,
+  RULE_VALUES,
+} from '../../src/types/rules-normalize';
+export type { ValidationResult } from '../../src/types/rules-normalize';
 
 export interface MergerStockDecision {
   sell: number;
@@ -88,36 +65,6 @@ export const ELIGIBLE_CHAINS_5_EF: ChainName[] = ['sackson', 'tower', 'worldwide
 export const ELIGIBLE_CHAINS_6_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
 export const ELIGIBLE_CHAINS_7_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
-export function getSafeChainSize(rules: CustomRules): number | null {
-  if (!rules.chainSafetyEnabled) return null;
-  if (rules.chainSafetyThreshold === 'none') return null;
-  return parseInt(rules.chainSafetyThreshold);
-}
-
-export function getBoardDimensions(rules: CustomRules): { boardRows: number; boardColsCount: number } {
-  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
-  const boardColsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
-  return { boardRows, boardColsCount };
-}
-
-export function getEligibleChains(rules: CustomRules): ChainName[] {
-  if (!rules.chainFoundingEnabled) return ELIGIBLE_CHAINS_7_EF;
-  const max = parseInt(rules.maxChains);
-  return max === 5 ? ELIGIBLE_CHAINS_5_EF : max === 6 ? ELIGIBLE_CHAINS_6_EF : ELIGIBLE_CHAINS_7_EF;
-}
-
-export function getBonusTier(rules: CustomRules): string {
-  return rules.bonusTierEnabled ? rules.bonusTier : 'standard';
-}
-
-// Fraction of market price the bank pays when buying a share back. 0 means the
-// Stock Selling rule is off, which is also the only value that disables selling
-// — a factor of 1 ("Full Value") is a legitimate, spread-free setting.
-export function getSellPriceFactor(rules: CustomRules): number {
-  if (!rules.stockSellingEnabled) return 0;
-  return parseInt(rules.sellPriceFactor) / 100;
-}
-
 // Helper functions
 export function getStockPrice(chainName: ChainName, size: number): number {
   if (size === 0) return 0;
@@ -144,6 +91,14 @@ export interface SaleRequest {
   quantity: number;
 }
 
+export interface SaleOutcome {
+  ok: boolean;
+  /** Present when ok. */
+  settlement?: SaleSettlement;
+  /** Present when the sale was rejected. */
+  error?: string;
+}
+
 export interface SaleSettlement {
   /** Cash the seller receives for the whole basket. */
   proceeds: number;
@@ -168,7 +123,7 @@ export function settleSale(opts: {
   soldThisTurn: number;
   chainsBoughtThisTurn: ChainName[];
   factor: number;
-}): { ok: true; settlement: SaleSettlement } | { ok: false; error: string } {
+}): SaleOutcome {
   const { sales, chains, stocks, stockBank, soldThisTurn, chainsBoughtThisTurn, factor } = opts;
 
   if (factor <= 0) return { ok: false, error: 'Stock selling is not enabled in this room' };

@@ -54,7 +54,7 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     winner: null,
     endGameVotes: [],
     roundNumber: 1,
-    rulesSnapshot: { ...DEFAULT_RULES, stockSellingEnabled: true, sellPriceFactor: '75' },
+    rulesSnapshot: { ...DEFAULT_RULES, stockSelling: '75' },
     turnDeadlineEpoch: null,
     safeChainSize: 11,
     bonusTier: 'standard',
@@ -96,7 +96,7 @@ const clickSellPlus = (displayName: string, times = 1) => {
 describe('StockPurchase — Buy/Sell control visibility', () => {
   it('is absent when stockSellingEnabled is false', () => {
     renderPanel(
-      makeGameState({ rulesSnapshot: { ...DEFAULT_RULES, stockSellingEnabled: false } }),
+      makeGameState({ rulesSnapshot: { ...DEFAULT_RULES, stockSelling: 'off' } }),
       { sackson: 3 }
     );
 
@@ -189,7 +189,7 @@ describe('StockPurchase — sell view', () => {
 
   it('shows no spread at the Full Value setting', () => {
     const gameState = makeGameState({
-      rulesSnapshot: { ...DEFAULT_RULES, stockSellingEnabled: true, sellPriceFactor: '100' },
+      rulesSnapshot: { ...DEFAULT_RULES, stockSelling: '100' },
     });
     renderPanel(gameState, { continental: 1 });
     fireEvent.click(screen.getByRole('button', { name: /^Sell$/ }));

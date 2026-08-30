@@ -4,7 +4,17 @@ import {
   getUserIdFromToken,
   signInAnonymous,
 } from '@/integrations/api/client';
-import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES, ELIGIBLE_CHAINS_5, ELIGIBLE_CHAINS_6, ELIGIBLE_CHAINS_7 } from '@/types/game';
+import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES } from '@/types/game';
+import {
+  normalizeRules,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getMaxChains,
+  getBonusTier,
+} from '@/types/rules-normalize';
+
+const ALL_BOARD_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
 // Get or create an authenticated session (anonymous or existing user)
 export const getOrCreateAuthSession = async (): Promise<string | null> => {
@@ -87,46 +97,90 @@ export const clearActiveGameFromStorage = (): void => {
   localStorage.removeItem(ACTIVE_GAME_KEY);
 };
 
-// Create a new game room
-export const createRoom = async (maxPlayers: number = 4, customRules: CustomRules = DEFAULT_RULES): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
-  console.log(`[DEBUG CREATE_ROOM] Starting room creation with maxPlayers=${maxPlayers}`);
-  // Ensure we're authenticated
+// Create a new game room. Since Epic 15 the host never picks a player count —
+// rooms are always created at full capacity and start at 2+ ready players — so
+// confirming the rules is the whole of room creation.
+export const createRoom = async (
+  customRules: CustomRules = DEFAULT_RULES,
+): Promise<{ roomCode: string; roomId: string; maxPlayers: number } | null> => {
   const userId = await getOrCreateAuthSession();
   if (!userId) {
-    console.error('[DEBUG CREATE_ROOM] FAILED — user not authenticated');
+    console.error('[createRoom] failed — user not authenticated');
     return null;
   }
-  console.log(`[DEBUG CREATE_ROOM] Authenticated as user_id=${userId}`);
 
   const { ok, data, error } = await apiFetch<{ roomCode: string; roomId: string; maxPlayers: number }>(
-    '/rooms', { op: 'create', maxPlayers, customRules },
+    '/rooms', { op: 'create', customRules },
   );
 
   if (!ok || !data) {
-    console.error('[DEBUG CREATE_ROOM] INSERT FAILED:', error);
+    console.error('[createRoom] failed:', error);
     return null;
   }
 
-  console.log(`[DEBUG CREATE_ROOM] SUCCESS — room_id=${data.roomId}, room_code=${data.roomCode}, max_players=${data.maxPlayers}`);
   return { roomCode: data.roomCode, roomId: data.roomId, maxPlayers: data.maxPlayers };
 };
 
-// Fetch the custom rules for a room (returns DEFAULT_RULES if none are set)
+// Fetch the custom rules for a room. The server normalises before returning, so
+// this is always a v2 blob even for a room created before Epic 15.
 export const fetchRoomRules = async (roomId: string): Promise<CustomRules> => {
   const { ok, data } = await apiFetch<{ customRules: CustomRules | null }>(
     '/rooms', { op: 'get_rules', roomId },
   );
   if (!ok || !data?.customRules) return DEFAULT_RULES;
-  return data.customRules;
+  return normalizeRules(data.customRules);
 };
 
-// Fetch room metadata (status, max_players, ...)
-export const getRoomStatus = async (
+// Replace a waiting room's rules (host only).
+export const updateRoomRules = async (
   roomId: string,
-): Promise<{ status: 'waiting' | 'playing' | 'finished'; max_players: number } | null> => {
+  customRules: CustomRules,
+): Promise<{ success: boolean; error?: string }> => {
+  const { ok, error } = await apiFetch('/rooms', { op: 'update_rules', roomId, customRules });
+  return ok ? { success: true } : { success: false, error: error || 'Failed to update rules' };
+};
+
+// Arrange the turn order by hand (host only). `playerIds` must be the room's
+// full player list in the wanted seat order; the server rejects anything else.
+export const setPlayerOrder = async (
+  roomId: string,
+  playerIds: string[],
+): Promise<{ success: boolean; error?: string }> => {
+  const { ok, error } = await apiFetch('/rooms', { op: 'set_player_order', roomId, playerIds });
+  return ok ? { success: true } : { success: false, error: error || 'Failed to set player order' };
+};
+
+// Switch between a shuffle-at-start room and a hand-arranged one (host only).
+export const setTurnOrderMode = async (
+  roomId: string,
+  mode: TurnOrderMode,
+): Promise<{ success: boolean; error?: string }> => {
+  const { ok, error } = await apiFetch('/rooms', { op: 'set_turn_order_mode', roomId, mode });
+  return ok ? { success: true } : { success: false, error: error || 'Failed to set turn order' };
+};
+
+export type TurnOrderMode = 'random' | 'manual';
+
+export interface RoomInfo {
+  status: 'waiting' | 'playing' | 'finished';
+  max_players: number;
+  customRules: CustomRules;
+  turnOrderMode: TurnOrderMode;
+  /** Told to us by the server, never inferred from a seat. */
+  isHost: boolean;
+}
+
+// Fetch room metadata (status, capacity, rules, turn order, host flag)
+export const getRoomStatus = async (roomId: string): Promise<RoomInfo | null> => {
   const { ok, data } = await apiFetch<{ room: any }>('/rooms', { op: 'get_room', roomId });
   if (!ok || !data?.room) return null;
-  return { status: data.room.status, max_players: data.room.max_players ?? 4 };
+  return {
+    status: data.room.status,
+    max_players: data.room.max_players ?? 6,
+    customRules: normalizeRules(data.room.custom_rules),
+    turnOrderMode: (data.room.turn_order_mode ?? 'random') as TurnOrderMode,
+    isHost: data.room.isHost === true,
+  };
 };
 
 // Fetch the public game state (tile_bag excluded by the backend view)
@@ -257,26 +311,45 @@ export interface RoomPlayer {
   bot_difficulty: string | null;
 }
 
-// Get room players (public info only - excludes tiles for security)
-export const getRoomPlayers = async (roomId: string): Promise<RoomPlayer[]> => {
-  console.log(`[DEBUG GET_PLAYERS] Fetching players for room_id=${roomId}`);
-  const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'list_players', roomId });
-  if (!ok || !data?.players) {
-    console.error('[DEBUG GET_PLAYERS] FAILED or empty response');
-    return [];
-  }
+/**
+ * Players in a room, plus the caller's own seat.
+ *
+ * myPlayerIndex is resolved server-side on every fetch rather than remembered
+ * from the join response: seats move (host reorder, start-time shuffle), and a
+ * client holding a stale index would act as the wrong player.
+ */
+export interface RoomRoster {
+  players: RoomPlayer[];
+  myPlayerIndex: number | null;
+}
 
-  const result = data.players.map((p) => ({
-    id: p.id || '',
-    player_name: p.player_name || '',
-    player_index: p.player_index ?? 0,
-    is_ready: p.is_ready ?? false,
-    is_bot: p.is_bot ?? false,
-    bot_difficulty: p.bot_difficulty ?? null,
-  }));
-  console.log(`[DEBUG GET_PLAYERS] Found ${result.length} players:`, result.map(p => `"${p.player_name}" (index=${p.player_index})`).join(', '));
-  return result;
+const toRoomPlayer = (p: any): RoomPlayer => ({
+  id: p.id || '',
+  player_name: p.player_name || '',
+  player_index: p.player_index ?? 0,
+  is_ready: p.is_ready ?? false,
+  is_bot: p.is_bot ?? false,
+  bot_difficulty: p.bot_difficulty ?? null,
+});
+
+// Get room players and the caller's seat (public info only — no tiles).
+export const getRoomRoster = async (roomId: string): Promise<RoomRoster> => {
+  const { ok, data } = await apiFetch<{ players: any[]; myPlayerIndex: number | null }>(
+    '/rooms', { op: 'list_players', roomId },
+  );
+  if (!ok || !data?.players) {
+    console.error('[getRoomRoster] failed or empty response');
+    return { players: [], myPlayerIndex: null };
+  }
+  return {
+    players: data.players.map(toRoomPlayer),
+    myPlayerIndex: data.myPlayerIndex ?? null,
+  };
 };
+
+// Players only, for callers that have no seat of their own to track.
+export const getRoomPlayers = async (roomId: string): Promise<RoomPlayer[]> =>
+  (await getRoomRoster(roomId)).players;
 
 // Add an AI bot to the room (host only). difficulty: 'easy' | 'medium' | 'hard'.
 export const addBot = async (
@@ -308,12 +381,14 @@ export const toggleReady = async (roomId: string): Promise<{ success: boolean; g
 
 // Get player data with secure tile handling
 // Only returns tiles for the current session's player, others get empty arrays
-export const getSecurePlayerData = async (roomId: string): Promise<any[]> => {
-  const { ok, data } = await apiFetch<{ players: any[] }>('/rooms', { op: 'get_players', roomId });
-  if (!ok || !data?.players) {
-    return [];
-  }
-  return data.players;
+export const getSecurePlayerData = async (
+  roomId: string,
+): Promise<{ players: any[]; myPlayerIndex: number | null }> => {
+  const { ok, data } = await apiFetch<{ players: any[]; myPlayerIndex: number | null }>(
+    '/rooms', { op: 'get_players', roomId },
+  );
+  if (!ok || !data?.players) return { players: [], myPlayerIndex: null };
+  return { players: data.players, myPlayerIndex: data.myPlayerIndex ?? null };
 };
 
 // Execute a game action via the serverless function
@@ -355,6 +430,8 @@ export const dbToGameState = (
   players: any[],
   roomCode: string
 ): GameState => {
+  const rules = normalizeRules(dbState.rules_snapshot);
+
   // Convert board object back to Map
   const board = new Map<TileId, TileState>();
   if (dbState.board) {
@@ -398,40 +475,17 @@ export const dbToGameState = (
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
     roundNumber: dbState.round_number ?? 0,
-    rulesSnapshot: (dbState.rules_snapshot as import('@/types/game').CustomRules) ?? null,
+    // Every rules read goes through normalizeRules, so a game started before
+    // Epic 15 keeps its original behaviour and every derived value below comes
+    // from the same getters the server uses (src/types/rules-normalize.ts).
+    rulesSnapshot: rules,
     turnDeadlineEpoch: dbState.turn_deadline_epoch ?? null,
-    safeChainSize: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      if (!rs || !rs.chainSafetyEnabled) return null;
-      if (rs.chainSafetyThreshold === 'none') return null;
-      return parseInt(rs.chainSafetyThreshold);
-    })(),
-    boardRows: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      return rs?.boardSizeEnabled && rs?.boardSize === '6x10' ? 6 : 9;
-    })(),
-    boardCols: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      const count = rs?.boardSizeEnabled && rs?.boardSize === '6x10' ? 10 : 12;
-      return ['A','B','C','D','E','F','G','H','I','J','K','L'].slice(0, count);
-    })(),
-    // Derived exactly as the server derives them (server/lib/rules.ts) so an
-    // online game carries real values instead of relying on `??` fallbacks.
-    bonusTier: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      if (!rs?.bonusTierEnabled) return 'standard';
-      return (rs.bonusTier || 'standard') as 'standard' | 'flat' | 'aggressive';
-    })(),
-    maxChains: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      return rs?.chainFoundingEnabled ? parseInt(rs.maxChains) : 7;
-    })(),
-    eligibleChains: (() => {
-      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
-      if (!rs?.chainFoundingEnabled) return ELIGIBLE_CHAINS_7;
-      const max = parseInt(rs.maxChains);
-      return max === 5 ? ELIGIBLE_CHAINS_5 : max === 6 ? ELIGIBLE_CHAINS_6 : ELIGIBLE_CHAINS_7;
-    })(),
+    safeChainSize: getSafeChainSize(rules),
+    boardRows: getBoardDimensions(rules).boardRows,
+    boardCols: ALL_BOARD_COLS.slice(0, getBoardDimensions(rules).boardColsCount),
+    bonusTier: getBonusTier(rules),
+    maxChains: getMaxChains(rules),
+    eligibleChains: getEligibleChains(rules),
   };
 };
 
@@ -440,7 +494,7 @@ export const dbToGameState = (
 // (public) data from the API in response — the same model as before.
 export const subscribeToRoom = (
   roomId: string,
-  onPlayersChange: (players: any[]) => void,
+  onRosterChange: (roster: RoomRoster) => void,
   onGameStateChange: (state: any) => void,
   onRoomStatusChange: (status: string) => void
 ) => {
@@ -458,8 +512,9 @@ export const subscribeToRoom = (
 
   socket.on('game:players_changed', async () => {
     console.log(`[DEBUG SUBSCRIBE] game_players change detected`);
-    const players = await getRoomPlayers(roomId);
-    onPlayersChange(players);
+    // The roster carries the caller's seat, so a reorder or the start-time
+    // shuffle re-points every client at its own player.
+    onRosterChange(await getRoomRoster(roomId));
   });
 
   socket.on('game:state_updated', async () => {

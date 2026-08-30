@@ -1,89 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info, Bot, X, Plus, Repeat2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { CustomRules, DEFAULT_RULES } from '@/types/game';
-import { fetchRoomRules } from '@/utils/multiplayerService';
-import { AudioSettingsButton } from '@/components/AudioSettingsButton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-
-const hasCustomRulesChanged = (rules: CustomRules): boolean => {
-  return JSON.stringify(rules) !== JSON.stringify(DEFAULT_RULES);
-};
-
-const getActiveRulesSummary = (rules: CustomRules): string[] => {
-  const summary: string[] = [];
-  if (rules.turnTimerEnabled) summary.push(`⏱ Turn timer: ${rules.turnTimer}s`);
-  summary.push(`🛡 Safe at ${rules.chainSafetyEnabled ? (rules.chainSafetyThreshold === 'none' ? '—' : rules.chainSafetyThreshold + '+') : '11+'}`);
-  summary.push(`👁 Cash ${rules.cashVisibilityEnabled ? (rules.cashVisibility === 'visible' ? 'visible' : rules.cashVisibility === 'aggregate' ? 'aggregate' : 'hidden') : 'hidden'}`);
-  summary.push(`🏆 Bonus: ${rules.bonusTierEnabled ? (rules.bonusTier === 'flat' ? 'Flat' : rules.bonusTier === 'aggressive' ? '15x/5x' : '10x/5x') : '10x/5x'}`);
-  summary.push(`📐 Board: ${rules.boardSizeEnabled ? rules.boardSize.replace('x', '×') : '9×12'}`);
-  summary.push(`🔗 Max ${rules.chainFoundingEnabled ? rules.maxChains : '7'} chains`);
-  if (rules.stockSellingEnabled) summary.push(`💱 Sell at ${rules.sellPriceFactor}%`);
-  return summary;
-};
-
-const InfoTooltip = ({ text }: { text: string }) => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-    </TooltipTrigger>
-    <TooltipContent side="top" className="max-w-[220px] text-xs">
-      {text}
-    </TooltipContent>
-  </Tooltip>
-);
+import type { TurnOrderMode } from '@/utils/multiplayerService';
+import { LobbyShell } from '@/components/lobby/LobbyShell';
+import { LobbyMenu } from '@/components/lobby/LobbyMenu';
+import { CreateRoomScreen } from '@/components/lobby/CreateRoomScreen';
+import { JoinRoomScreen } from '@/components/lobby/JoinRoomScreen';
+import { RulesForm } from '@/components/lobby/RulesForm';
+import { WaitingRoom } from '@/components/lobby/WaitingRoom';
+import type { LobbyPlayer } from '@/components/lobby/PlayerList';
+import type { ActiveGameInfo } from '@/components/lobby/ActiveGameBanner';
 
 interface OnlineLobbyProps {
   roomCode: string | null;
   roomId: string | null;
-  players: { id: string; player_name: string; player_index: number; is_ready: boolean; is_bot?: boolean; bot_difficulty?: string | null }[];
+  players: LobbyPlayer[];
   myPlayerIndex: number | null;
   maxPlayers: number;
+  roomRules: CustomRules;
+  turnOrderMode: TurnOrderMode;
   isLoading: boolean;
   isCheckingActiveGame?: boolean;
-  activeGameInfo?: {
-    roomCode: string;
-    roomId: string;
-    playerName: string;
-    roomStatus: string;
-  } | null;
-  onCreateRoom: (playerName: string, maxPlayers: number, rules: CustomRules) => void;
+  activeGameInfo?: ActiveGameInfo | null;
+  onCreateRoom: (playerName: string, rules: CustomRules) => void;
   onJoinRoom: (code: string, playerName: string) => void;
   onLeaveRoom: () => void;
   onToggleReady: () => void;
   isHost?: boolean;
   onAddBot?: (difficulty: 'easy' | 'medium' | 'hard') => void;
   onRemoveBot?: (playerIndex: number) => void;
+  onUpdateRules?: (rules: CustomRules) => void;
+  onSetPlayerOrder?: (playerIds: string[]) => void;
+  onSetTurnOrderMode?: (mode: TurnOrderMode) => void;
   onRejoinGame?: () => void;
   onDismissActiveGame?: () => void;
 }
 
+/**
+ * Router for the five lobby screens. Each screen lives in
+ * src/components/lobby/; this file only decides which one is showing and holds
+ * the handful of values that survive a screen change (the typed name, the
+ * pending room code, whether the rules form is open).
+ */
 export const OnlineLobby = ({
   roomCode,
-  roomId,
   players,
   myPlayerIndex,
   maxPlayers,
+  roomRules,
+  turnOrderMode,
   isLoading,
   isCheckingActiveGame,
   activeGameInfo,
@@ -94,234 +61,63 @@ export const OnlineLobby = ({
   isHost,
   onAddBot,
   onRemoveBot,
+  onUpdateRules,
+  onSetPlayerOrder,
+  onSetTurnOrderMode,
   onRejoinGame,
   onDismissActiveGame,
 }: OnlineLobbyProps) => {
   const navigate = useNavigate();
+  const [mode, setMode] = useState<'menu' | 'create' | 'rules' | 'join'>('menu');
   const [playerName, setPlayerName] = useState('');
   const [joinCode, setJoinCode] = useState('');
-  const [selectedPlayerCount, setSelectedPlayerCount] = useState('4');
-  const [botDifficulty, setBotDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [mode, setMode] = useState<'menu' | 'create' | 'join' | 'customRules'>('menu');
-  const [confirmedRules, setConfirmedRules] = useState<CustomRules | null>(null);
-  const [draftRules, setDraftRules] = useState<CustomRules>({ ...DEFAULT_RULES });
-  const [showBackWarning, setShowBackWarning] = useState(false);
-  const [roomRules, setRoomRules] = useState<CustomRules | null>(null);
+  const [editingRules, setEditingRules] = useState(false);
 
-  // Fetch rules for the waiting room so all players (including joiners) can see them
-  useEffect(() => {
-    if (!roomId) return;
-    fetchRoomRules(roomId).then(setRoomRules);
-  }, [roomId]);
+  const banner = activeGameInfo ?? null;
 
-  const handleCopyCode = () => {
-    if (roomCode) {
-      navigator.clipboard.writeText(roomCode);
-      toast({ title: 'Copied!', description: 'Room code copied to clipboard' });
-    }
-  };
-
-  const handleCreate = () => {
-    console.log(`[DEBUG UI] "Create Room" clicked — playerName="${playerName}", selectedPlayerCount=${selectedPlayerCount}`);
-    if (!playerName.trim()) {
-      console.log('[DEBUG UI] Create aborted — empty player name');
-      toast({ title: 'Enter your name', variant: 'destructive' });
-      return;
-    }
-    console.log(`[DEBUG UI] Calling onCreateRoom("${playerName.trim()}", ${parseInt(selectedPlayerCount)})`);
-    onCreateRoom(playerName.trim(), parseInt(selectedPlayerCount), confirmedRules ?? DEFAULT_RULES);
-  };
-
-  const handleJoin = () => {
-    console.log(`[DEBUG UI] "Join Room" clicked — playerName="${playerName}", joinCode="${joinCode}"`);
-    if (!playerName.trim()) {
-      console.log('[DEBUG UI] Join aborted — empty player name');
-      toast({ title: 'Enter your name', variant: 'destructive' });
-      return;
-    }
-    if (!joinCode.trim() || joinCode.length < 6) {
-      console.log(`[DEBUG UI] Join aborted — invalid code (length=${joinCode.length})`);
-      toast({ title: 'Enter a valid room code', variant: 'destructive' });
-      return;
-    }
-    console.log(`[DEBUG UI] Calling onJoinRoom("${joinCode.trim()}", "${playerName.trim()}")`);
-    onJoinRoom(joinCode.trim(), playerName.trim());
-  };
-
-  // In a room waiting for players
+  // ---- In a room ------------------------------------------------------------
   if (roomCode) {
+    if (editingRules) {
+      return (
+        <LobbyShell onBack={() => setEditingRules(false)} backLabel="Back to room">
+          <RulesForm
+            mode="edit"
+            initialRules={roomRules}
+            isLoading={isLoading}
+            onCancel={() => setEditingRules(false)}
+            onConfirm={(rules) => {
+              onUpdateRules?.(rules);
+              setEditingRules(false);
+            }}
+          />
+        </LobbyShell>
+      );
+    }
+
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Waiting for Players</CardTitle>
-            <div className="flex items-center justify-center gap-2 mt-4">
-              <Badge variant="outline" className="text-2xl font-mono px-4 py-2">
-                {roomCode}
-              </Badge>
-              <Button variant="ghost" size="icon" onClick={handleCopyCode}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              Share this code with friends to join
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Player slots */}
-            <div className="space-y-2">
-              {Array.from({ length: maxPlayers }, (_, index) => {
-                const player = players.find(p => p.player_index === index);
-                return (
-                  <div
-                    key={index}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${
-                      player
-                        ? player.is_ready
-                          ? 'bg-green-500/10 border-green-500/40'
-                          : 'bg-primary/10 border-primary/30'
-                        : 'bg-muted/30 border-dashed'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
-                        player
-                          ? player.is_bot
-                            ? 'bg-violet-500 text-white'
-                            : player.is_ready
-                              ? 'bg-green-500 text-white'
-                              : 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
-                      }`}>
-                        {player?.is_bot
-                          ? <Bot className="h-4 w-4" />
-                          : player?.is_ready ? <Check className="h-4 w-4" /> : index + 1}
-                      </div>
-                      <span className={player ? 'font-medium' : 'text-muted-foreground'}>
-                        {player ? player.player_name : 'Waiting...'}
-                      </span>
-                      {player && index === myPlayerIndex && (
-                        <Badge variant="secondary">You</Badge>
-                      )}
-                    </div>
-                    {player && (
-                      player.is_bot ? (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge variant="outline" className="border-violet-500/50 text-violet-600 capitalize">
-                            Bot · {player.bot_difficulty ?? 'medium'}
-                          </Badge>
-                          {isHost && onRemoveBot && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => onRemoveBot(index)}
-                              aria-label="Remove bot"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className={`flex-shrink-0 ${player.is_ready
-                            ? 'border-green-500/50 text-green-600'
-                            : 'border-yellow-500/50 text-yellow-600'}`}
-                        >
-                          {player.is_ready ? 'Ready' : 'Not Ready'}
-                        </Badge>
-                      )
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add Bot — host only, while there is a free seat */}
-            {isHost && onAddBot && players.length < maxPlayers && (
-              <div className="flex items-center gap-2">
-                <Select value={botDifficulty} onValueChange={(v) => setBotDifficulty(v as 'easy' | 'medium' | 'hard')}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">Easy — random moves</SelectItem>
-                    <SelectItem value="medium">Medium — basic strategy</SelectItem>
-                    <SelectItem value="hard">Hard — strong play</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="secondary" onClick={() => onAddBot(botDifficulty)} disabled={isLoading}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Bot
-                </Button>
-              </div>
-            )}
-
-            {/* Room Rules Summary — visible to all players before ready-up */}
-            {roomRules && (
-              <div className="p-3 rounded-lg border border-muted bg-muted/30 space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Room Rules
-                </h4>
-                <div className="space-y-1">
-                  {getActiveRulesSummary(roomRules).map((rule, i) => (
-                    <p key={i} className="text-sm text-foreground">{rule}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <Separator />
-
-            {(() => {
-              const myPlayer = players.find(p => p.player_index === myPlayerIndex);
-              const isReady = myPlayer?.is_ready ?? false;
-              const readyCount = players.filter(p => p.is_ready).length;
-              return (
-                <>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={onLeaveRoom}
-                      className="flex-1"
-                      disabled={isReady}
-                    >
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                      Leave
-                    </Button>
-                    <Button
-                      onClick={onToggleReady}
-                      disabled={isLoading}
-                      variant={isReady ? 'outline' : 'default'}
-                      className="flex-1"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : isReady ? null : (
-                        <Check className="h-4 w-4 mr-2" />
-                      )}
-                      {isReady ? 'Cancel Ready' : 'Click to Ready Up'}
-                    </Button>
-                  </div>
-
-                  <p className="text-center text-sm text-muted-foreground">
-                    {players.length < maxPlayers
-                      ? `Need ${maxPlayers - players.length} more player${maxPlayers - players.length > 1 ? 's' : ''} to start`
-                      : readyCount === maxPlayers
-                        ? 'All players ready — starting game...'
-                        : `${readyCount}/${maxPlayers} players ready`}
-                  </p>
-                </>
-              );
-            })()}
-          </CardContent>
-        </Card>
-      </div>
+      <LobbyShell width="lg">
+        <WaitingRoom
+          roomCode={roomCode}
+          players={players}
+          myPlayerIndex={myPlayerIndex}
+          capacity={maxPlayers}
+          rules={roomRules}
+          turnOrderMode={turnOrderMode}
+          isHost={isHost}
+          isLoading={isLoading}
+          onEditRules={onUpdateRules ? () => setEditingRules(true) : undefined}
+          onSetTurnOrderMode={onSetTurnOrderMode}
+          onSetPlayerOrder={onSetPlayerOrder}
+          onAddBot={onAddBot}
+          onRemoveBot={onRemoveBot}
+          onLeaveRoom={onLeaveRoom}
+          onToggleReady={onToggleReady}
+        />
+      </LobbyShell>
     );
   }
 
-  // Show loading state while checking for active game
+  // ---- Looking for a game we already have ----------------------------------
   if (isCheckingActiveGame) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
@@ -333,692 +129,81 @@ export const OnlineLobby = ({
     );
   }
 
-  // Main menu
   if (mode === 'menu') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
-        <div className="w-full max-w-md">
-          <div className="flex items-center justify-between mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/')}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <AudioSettingsButton variant="outline" />
-          </div>
-
-          {/* Active Game Reconnection Banner */}
-          {activeGameInfo && (
-            <Card className="mb-4 border-primary/50 bg-primary/5">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <RefreshCw className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm">Active Game Found</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      You have an {activeGameInfo.roomStatus === 'playing' ? 'ongoing' : 'active'} game in room{' '}
-                      <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
-                    </p>
-                    <div className="flex gap-2 mt-3">
-                      <Button
-                        size="sm"
-                        onClick={onRejoinGame}
-                        disabled={isLoading}
-                        className="flex-1"
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3 w-3 mr-1.5" />
-                        )}
-                        Rejoin Game
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={onDismissActiveGame}
-                        disabled={isLoading}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-                <Users className="h-8 w-8 text-primary" />
-              </div>
-              <CardTitle className="text-3xl font-bold">Hotel Game</CardTitle>
-              <p className="text-muted-foreground">Online Multiplayer</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Button
-                className="w-full h-14 text-lg"
-                onClick={() => setMode('create')}
-              >
-                Create Room
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-14 text-lg"
-                onClick={() => setMode('join')}
-              >
-                Join Room
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <LobbyMenu
+        activeGameInfo={banner}
+        isLoading={isLoading}
+        onCreate={() => setMode('create')}
+        onJoin={() => setMode('join')}
+        onRejoinGame={onRejoinGame}
+        onDismissActiveGame={onDismissActiveGame}
+      />
     );
   }
 
-  // Create room form
   if (mode === 'create') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
-        <div className="w-full max-w-md">
-          <div className="flex items-center justify-between mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setMode('menu')}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <AudioSettingsButton variant="outline" />
-          </div>
-          <Card>
-          <CardHeader>
-            <CardTitle>Create a Room</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Active Game Reconnection Banner */}
-            {activeGameInfo && (
-              <div className="p-3 rounded-lg border border-primary/50 bg-primary/5 mb-2">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <RefreshCw className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm">Active Game Found</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Room <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
-                    </p>
-                    <div className="flex gap-2 mt-2">
-                      <Button
-                        size="sm"
-                        onClick={onRejoinGame}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3 w-3 mr-1.5" />
-                        )}
-                        Rejoin
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={onDismissActiveGame}
-                        disabled={isLoading}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Your Name</label>
-              <Input
-                placeholder="Enter your name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={20}
-              />
-            </div>
-            <div className="space-y-3">
-              <label className="text-sm font-medium">Number of Players</label>
-              <RadioGroup 
-                value={selectedPlayerCount} 
-                onValueChange={setSelectedPlayerCount}
-                className="grid grid-cols-5 gap-2 w-full"
-              >
-                {[2, 3, 4, 5, 6].map((count) => (
-                  <div key={count} className="flex items-center">
-                    <RadioGroupItem 
-                      value={count.toString()} 
-                      id={`player-count-${count}`} 
-                      className="peer sr-only"
-                    />
-                    <Label
-                      htmlFor={`player-count-${count}`}
-                      className="flex items-center justify-center w-full h-10 rounded-lg border-2 cursor-pointer peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/10 hover:bg-muted/50 transition-colors"
-                    >
-                      {count}
-                    </Label>
-                  </div>
-                ))}
-              </RadioGroup>
-            </div>
-            <Button 
-              className="w-full"
-              onClick={handleCreate}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Create Room
-            </Button>
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() => {
-                setDraftRules(confirmedRules ? { ...confirmedRules } : { ...DEFAULT_RULES });
-                setMode('customRules');
-              }}
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              {confirmedRules && hasCustomRulesChanged(confirmedRules) ? (
-                <><Check className="h-4 w-4 mr-1" /> Edit Custom Rules</>
-              ) : (
-                'Set Custom Rules'
-              )}
-            </Button>
-
-            {/* Custom Rules Summary */}
-            {confirmedRules && (
-              <div className="p-3 rounded-lg border border-muted bg-muted/30 space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Active Custom Rules
-                </h4>
-                <div className="space-y-1">
-                  {getActiveRulesSummary(confirmedRules).map((rule, i) => (
-                    <p key={i} className="text-sm text-foreground">{rule}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-          </Card>
-        </div>
-      </div>
+      <LobbyShell onBack={() => setMode('menu')}>
+        <CreateRoomScreen
+          playerName={playerName}
+          onPlayerNameChange={setPlayerName}
+          onContinue={() => {
+            if (!playerName.trim()) {
+              toast({ title: 'Enter your name', variant: 'destructive' });
+              return;
+            }
+            setMode('rules');
+          }}
+          activeGameInfo={banner}
+          isLoading={isLoading}
+          onRejoinGame={onRejoinGame}
+          onDismissActiveGame={onDismissActiveGame}
+        />
+      </LobbyShell>
     );
   }
 
-  // Custom Rules form
-  if (mode === 'customRules') {
-    const handleBackFromRules = () => {
-      if (hasCustomRulesChanged(draftRules)) {
-        setShowBackWarning(true);
-      } else {
-        setMode('create');
-      }
-    };
-
+  if (mode === 'rules') {
+    // Confirming here creates the room — the name is already known and there is
+    // no player count, so this is the only commit point. Backing out abandons
+    // room creation entirely, which is why nothing warns about lost changes.
     return (
-      <TooltipProvider delayDuration={300}>
-        <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
-          <div className="w-full max-w-md flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleBackFromRules}
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Button>
-              <AudioSettingsButton variant="outline" />
-            </div>
-          <Card className="flex flex-col overflow-hidden flex-1 min-h-0">
-            <CardHeader>
-              <CardTitle className="text-2xl font-bold">Set Custom Rules</CardTitle>
-              <p className="text-sm text-muted-foreground">Configure game rules before creating your room</p>
-            </CardHeader>
-            <CardContent className="space-y-0 flex flex-col overflow-hidden flex-1 min-h-0">
-              <div className="space-y-1 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
-              {/* Turn Timer */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Timer className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Turn Timer</span>
-                    <InfoTooltip text="Add time pressure to each turn. When the timer expires, the turn auto-ends. You can disable it for the first 2 rounds to let players learn." />
-                  </div>
-                  <Switch
-                    checked={draftRules.turnTimerEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, turnTimerEnabled: val }))}
-                  />
-                </div>
-                {draftRules.turnTimerEnabled && (
-                  <div className="mt-3 space-y-3 pl-6">
-                    <Select
-                      value={draftRules.turnTimer}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, turnTimer: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="30">30 Seconds</SelectItem>
-                        <SelectItem value="60">60 Seconds</SelectItem>
-                        <SelectItem value="90">90 Seconds</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Disable timer for first 2 rounds</span>
-                      <Switch
-                        checked={draftRules.disableTimerFirstRounds}
-                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, disableTimerFirstRounds: val }))}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Chain Safety Threshold */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Chain Safety Threshold</span>
-                    <InfoTooltip text="Chains that reach this size become 'safe' and cannot be acquired in mergers. Lower = easier to protect, higher = more aggressive mergers." />
-                  </div>
-                  <Switch
-                    checked={draftRules.chainSafetyEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyEnabled: val }))}
-                  />
-                </div>
-                {draftRules.chainSafetyEnabled && (
-                  <div className="mt-3 pl-6">
-                    <Select
-                      value={draftRules.chainSafetyThreshold}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, chainSafetyThreshold: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Aggressive — No safe chains</SelectItem>
-                        <SelectItem value="9">9 tiles</SelectItem>
-                        <SelectItem value="11">Defensive — Safe at 11+ (Default)</SelectItem>
-                        <SelectItem value="13">Fortress — Safe at 13+</SelectItem>
-                        <SelectItem value="15">15 tiles</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Cash Visibility */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Cash Visibility</span>
-                    <InfoTooltip text="Control whether players can see each other's cash. Hidden adds mystery; visible increases negotiation. Aggregate shows total cash in game but not individual amounts." />
-                  </div>
-                  <Switch
-                    checked={draftRules.cashVisibilityEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibilityEnabled: val }))}
-                  />
-                </div>
-                {draftRules.cashVisibilityEnabled && (
-                  <div className="mt-3 pl-6">
-                    <Select
-                      value={draftRules.cashVisibility}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, cashVisibility: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="hidden">Cash hidden from opponents (Default)</SelectItem>
-                        <SelectItem value="visible">Cash visible to all players</SelectItem>
-                        <SelectItem value="aggregate">Show aggregate total only</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Bonus Payment Tiers */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Bonus Payment Tiers</span>
-                    <InfoTooltip text="Control merger bonus payouts. Standard: 10x majority / 5x minority. Flat: equal payout to all stockholders. Aggressive: 15x majority / 5x minority — makes majority position crucial." />
-                  </div>
-                  <Switch
-                    checked={draftRules.bonusTierEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, bonusTierEnabled: val }))}
-                  />
-                </div>
-                {draftRules.bonusTierEnabled && (
-                  <div className="mt-3 pl-6">
-                    <Select
-                      value={draftRules.bonusTier}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, bonusTier: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="standard">Standard — 10x / 5x (Default)</SelectItem>
-                        <SelectItem value="flat">Flat — Equal payout</SelectItem>
-                        <SelectItem value="aggressive">Aggressive — 15x / 5x</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Stock Selling */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Repeat2 className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Stock Selling</span>
-                    <InfoTooltip text="Lets players sell shares back to the bank during their buy phase, up to 3 per turn on top of what they buy. The bank pays less than it charges — that spread is the price of getting out early. Shares bought this turn can't be sold the same turn." />
-                  </div>
-                  <Switch
-                    checked={draftRules.stockSellingEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, stockSellingEnabled: val }))}
-                  />
-                </div>
-                {draftRules.stockSellingEnabled && (
-                  <div className="mt-3 pl-6">
-                    <Select
-                      value={draftRules.sellPriceFactor}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, sellPriceFactor: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="100">Full Value — 100% of market price</SelectItem>
-                        <SelectItem value="90">Broker — 90%</SelectItem>
-                        <SelectItem value="75">Standard — 75% (Default)</SelectItem>
-                        <SelectItem value="50">Fire Sale — 50%</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Board Size */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Grid3X3 className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Board Size</span>
-                    <InfoTooltip text="The standard 9×12 board is balanced for most games. A smaller 6×10 board makes for faster, more intense games with quicker mergers." />
-                  </div>
-                  <Switch
-                    checked={draftRules.boardSizeEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, boardSizeEnabled: val }))}
-                  />
-                </div>
-                {draftRules.boardSizeEnabled && (
-                  <div className="mt-3 pl-6">
-                    <Select
-                      value={draftRules.boardSize}
-                      onValueChange={(val) => {
-                        const updates: Partial<CustomRules> = { boardSize: val };
-                        if (val === '6x10' && draftRules.chainFoundingEnabled) {
-                          updates.maxChains = '5';
-                        }
-                        setDraftRules(prev => ({ ...prev, ...updates }));
-                      }}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="9x12">Standard — 9×12 (Default)</SelectItem>
-                        <SelectItem value="6x10">Small — 6×10 (Fast)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Chain Founding Rules */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Link className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Chain Founding Rules</span>
-                    <InfoTooltip text="Control how many hotel chains can exist on the board. Limiting to 5 forces earlier mergers. The founder free stock toggle determines if the player who founds a chain gets a free stock." />
-                  </div>
-                  <Switch
-                    checked={draftRules.chainFoundingEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, chainFoundingEnabled: val }))}
-                  />
-                </div>
-                {draftRules.chainFoundingEnabled && (
-                  <div className="mt-3 space-y-3 pl-6">
-                    <Select
-                      value={draftRules.maxChains}
-                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, maxChains: val }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="7">Standard — Max 7 chains (Default)</SelectItem>
-                        <SelectItem value="6">Extended — Max 6 chains</SelectItem>
-                        <SelectItem value="5">Limited — Max 5 chains</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Starting Conditions */}
-              <div className="py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Starting Conditions</span>
-                    <InfoTooltip text="Adjust how much cash and how many tiles each player starts with. Lower cash = tighter economy, more tiles = more early options." />
-                  </div>
-                  <Switch
-                    checked={draftRules.startingConditionsEnabled}
-                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startingConditionsEnabled: val }))}
-                  />
-                </div>
-                {draftRules.startingConditionsEnabled && (
-                  <div className="mt-3 space-y-3 pl-6">
-                    <div className="space-y-1.5">
-                      <span className="text-sm text-muted-foreground">Starting Cash</span>
-                      <Select
-                        value={draftRules.startingCash}
-                        onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingCash: val }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="4000">$4,000 — Tight</SelectItem>
-                          <SelectItem value="6000">$6,000 — Standard (Default)</SelectItem>
-                          <SelectItem value="8000">$8,000 — Loose</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <span className="text-sm text-muted-foreground">Starting Tiles</span>
-                      <Select
-                        value={draftRules.startingTiles}
-                        onValueChange={(val) => setDraftRules(prev => ({ ...prev, startingTiles: val }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="5">5 Tiles</SelectItem>
-                          <SelectItem value="6">6 Tiles (Default)</SelectItem>
-                          <SelectItem value="7">7 Tiles</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Start with tile on board</span>
-                      <Switch
-                        checked={draftRules.startWithTileOnBoard}
-                        onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, startWithTileOnBoard: val }))}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              </div>
-
-              <Button 
-                className="w-full mt-3 flex-shrink-0"
-                onClick={() => {
-                  setConfirmedRules({ ...draftRules });
-                  setMode('create');
-                  toast({ title: 'Custom rules confirmed!' });
-                }}
-              >
-                Confirm Rules
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Back Warning Dialog */}
-          <AlertDialog open={showBackWarning} onOpenChange={setShowBackWarning}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
-                  Discard Custom Rules?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  You have unsaved custom rules. Going back will discard your changes.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Stay</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    setShowBackWarning(false);
-                    setMode('create');
-                  }}
-                >
-                  Discard & Go Back
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          </div>
-        </div>
-      </TooltipProvider>
+      <LobbyShell onBack={() => setMode('create')}>
+        <RulesForm
+          mode="create"
+          initialRules={DEFAULT_RULES}
+          isLoading={isLoading}
+          onCancel={() => setMode('create')}
+          onConfirm={(rules) => onCreateRoom(playerName.trim(), rules)}
+        />
+      </LobbyShell>
     );
   }
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat bg-[linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url(/Background-image.jpeg)]">
-      <div className="w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setMode('menu')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-          <AudioSettingsButton variant="outline" />
-        </div>
-        <Card>
-        <CardHeader>
-          <CardTitle>Join a Room</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Active Game Reconnection Banner */}
-          {activeGameInfo && (
-            <div className="p-3 rounded-lg border border-primary/50 bg-primary/5 mb-2">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <RefreshCw className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm">Active Game Found</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Room <span className="font-mono font-medium">{activeGameInfo.roomCode}</span>
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      size="sm"
-                      onClick={onRejoinGame}
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3 mr-1.5" />
-                      )}
-                      Rejoin
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={onDismissActiveGame}
-                      disabled={isLoading}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Your Name</label>
-            <Input
-              placeholder="Enter your name"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={20}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Room Code</label>
-            <Input
-              placeholder="Enter 6-character code"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              maxLength={6}
-              className="font-mono text-center text-lg tracking-widest"
-            />
-          </div>
-          <Button 
-            className="w-full"
-            onClick={handleJoin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : null}
-            Join Room
-          </Button>
-        </CardContent>
-        </Card>
-      </div>
-    </div>
+    <LobbyShell onBack={() => setMode('menu')}>
+      <JoinRoomScreen
+        playerName={playerName}
+        onPlayerNameChange={setPlayerName}
+        joinCode={joinCode}
+        onJoinCodeChange={setJoinCode}
+        onJoin={() => {
+          if (!playerName.trim()) {
+            toast({ title: 'Enter your name', variant: 'destructive' });
+            return;
+          }
+          if (joinCode.trim().length < 6) {
+            toast({ title: 'Enter a valid room code', variant: 'destructive' });
+            return;
+          }
+          onJoinRoom(joinCode.trim(), playerName.trim());
+        }}
+        isLoading={isLoading}
+        activeGameInfo={banner}
+        onRejoinGame={onRejoinGame}
+        onDismissActiveGame={onDismissActiveGame}
+      />
+    </LobbyShell>
   );
 };

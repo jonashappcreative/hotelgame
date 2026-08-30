@@ -28,22 +28,24 @@ const chainsAt = (size: number, activeOnly?: ChainName[]) =>
   ) as Record<ChainName, { tiles: string[]; isActive: boolean }>;
 
 describe('getSellPriceFactor', () => {
-  it('returns 0 when stock selling is disabled, whatever the factor says', () => {
-    for (const factor of ['100', '90', '75', '50']) {
-      expect(getSellPriceFactor(rulesWith({ stockSellingEnabled: false, sellPriceFactor: factor }))).toBe(0);
+  // Epic 15: 'off' is a value of stockSelling, not a separate boolean, so it is
+  // the only setting that disables selling.
+  it("returns 0 only when stock selling is 'off'", () => {
+    expect(getSellPriceFactor(rulesWith({ stockSelling: 'off' }))).toBe(0);
+    for (const factor of ['100', '90', '75', '50'] as const) {
+      expect(getSellPriceFactor(rulesWith({ stockSelling: factor }))).toBeGreaterThan(0);
     }
   });
 
-  it('returns the configured fraction when enabled', () => {
-    expect(getSellPriceFactor(rulesWith({ stockSellingEnabled: true, sellPriceFactor: '75' }))).toBe(0.75);
-    expect(getSellPriceFactor(rulesWith({ stockSellingEnabled: true, sellPriceFactor: '90' }))).toBe(0.9);
-    expect(getSellPriceFactor(rulesWith({ stockSellingEnabled: true, sellPriceFactor: '50' }))).toBe(0.5);
-    expect(getSellPriceFactor(rulesWith({ stockSellingEnabled: true, sellPriceFactor: '100' }))).toBe(1);
+  it('returns the configured fraction', () => {
+    expect(getSellPriceFactor(rulesWith({ stockSelling: '75' }))).toBe(0.75);
+    expect(getSellPriceFactor(rulesWith({ stockSelling: '90' }))).toBe(0.9);
+    expect(getSellPriceFactor(rulesWith({ stockSelling: '50' }))).toBe(0.5);
+    expect(getSellPriceFactor(rulesWith({ stockSelling: '100' }))).toBe(1);
   });
 
-  it('defaults to Standard 75% but off', () => {
-    expect(DEFAULT_RULES.stockSellingEnabled).toBe(false);
-    expect(DEFAULT_RULES.sellPriceFactor).toBe('75');
+  it('defaults to off', () => {
+    expect(DEFAULT_RULES.stockSelling).toBe('off');
   });
 });
 

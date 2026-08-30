@@ -17,6 +17,8 @@ const OnlineGame = () => {
     myPlayerIndex,
     maxPlayers,
     roomStatus,
+    roomRules,
+    turnOrderMode,
     isLoading,
     isCheckingActiveGame,
     activeGameInfo,
@@ -26,6 +28,9 @@ const OnlineGame = () => {
     handleToggleReady,
     handleAddBot,
     handleRemoveBot,
+    handleUpdateRules,
+    handleSetPlayerOrder,
+    handleSetTurnOrderMode,
     isHost,
     handleRejoinGame,
     dismissActiveGame,
@@ -60,6 +65,8 @@ const OnlineGame = () => {
         players={players}
         myPlayerIndex={myPlayerIndex}
         maxPlayers={maxPlayers}
+        roomRules={roomRules}
+        turnOrderMode={turnOrderMode}
         isLoading={isLoading}
         isCheckingActiveGame={isCheckingActiveGame}
         activeGameInfo={activeGameInfo}
@@ -70,6 +77,9 @@ const OnlineGame = () => {
         isHost={isHost}
         onAddBot={handleAddBot}
         onRemoveBot={handleRemoveBot}
+        onUpdateRules={handleUpdateRules}
+        onSetPlayerOrder={handleSetPlayerOrder}
+        onSetTurnOrderMode={handleSetTurnOrderMode}
         onRejoinGame={handleRejoinGame}
         onDismissActiveGame={dismissActiveGame}
       />

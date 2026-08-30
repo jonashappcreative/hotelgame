@@ -18,7 +18,7 @@ import {
   createRoom,
   joinRoom,
   leaveRoom,
-  getRoomPlayers,
+  getRoomRoster,
   getSecurePlayerData,
   executeGameAction,
   addBot,
@@ -34,6 +34,11 @@ import {
   clearActiveGameFromStorage,
   getPublicGameState,
   getRoomStatus,
+  fetchRoomRules,
+  updateRoomRules,
+  setPlayerOrder,
+  setTurnOrderMode,
+  type TurnOrderMode,
 } from '@/utils/multiplayerService';
 import { toast } from '@/hooks/use-toast';
 
@@ -46,14 +51,22 @@ interface OnlinePlayer {
   bot_difficulty?: string | null;
 }
 
+/** Rooms are always created at capacity; the host no longer picks a count. */
+const ROOM_CAPACITY = 6;
+
 export const useOnlineGame = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [players, setPlayers] = useState<OnlinePlayer[]>([]);
   const [myPlayerIndex, setMyPlayerIndex] = useState<number | null>(null);
-  const [maxPlayers, setMaxPlayers] = useState<number>(4);
+  const [maxPlayers, setMaxPlayers] = useState<number>(ROOM_CAPACITY);
   const [roomStatus, setRoomStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
+  const [roomRules, setRoomRules] = useState<CustomRules>(DEFAULT_RULES);
+  const [turnOrderMode, setTurnOrderModeState] = useState<TurnOrderMode>('random');
+  // Told to us by the server (game_rooms.host_user_id), never inferred from a
+  // seat — the host can sit anywhere in the turn order.
+  const [isHost, setIsHost] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingActiveGame, setIsCheckingActiveGame] = useState(true);
   const [activeGameInfo, setActiveGameInfo] = useState<{
@@ -131,14 +144,21 @@ export const useOnlineGame = () => {
 
     const unsubscribe = subscribeToRoom(
       roomId,
-      (newPlayers) => {
-        setPlayers(newPlayers);
+      (roster) => {
+        setPlayers(roster.players);
+        // Seats move — a host reorder, or the shuffle at game start — so the
+        // seat is re-derived here rather than trusted from the join response.
+        if (roster.myPlayerIndex !== null) setMyPlayerIndex(roster.myPlayerIndex);
+        // Rules and turn order ride along on the same signal, so an edit by the
+        // host reaches every player without a manual refresh.
+        void refreshRoomInfo(roomId);
       },
       async (dbState) => {
         // The relay only signals a change; subscribeToRoom fetches the
         // authoritative public state and passes it here.
         try {
-          const freshPlayers = await fetchFullPlayerData(roomId);
+          const { players: freshPlayers, myPlayerIndex: freshIndex } = await fetchFullPlayerData(roomId);
+          if (freshIndex !== null) setMyPlayerIndex(freshIndex);
           if (dbState && roomCode) {
             const fullState = dbToGameState(dbState, freshPlayers, roomCode);
             setGameState(fullState);
@@ -159,99 +179,92 @@ export const useOnlineGame = () => {
     return unsubscribe;
   }, [roomId, roomCode]);
 
-  // Fetch player data securely - only own tiles visible, opponents' tiles hidden
+  // Fetch player data securely - only own tiles visible, opponents' tiles
+  // hidden. Also carries the caller's own seat, resolved server-side.
   const fetchFullPlayerData = async (rId: string) => {
     return await getSecurePlayerData(rId);
   };
 
-  const handleCreateRoom = useCallback(async (playerName: string, playerCount: number = 4, rules: CustomRules = DEFAULT_RULES) => {
-    console.log(`[DEBUG HOOK] handleCreateRoom called — playerName="${playerName}", playerCount=${playerCount}`);
+  // Pull the room's rules, turn-order mode and host flag in one call. Host
+  // status comes from the server (game_rooms.host_user_id) rather than being
+  // inferred from a seat, so it survives any reseat.
+  const refreshRoomInfo = useCallback(async (rId: string) => {
+    const room = await getRoomStatus(rId);
+    if (!room) return null;
+    setMaxPlayers(room.max_players);
+    setRoomRules(room.customRules);
+    setTurnOrderModeState(room.turnOrderMode);
+    setIsHost(room.isHost);
+    return room;
+  }, []);
+
+  const handleCreateRoom = useCallback(async (playerName: string, rules: CustomRules = DEFAULT_RULES) => {
     setIsLoading(true);
     try {
-      const result = await createRoom(playerCount, rules);
+      // Confirming the rules *is* room creation since Epic 15 — there is no
+      // separate "Create Room" step and no player count to answer for.
+      const result = await createRoom(rules);
       if (!result) {
-        console.error('[DEBUG HOOK] handleCreateRoom — createRoom() returned null');
         toast({ title: 'Error', description: 'Failed to create room', variant: 'destructive' });
         return;
       }
-      console.log(`[DEBUG HOOK] handleCreateRoom — room created: code=${result.roomCode}, id=${result.roomId}`);
 
-      console.log(`[DEBUG HOOK] handleCreateRoom — now joining own room as "${playerName}"...`);
       const joinResult = await joinRoom(result.roomCode, playerName);
       if (!joinResult.success) {
-        console.error(`[DEBUG HOOK] handleCreateRoom — joinRoom() FAILED: ${joinResult.error}`);
         toast({ title: 'Error', description: joinResult.error, variant: 'destructive' });
         return;
       }
-      console.log(`[DEBUG HOOK] handleCreateRoom — joined own room at index ${joinResult.playerIndex}`);
 
       setRoomId(result.roomId);
       setRoomCode(result.roomCode);
-      setMaxPlayers(result.maxPlayers);
       setMyPlayerIndex(joinResult.playerIndex!);
 
-      const currentPlayers = await getRoomPlayers(result.roomId);
-      setPlayers(currentPlayers);
-      console.log(`[DEBUG HOOK] handleCreateRoom — COMPLETE. Room ${result.roomCode} ready with ${currentPlayers.length} player(s)`);
+      const roster = await getRoomRoster(result.roomId);
+      setPlayers(roster.players);
+      if (roster.myPlayerIndex !== null) setMyPlayerIndex(roster.myPlayerIndex);
+      await refreshRoomInfo(result.roomId);
 
       toast({ title: 'Room Created', description: `Share code: ${result.roomCode}` });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshRoomInfo]);
 
   const handleJoinRoom = useCallback(async (code: string, playerName: string) => {
-    console.log(`[DEBUG HOOK] handleJoinRoom called — code="${code}", playerName="${playerName}"`);
     setIsLoading(true);
     try {
       const result = await joinRoom(code.toUpperCase(), playerName);
       if (!result.success) {
-        console.error(`[DEBUG HOOK] handleJoinRoom — joinRoom() FAILED: ${result.error}`);
         toast({ title: 'Error', description: result.error, variant: 'destructive' });
         return;
       }
-      console.log(`[DEBUG HOOK] handleJoinRoom — joinRoom() succeeded: room_id=${result.roomId}, playerIndex=${result.playerIndex}, maxPlayers=${result.maxPlayers}`);
 
       setRoomId(result.roomId!);
       setRoomCode(code.toUpperCase());
-      setMaxPlayers(result.maxPlayers || 4);
       setMyPlayerIndex(result.playerIndex!);
 
-      const currentPlayers = await getRoomPlayers(result.roomId!);
-      setPlayers(currentPlayers);
-      console.log(`[DEBUG HOOK] handleJoinRoom — fetched ${currentPlayers.length} players in room`);
+      const roster = await getRoomRoster(result.roomId!);
+      setPlayers(roster.players);
+      if (roster.myPlayerIndex !== null) setMyPlayerIndex(roster.myPlayerIndex);
 
-      // Check if game already started
-      console.log(`[DEBUG HOOK] handleJoinRoom — checking room status...`);
-      const room = await getRoomStatus(result.roomId!);
-
-      if (room) {
-        console.log(`[DEBUG HOOK] handleJoinRoom — room status="${room.status}", max_players=${room.max_players}`);
-        setMaxPlayers(room.max_players || 4);
-        if (room.status === 'playing') {
-          console.log('[DEBUG HOOK] handleJoinRoom — game already in progress, fetching game state...');
-          setRoomStatus('playing');
-          // Fetch game state from public view
-          const dbState = await getPublicGameState(result.roomId!);
-
-          if (dbState) {
-            const fullPlayers = await fetchFullPlayerData(result.roomId!);
-            const fullState = dbToGameState(dbState, fullPlayers, code.toUpperCase());
-            setGameState(fullState);
-            console.log('[DEBUG HOOK] handleJoinRoom — game state loaded for in-progress game');
-          }
+      const room = await refreshRoomInfo(result.roomId!);
+      if (room?.status === 'playing') {
+        setRoomStatus('playing');
+        const dbState = await getPublicGameState(result.roomId!);
+        if (dbState) {
+          const { players: fullPlayers, myPlayerIndex: seat } = await fetchFullPlayerData(result.roomId!);
+          if (seat !== null) setMyPlayerIndex(seat);
+          setGameState(dbToGameState(dbState, fullPlayers, code.toUpperCase()));
         }
       }
 
-      console.log(`[DEBUG HOOK] handleJoinRoom — COMPLETE. "${playerName}" is in room ${code.toUpperCase()}`);
       toast({ title: 'Joined Room', description: `Welcome, ${playerName}!` });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshRoomInfo]);
 
   const handleLeaveRoom = useCallback(async () => {
-    console.log(`[DEBUG HOOK] handleLeaveRoom called — roomId=${roomId}`);
     if (!roomId) return;
     await leaveRoom(roomId);
     setRoomId(null);
@@ -260,7 +273,9 @@ export const useOnlineGame = () => {
     setMyPlayerIndex(null);
     setGameState(null);
     setRoomStatus('waiting');
-    console.log('[DEBUG HOOK] handleLeaveRoom — state reset complete');
+    setRoomRules(DEFAULT_RULES);
+    setTurnOrderModeState('random');
+    setIsHost(false);
   }, [roomId]);
 
   const handleToggleReady = useCallback(async () => {
@@ -281,18 +296,20 @@ export const useOnlineGame = () => {
         const dbState = await getPublicGameState(roomId);
 
         if (dbState && roomCode) {
-          const fullPlayers = await fetchFullPlayerData(roomId);
-          const fullState = dbToGameState(dbState, fullPlayers, roomCode);
-          setGameState(fullState);
+          const { players: fullPlayers, myPlayerIndex: seat } = await fetchFullPlayerData(roomId);
+          if (seat !== null) setMyPlayerIndex(seat);
+          setGameState(dbToGameState(dbState, fullPlayers, roomCode));
         }
 
         setRoomStatus('playing');
-        toast({ title: 'Game Started!', description: `${players[0]?.player_name}'s turn` });
+        // Seats may have just been shuffled, so name whoever now holds seat 0.
+        const firstUp = (await getRoomRoster(roomId)).players.find(p => p.player_index === 0);
+        toast({ title: 'Game Started!', description: `${firstUp?.player_name ?? 'First player'}'s turn` });
       }
     } finally {
       setIsLoading(false);
     }
-  }, [roomId, roomCode, players]);
+  }, [roomId, roomCode]);
 
   const handleAddBot = useCallback(async (difficulty: 'easy' | 'medium' | 'hard') => {
     if (!roomId) return;
@@ -302,7 +319,7 @@ export const useOnlineGame = () => {
       return;
     }
     // The relay broadcasts players_changed, but refresh immediately too.
-    setPlayers(await getRoomPlayers(roomId));
+    setPlayers((await getRoomRoster(roomId)).players);
   }, [roomId]);
 
   const handleRemoveBot = useCallback(async (playerIndex: number) => {
@@ -312,7 +329,7 @@ export const useOnlineGame = () => {
       toast({ title: 'Error', description: result.error || 'Failed to remove bot', variant: 'destructive' });
       return;
     }
-    setPlayers(await getRoomPlayers(roomId));
+    setPlayers((await getRoomRoster(roomId)).players);
   }, [roomId]);
 
   // Resume bot turns paused by the server's per-invocation budget. Server-side
@@ -342,7 +359,8 @@ export const useOnlineGame = () => {
     const dbState = await getPublicGameState(roomId);
 
     if (dbState) {
-      const fullPlayers = await fetchFullPlayerData(roomId);
+      const { players: fullPlayers, myPlayerIndex: seat } = await fetchFullPlayerData(roomId);
+      if (seat !== null) setMyPlayerIndex(seat);
       const fullState = dbToGameState(dbState, fullPlayers, roomCode);
       setGameState(fullState);
     }
@@ -628,28 +646,25 @@ export const useOnlineGame = () => {
 
       setRoomId(result.roomId!);
       setRoomCode(activeGameInfo.roomCode);
-      setMaxPlayers(result.maxPlayers || 4);
       setMyPlayerIndex(result.playerIndex!);
 
-      const currentPlayers = await getRoomPlayers(result.roomId!);
-      setPlayers(currentPlayers);
+      // The seat comes from the roster, not the join response: if the room was
+      // reseated (or shuffled at start) while we were away, the cached index
+      // would be someone else's.
+      const roster = await getRoomRoster(result.roomId!);
+      setPlayers(roster.players);
+      if (roster.myPlayerIndex !== null) setMyPlayerIndex(roster.myPlayerIndex);
 
-      // Check room status and load game state if playing
-      const room = await getRoomStatus(result.roomId!);
-
+      const room = await refreshRoomInfo(result.roomId!);
       if (room) {
-        setMaxPlayers(room.max_players || 4);
+        setRoomStatus(room.status);
         if (room.status === 'playing') {
-          setRoomStatus('playing');
           const dbState = await getPublicGameState(result.roomId!);
-
           if (dbState) {
-            const fullPlayers = await fetchFullPlayerData(result.roomId!);
-            const fullState = dbToGameState(dbState, fullPlayers, activeGameInfo.roomCode);
-            setGameState(fullState);
+            const { players: fullPlayers, myPlayerIndex: seat } = await fetchFullPlayerData(result.roomId!);
+            if (seat !== null) setMyPlayerIndex(seat);
+            setGameState(dbToGameState(dbState, fullPlayers, activeGameInfo.roomCode));
           }
-        } else {
-          setRoomStatus(room.status as 'waiting' | 'playing' | 'finished');
         }
       }
 
@@ -658,7 +673,50 @@ export const useOnlineGame = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [activeGameInfo]);
+  }, [activeGameInfo, refreshRoomInfo]);
+
+  // ---- Waiting-room configuration (host only; the server enforces that) -----
+
+  const handleUpdateRules = useCallback(async (rules: CustomRules) => {
+    if (!roomId) return;
+    const result = await updateRoomRules(roomId, rules);
+    if (!result.success) {
+      toast({ title: 'Could not save rules', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setRoomRules(rules);
+    toast({ title: 'Rules updated' });
+  }, [roomId]);
+
+  const handleSetPlayerOrder = useCallback(async (playerIds: string[]) => {
+    if (!roomId) return;
+    // Show the new order straight away; the broadcast confirms it.
+    setPlayers((prev) => playerIds
+      .map((id, index) => {
+        const player = prev.find((p) => p.id === id);
+        return player ? { ...player, player_index: index } : null;
+      })
+      .filter((p): p is OnlinePlayer => p !== null));
+
+    const result = await setPlayerOrder(roomId, playerIds);
+    if (!result.success) {
+      toast({ title: 'Could not reorder players', description: result.error, variant: 'destructive' });
+    }
+    const roster = await getRoomRoster(roomId);
+    setPlayers(roster.players);
+    if (roster.myPlayerIndex !== null) setMyPlayerIndex(roster.myPlayerIndex);
+    setTurnOrderModeState('manual');
+  }, [roomId]);
+
+  const handleSetTurnOrderMode = useCallback(async (mode: TurnOrderMode) => {
+    if (!roomId) return;
+    setTurnOrderModeState(mode);
+    const result = await setTurnOrderMode(roomId, mode);
+    if (!result.success) {
+      toast({ title: 'Could not change turn order', description: result.error, variant: 'destructive' });
+      await refreshRoomInfo(roomId);
+    }
+  }, [roomId, refreshRoomInfo]);
 
   // Dismiss active game notification
   const dismissActiveGame = useCallback(() => {
@@ -676,7 +734,9 @@ export const useOnlineGame = () => {
     roomStatus,
     isLoading,
     isMyTurn: gameState?.currentPlayerIndex === myPlayerIndex,
-    isHost: myPlayerIndex === 0,
+    roomRules,
+    turnOrderMode,
+    isHost,
 
     // Reconnection state
     isCheckingActiveGame,
@@ -689,6 +749,9 @@ export const useOnlineGame = () => {
     handleToggleReady,
     handleAddBot,
     handleRemoveBot,
+    handleUpdateRules,
+    handleSetPlayerOrder,
+    handleSetTurnOrderMode,
 
     // Reconnection actions
     handleRejoinGame,

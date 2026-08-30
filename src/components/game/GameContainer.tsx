@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
-import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
+import { GameState, ChainName, MergerStockDecision, TileId, DEFAULT_RULES } from '@/types/game';
+import { getTurnTimerSeconds } from '@/types/rules-normalize';
 import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
@@ -99,12 +100,11 @@ export const GameContainer = ({
   const isMyMergerTurn = gameState.phase === 'merger_handle_stock' &&
     gameState.merger?.currentPlayerIndex === myPlayerIndex;
 
-  // Derive cash visibility: local games always show all cash; online games follow rules
+  // Derive cash visibility: local games always show all cash; online games
+  // follow the room's rules, which default to 'visible' since Epic 15.
   const cashVisibility: 'hidden' | 'visible' | 'aggregate' = (() => {
     if (!isOnlineMode) return 'visible';
-    const rules = gameState.rulesSnapshot;
-    if (!rules?.cashVisibilityEnabled) return 'hidden';
-    return (rules.cashVisibility || 'hidden') as 'hidden' | 'visible' | 'aggregate';
+    return gameState.rulesSnapshot?.cashVisibility ?? DEFAULT_RULES.cashVisibility;
   })();
 
   // Check if player has unplayable tiles
@@ -441,11 +441,12 @@ export const GameContainer = ({
                 isMyTurn &&
                 isOnlineMode &&
                 gameState.phase === 'place_tile' &&
-                rules?.turnTimerEnabled === true &&
+                rules != null &&
+                getTurnTimerSeconds(rules) !== null &&
                 !(rules.disableTimerFirstRounds && roundNumber < 2) &&
                 onAutoEndTurn !== undefined;
               if (!showTimer) return null;
-              const durationSecs = parseInt(rules!.turnTimer ?? '60');
+              const durationSecs = getTurnTimerSeconds(rules!)!;
               return (
                 <TurnTimer
                   key={gameState.currentPlayerIndex}

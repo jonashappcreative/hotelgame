@@ -10,14 +10,19 @@ import {
   CHAIN_SIZE_BRACKETS,
   STOCKS_PER_CHAIN,
   MAX_STOCKS_PER_TURN,
-  SAFE_CHAIN_SIZE,
   END_GAME_CHAIN_SIZE,
   CustomRules,
   DEFAULT_RULES,
-  ELIGIBLE_CHAINS_5,
-  ELIGIBLE_CHAINS_6,
-  ELIGIBLE_CHAINS_7,
 } from '@/types/game';
+import {
+  normalizeRules,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getMaxChains,
+  getBonusTier,
+  getSellPriceFactor as getSellPriceFactorFromRules,
+} from '@/types/rules-normalize';
 
 const ALL_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
@@ -85,11 +90,10 @@ export const getStockPrice = (chainName: ChainName, size: number): number => {
 
 // Fraction of market price the bank pays back. 0 means the Stock Selling rule
 // is off; a factor of 1 ("Full Value") is a legitimate, spread-free setting.
-// Mirror of getSellPriceFactor in server/lib/rules.ts — keep in sync.
-export const getSellPriceFactor = (rules: CustomRules | null): number => {
-  if (!rules?.stockSellingEnabled) return 0;
-  return parseInt(rules.sellPriceFactor) / 100;
-};
+// The rule itself lives in src/types/rules-normalize.ts, which the server reads
+// too — this wrapper only adds the "no rules yet" case the UI can hit.
+export const getSellPriceFactor = (rules: CustomRules | null): number =>
+  rules ? getSellPriceFactorFromRules(rules) : 0;
 
 // What the bank pays for one share, rounded down to the nearest $10 so the
 // figure always reads like a price on a chain card.
@@ -146,27 +150,20 @@ export const getStockholderRankings = (
 };
 
 // Initialize game state
-export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAULT_RULES): GameState => {
+export const initializeGame = (playerNames: string[], rawRules: CustomRules = DEFAULT_RULES): GameState => {
   if (playerNames.length !== 4) {
     throw new Error('Game requires exactly 4 players');
   }
 
-  // Derive board dimensions from rules (Story 7)
-  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
-  const colsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
+  // A caller may still hand us a pre-Epic-15 rules blob (a rules_snapshot read
+  // back from the DB, say), so normalise before reading anything off it.
+  const rules = normalizeRules(rawRules);
+
+  const { boardRows, boardColsCount: colsCount } = getBoardDimensions(rules);
   const boardCols = ALL_COLS.slice(0, colsCount);
-
-  // Derive eligible chains from rules (Story 8)
-  const maxChainsNum = rules.chainFoundingEnabled ? parseInt(rules.maxChains) : 7;
-  const eligibleChains: ChainName[] =
-    maxChainsNum === 5 ? ELIGIBLE_CHAINS_5 :
-    maxChainsNum === 6 ? ELIGIBLE_CHAINS_6 :
-    ELIGIBLE_CHAINS_7;
-
-  // Derive bonus tier from rules (Story 6)
-  const bonusTier = (rules.bonusTierEnabled
-    ? rules.bonusTier
-    : 'standard') as 'standard' | 'flat' | 'aggressive';
+  const eligibleChains: ChainName[] = getEligibleChains(rules);
+  const maxChainsNum = getMaxChains(rules);
+  const bonusTier = getBonusTier(rules);
 
   // Initialize tile bag
   const tileBag = shuffle(generateAllTiles(boardRows, colsCount));
@@ -257,9 +254,11 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     winner: null,
     endGameVotes: [],
     roundNumber: 0,
-    rulesSnapshot: null,
+    // Carry the rules the game was built from, and derive chain safety from
+    // them rather than pinning it at 11 — the default is now "no safe chains".
+    rulesSnapshot: rules,
     turnDeadlineEpoch: null,
-    safeChainSize: SAFE_CHAIN_SIZE,
+    safeChainSize: getSafeChainSize(rules),
     bonusTier,
     boardRows,
     boardCols,

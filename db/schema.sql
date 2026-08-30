@@ -72,6 +72,29 @@ CREATE TABLE IF NOT EXISTS game_rooms (
   CONSTRAINT valid_player_count CHECK (max_players >= 2 AND max_players <= 6)
 );
 
+-- Epic 15 (added post-launch; see db/migrations/2026-08-30-epic15-host-and-turn-order.sql).
+--   host_user_id    — the room's owner. Host privilege used to be derived from
+--                     player_index = 0, which is what pinned the host to the
+--                     first seat; it is now explicit so the host can sit
+--                     anywhere in the turn order.
+--   turn_order_mode — 'random' shuffles all seats at game start, 'manual' means
+--                     the host arranged them by hand.
+-- Since Epic 15 max_players is pure capacity, always 6 — the host no longer
+-- picks a player count, and a room starts at 2+ players with all humans ready.
+-- Idempotent so this file can be re-applied to an already-provisioned DB.
+ALTER TABLE game_rooms ADD COLUMN IF NOT EXISTS host_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE game_rooms ADD COLUMN IF NOT EXISTS turn_order_mode VARCHAR(10) NOT NULL DEFAULT 'random';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'valid_turn_order_mode') THEN
+    ALTER TABLE game_rooms
+      ADD CONSTRAINT valid_turn_order_mode CHECK (turn_order_mode IN ('random', 'manual'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_game_rooms_host_user_id ON game_rooms (host_user_id);
+
 DROP TRIGGER IF EXISTS update_game_rooms_updated_at ON game_rooms;
 CREATE TRIGGER update_game_rooms_updated_at
   BEFORE UPDATE ON game_rooms

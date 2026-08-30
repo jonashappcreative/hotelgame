@@ -174,7 +174,7 @@ describe('GameContainer — End Turn with stock selling enabled', () => {
 
   const sellableState = () => {
     const state = makeGameState({
-      rulesSnapshot: { ...DEFAULT_RULES, stockSellingEnabled: true, sellPriceFactor: '75' },
+      rulesSnapshot: { ...DEFAULT_RULES, stockSelling: '75' },
     });
     state.players[0].cash = 100; // can't afford Sackson at $200
     state.players[0].stocks.sackson = 2;

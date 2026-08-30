@@ -15,12 +15,17 @@
     "declaration": false,
     "sourceMap": false
   },
+  // The rules model is shared with the browser engine: src/types/game.ts and
+  // src/types/rules-normalize.ts are compiled into dist/src/types/ alongside
+  // dist/server/, which is what server/lib/rules.ts's relative import resolves
+  // to at runtime. Nothing else under src/ is part of the backend build.
   "include": [
-    "../server/**/*"
+    "../server/**/*",
+    "../src/types/game.ts",
+    "../src/types/rules-normalize.ts"
   ],
   "exclude": [
     "../node_modules",
-    "../dist",
-    "../src"
+    "../dist"
   ]
 }
