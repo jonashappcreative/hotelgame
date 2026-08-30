@@ -1,15 +1,20 @@
-# Last tested: 2026-08-30
-name: CI / Deploy
+# Production deploy. Fires only on pushes to main (i.e. an approved PR merge).
+# All quality gates live in ci.yml and must pass before a PR can be merged —
+# see the branch protection rules documented in docs/CI_CD.md.
+name: Deploy
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+
+# Never run two deploys at once; a newer merge waits rather than racing.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  ci:
-    name: Build
+  verify:
+    name: Verify build
     runs-on: ubuntu-latest
 
     steps:
@@ -29,20 +34,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Lint skipped — 117 pre-existing errors; add back once codebase is cleaned up
-      # - name: Lint
-      #   run: npm run lint
-
-      # Uncomment once vitest worker-spawn bug is fixed (pin to vitest 4.0.0 or 3.x)
-      # - name: Test
-      #   run: npm run test:run
-
   deploy:
     name: Deploy to Coolify
     runs-on: ubuntu-latest
-    needs: ci
-    # Only deploy on pushes to main, not on PRs
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
 
     steps:
       - name: Trigger Coolify deploy
@@ -53,3 +48,46 @@ jobs:
           echo "HTTP status: $STATUS"
           echo "Response body: $(cat /tmp/coolify_response.txt)"
           echo "$STATUS" | grep -q "^2" || exit 1
+
+      - name: Wait for the new build to come up
+        run: sleep 90
+
+      - name: Health check
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://hotelgame.jonashapp.com/health; then
+              echo "Healthy."
+              exit 0
+            fi
+            echo "Attempt $i failed; retrying in 30s..."
+            sleep 30
+          done
+          echo "::error::Health check never passed after the deploy."
+          exit 1
+
+  tag:
+    name: Tag release
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The release-guard job on the PR already proved this version is new and
+      # matches the changelog, so main's version is the release to tag.
+      - name: Create version tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "Tag v$VERSION already exists — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+          echo "Tagged v$VERSION."
