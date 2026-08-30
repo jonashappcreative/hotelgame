@@ -47,7 +47,8 @@ jobs:
       - name: Trigger Coolify deploy
         run: |
           STATUS=$(curl -s -o /tmp/coolify_response.txt -w "%{http_code}" \
-            -X GET "${{ secrets.COOLIFY_WEBHOOK_URL }}")
+            -X GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
           echo "HTTP status: $STATUS"
           echo "Response body: $(cat /tmp/coolify_response.txt)"
           echo "$STATUS" | grep -q "^2" || exit 1
