@@ -1,10 +1,9 @@
-// Shared CORS handling for Netlify Functions.
+// Shared CORS handling for the API handlers in server/api/.
 // Allowed origins are configurable via the ALLOWED_ORIGINS env var
 // (comma-separated); falls back to the production site + local dev ports.
 
 const DEFAULT_ORIGINS = [
   'https://hotelgame.jonashapp.com',
-  'https://acquiregame.netlify.app',
   'http://localhost:8080',
   'http://localhost:5173',
   'http://localhost:4173',

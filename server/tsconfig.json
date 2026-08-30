@@ -16,8 +16,7 @@
     "sourceMap": false
   },
   "include": [
-    "../server/**/*",
-    "../netlify/functions/**/*"
+    "../server/**/*"
   ],
   "exclude": [
     "../node_modules",

@@ -38,7 +38,7 @@ The tag is created by CI *after* a healthy deploy, so a tag means "this shipped 
 
 ### The `any` backlog
 
-`@typescript-eslint/no-explicit-any` is set to **warn**, not error (`eslint.config.js`). ~115 pre-existing `any`s remain, mostly untyped DB rows and game-state payloads in `netlify/functions/`. They surface in every CI run but don't fail it.
+`@typescript-eslint/no-explicit-any` is set to **warn**, not error (`eslint.config.js`). ~115 pre-existing `any`s remain, mostly untyped DB rows and game-state payloads in `server/`. They surface in every CI run but don't fail it.
 
 This is a ratchet, not an amnesty: everything else lints at error level, so no *new* error-level violation can land while the `any`s get retyped incrementally. When the count reaches zero, promote the rule back to `"error"`.
 

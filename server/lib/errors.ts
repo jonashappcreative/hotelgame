@@ -1,13 +1,13 @@
 // Shared 500 handler: structured logging + optional detail surfacing.
 //
-// Every function's catch block returns a deliberately generic message to the
+// Every handler's catch block returns a deliberately generic message to the
 // browser ("An internal error occurred") so we never leak DB/internal detail
-// to users. The *real* cause is logged here and shows up in the Netlify
-// function logs (Site → Logs → Functions, or `netlify functions:log <name>`).
+// to users. The *real* cause is logged here and shows up in the backend
+// container logs (`docker compose logs -f backend` on the Hetzner host).
 //
-// While diagnosing, set the Netlify env var DEBUG_ERRORS=1 to also include the
-// cause (message + Postgres error code) in the HTTP response body, so you can
-// read it straight from the browser/Network tab. Unset it when you're done.
+// While diagnosing, set DEBUG_ERRORS=1 in the backend environment to also
+// include the cause (message + Postgres error code) in the HTTP response body,
+// so you can read it straight from the browser/Network tab. Unset it after.
 
 import { jsonResponse } from './cors';
 
@@ -18,7 +18,7 @@ export function serverError(
 ): Response {
   const e = err as { message?: string; code?: string; name?: string; stack?: string };
 
-  // Logged to the Netlify function log (not shown to the browser).
+  // Logged to the backend container log (not shown to the browser).
   console.error(`${label}:`, {
     name: e?.name,
     message: e?.message,

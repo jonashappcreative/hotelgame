@@ -1,5 +1,5 @@
 // =============================================================================
-// game-action — Netlify Function (Node 20, Functions v2 / Web Request API)
+// game-action — the game engine endpoint (Node 20, Web Request/Response API)
 // =============================================================================
 // Ported from supabase/functions/game-action/index.ts (Deno). The game logic is
 // identical; only the infrastructure boundary changed:
@@ -8,14 +8,14 @@
 //   * after each mutation        ->  notifyWsServer() fans out to the Hetzner relay
 // =============================================================================
 
-import { db } from './_shared/db';
-import { verifyAuth } from './_shared/auth';
-import { getCorsHeaders } from './_shared/cors';
-import { notifyWsServer } from './_shared/ws';
-import { decideBotMove, type BotDifficulty } from './_shared/bot';
+import { db } from '../lib/db';
+import { verifyAuth } from '../lib/auth';
+import { getCorsHeaders } from '../lib/cors';
+import { notifyWsServer } from '../lib/ws';
+import { decideBotMove, type BotDifficulty } from '../lib/bot';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
-// _shared/rules.ts so the bot (_shared/bot.ts) evaluates moves with the exact
+// ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
 // same logic this engine enforces.
 import {
   type ChainName,
@@ -36,7 +36,7 @@ import {
   checkGameEnd,
   getStockholderRankings,
   calculateFinalScores,
-} from './_shared/rules';
+} from '../lib/rules';
 
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |

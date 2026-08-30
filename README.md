@@ -69,20 +69,21 @@ src/                    Frontend
   utils/                  gameLogic (rules engine) · multiplayerService
   data/versionHistory.ts  Changelog rendered in the footer and story page
 
-netlify/functions/      Backend request handlers. NOT a live Netlify service —
-                        the directory name is a leftover from the old hosting.
-                        server/server.ts imports these and mounts them on Hono.
-  _shared/                db · auth · rules engine · AI bot · Socket.IO bridge
+server/                 Backend — one process, entered at server.ts
+  server.ts               Mounts the routes, attaches Socket.IO, serves dist/,
+                          runs the idle-room cleanup timer
+  api/                    Route handlers, one file per endpoint. Plain
+                          (Request) => Response functions, no framework types
+  lib/                    db · auth · rules engine · AI bot · CORS · errors ·
+                          Socket.IO bridge
 
-server/server.ts        The actual backend entrypoint: mounts the handlers,
-                        attaches Socket.IO, serves the built frontend
 db/schema.sql           Database schema (loaded on first container start)
 docs/                   Architecture, deployment, CI/CD, audits
 ```
 
-> **Naming caveat:** `netlify/functions/` contains ordinary request handlers
-> compiled into the Hetzner backend. Nothing about it is Netlify-specific
-> anymore — the folder simply hasn't been renamed yet.
+Handlers are ordinary `(Request) => Response` functions rather than Hono
+handlers, so they stay portable and are trivial to unit-test — `server.ts` wraps
+each one when mounting it.
 
 ## Getting started
 

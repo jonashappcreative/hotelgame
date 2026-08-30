@@ -1,5 +1,5 @@
 // =============================================================================
-// rooms — Netlify Function: room + player + game-state data operations
+// rooms — room + player + game-state data operations
 // =============================================================================
 // Dispatches on `op`. Replaces all the direct `supabase.from(...)` reads/writes
 // the browser used to perform. Every op requires a valid JWT; data returned to
@@ -8,11 +8,11 @@
 // =============================================================================
 
 import { randomUUID } from 'node:crypto';
-import { db, query } from './_shared/db';
-import { verifyAuth } from './_shared/auth';
-import { getCorsHeaders, jsonResponse } from './_shared/cors';
-import { serverError } from './_shared/errors';
-import { notifyWsServer } from './_shared/ws';
+import { db, query } from '../lib/db';
+import { verifyAuth } from '../lib/auth';
+import { getCorsHeaders, jsonResponse } from '../lib/cors';
+import { serverError } from '../lib/errors';
+import { notifyWsServer } from '../lib/ws';
 
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_ACTIVE_ROOMS_PER_USER = 5;

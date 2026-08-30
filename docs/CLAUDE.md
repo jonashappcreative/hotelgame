@@ -3,8 +3,9 @@
 ## Project Context
 - This is an online multiplayer board game (Hotel Game)
 - **Everything runs on one Hetzner server.** There is no Netlify deploy and no
-  Supabase anymore. (The `netlify/functions/` directory is just shared backend
-  source code compiled into the Hetzner backend — not a live Netlify service.)
+  Supabase anymore. The backend lives entirely under `server/`: `server.ts` is
+  the entrypoint, `server/api/` holds one handler per endpoint, and `server/lib/`
+  holds the shared modules (db, auth, rules, bot, CORS, errors, Socket.IO).
 - Backend stack (all on Hetzner, in Docker):
   - API + Auth: Hono server (`server/server.ts`), custom JWT signed/verified with `jose`
   - Realtime: Socket.io served by that same backend on `:3000`
