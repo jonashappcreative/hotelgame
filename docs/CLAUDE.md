@@ -29,9 +29,13 @@
 
 ## Branching and releases
 - **Full process: [`docs/CI_CD.md`](./CI_CD.md).** Read it before promoting anything.
-- The flow is `feature/* → dev → staging → main`. A push to `main` auto-deploys
+- The flow is `feature/* → staging → main`. A push to `main` auto-deploys
   to production, so `main` is only ever reached by merging an approved PR from
   `staging`, once staging has been tested locally.
+- `staging` is the single pre-production branch: features integrate there and it
+  is what gets promoted. Use a PR into it for anything substantive; a typo or a
+  doc tweak can be pushed straight to it. `main` and `staging` both refuse direct
+  pushes via ruleset, so a release commit needs its own `release/vX.Y.Z` branch.
 - **Never push directly to `main`.** A PreToolUse hook
   (`.claude/hooks/block-main-push.sh`) blocks it. That is intentional — don't
   route around it. If Jonas wants a direct push, he removes the hook himself.
