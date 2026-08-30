@@ -36,6 +36,8 @@ const makeGameState = (players: PlayerState[], overrides: Partial<GameState> = {
   merger: null,
   mergerAdjacentChains: null,
   stocksPurchasedThisTurn: 0,
+  stocksSoldThisTurn: 0,
+  chainsBoughtThisTurn: [],
   gameLog: [],
   winner: null,
   endGameVotes: [],
@@ -43,6 +45,11 @@ const makeGameState = (players: PlayerState[], overrides: Partial<GameState> = {
   rulesSnapshot: null,
   turnDeadlineEpoch: null,
   safeChainSize: 11,
+  bonusTier: 'standard',
+  boardRows: 9,
+  boardCols: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'],
+  maxChains: 7,
+  eligibleChains: ALL_CHAINS,
   ...overrides,
 });
 

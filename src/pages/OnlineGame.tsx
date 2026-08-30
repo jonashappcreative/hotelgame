@@ -36,6 +36,7 @@ const OnlineGame = () => {
     handlePayMergerBonuses,
     handleMergerStockChoice,
     handleBuyStocks,
+    handleSellStocks,
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
@@ -88,6 +89,7 @@ const OnlineGame = () => {
       onPayMergerBonuses={handlePayMergerBonuses}
       onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
+      onSellStocks={handleSellStocks}
       onEndTurn={handleSkipBuyStock}
       onEndGameVote={handleEndGameVote}
       onNewGame={handleNewGame}

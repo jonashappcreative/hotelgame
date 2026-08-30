@@ -14,7 +14,11 @@ import {
   growChain,
   buyStocks,
   canBuyMoreStock,
+  canSellStock,
   getRemainingStockAllowance,
+  getRemainingSellAllowance,
+  getSellPrice,
+  getSellPriceFactor,
   drawTile,
   discardTile,
   endTurn,
@@ -940,6 +944,175 @@ describe('gameLogic', () => {
 
       expect(canBuyMoreStock(gameState, 1)).toBe(false);
       expect(canBuyMoreStock(gameState, 0)).toBe(true);
+    });
+  });
+
+  // Stock Selling (Epic 14): selling has its own per-turn budget and its own
+  // gate on the automatic turn end.
+  describe('getSellPriceFactor / getSellPrice', () => {
+    it('is 0 with no rules snapshot, or with the rule off', () => {
+      expect(getSellPriceFactor(null)).toBe(0);
+      expect(getSellPriceFactor({ ...DEFAULT_RULES, sellPriceFactor: '90' })).toBe(0);
+    });
+
+    it('reads the configured factor when the rule is on', () => {
+      expect(getSellPriceFactor({ ...DEFAULT_RULES, stockSellingEnabled: true })).toBe(0.75);
+      expect(
+        getSellPriceFactor({ ...DEFAULT_RULES, stockSellingEnabled: true, sellPriceFactor: '50' })
+      ).toBe(0.5);
+    });
+
+    it('rounds the sale price down to the nearest 10', () => {
+      expect(getStockPrice('continental', 7)).toBe(700);
+      expect(getSellPrice('continental', 7, 0.75)).toBe(520);
+    });
+
+    it('matches the market price exactly at 100%', () => {
+      for (const size of [2, 5, 11, 25, 41]) {
+        expect(getSellPrice('tower', size, 1)).toBe(getStockPrice('tower', size));
+      }
+    });
+  });
+
+  describe('getRemainingSellAllowance', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+    });
+
+    it('is the full allowance at the start of a turn', () => {
+      expect(getRemainingSellAllowance(gameState)).toBe(3);
+    });
+
+    it('drops to 1 after two shares sold', () => {
+      gameState.stocksSoldThisTurn = 2;
+
+      expect(getRemainingSellAllowance(gameState)).toBe(1);
+    });
+
+    it('is 0 at three, and never goes negative', () => {
+      gameState.stocksSoldThisTurn = 3;
+      expect(getRemainingSellAllowance(gameState)).toBe(0);
+
+      gameState.stocksSoldThisTurn = 5;
+      expect(getRemainingSellAllowance(gameState)).toBe(0);
+    });
+
+    it('is independent of the buy allowance', () => {
+      gameState.stocksPurchasedThisTurn = 3;
+
+      expect(getRemainingSellAllowance(gameState)).toBe(3);
+      expect(getRemainingStockAllowance(gameState)).toBe(0);
+    });
+  });
+
+  describe('canSellStock', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSellingEnabled: true };
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+      gameState.players[0].stocks.sackson = 2;
+    });
+
+    it('is true with the rule on, allowance left and holdings in an active chain', () => {
+      expect(canSellStock(gameState)).toBe(true);
+    });
+
+    it('is false when the rule is disabled', () => {
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSellingEnabled: false };
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false with no rules snapshot at all (local play)', () => {
+      gameState.rulesSnapshot = null;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false when the player holds no shares', () => {
+      gameState.players[0].stocks.sackson = 0;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false once the sell allowance is exhausted', () => {
+      gameState.stocksSoldThisTurn = 3;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false when the only holdings are chains bought this turn', () => {
+      gameState.chainsBoughtThisTurn = ['sackson'];
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is true when another held chain was not bought this turn', () => {
+      gameState.chains.tower = {
+        name: 'tower',
+        tiles: ['1A' as TileId, '1B' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+      gameState.players[0].stocks.tower = 1;
+      gameState.chainsBoughtThisTurn = ['sackson'];
+
+      expect(canSellStock(gameState)).toBe(true);
+    });
+
+    it('is false for holdings in a chain that has gone defunct', () => {
+      gameState.chains.sackson.isActive = false;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('evaluates the player index it is given', () => {
+      gameState.players[1].stocks.sackson = 0;
+
+      expect(canSellStock(gameState, 1)).toBe(false);
+      expect(canSellStock(gameState, 0)).toBe(true);
+    });
+  });
+
+  // Story 14.7: the 800ms auto-end fires only when the player can neither buy
+  // nor sell. These two assertions are what GameContainer's condition reads.
+  describe('auto-end-turn condition with selling enabled', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.phase = 'buy_stock';
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSellingEnabled: true };
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+    });
+
+    it('does not trip for a broke player who still has shares to sell', () => {
+      gameState.players[0].cash = 0;
+      gameState.players[0].stocks.sackson = 2;
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+      expect(canSellStock(gameState)).toBe(true);
+      expect(canBuyMoreStock(gameState) || canSellStock(gameState)).toBe(true);
+    });
+
+    it('trips for a broke player holding nothing', () => {
+      gameState.players[0].cash = 0;
+
+      expect(canBuyMoreStock(gameState) || canSellStock(gameState)).toBe(false);
     });
   });
 

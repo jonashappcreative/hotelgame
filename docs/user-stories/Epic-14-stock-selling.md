@@ -4,7 +4,7 @@
 **Feature:** Custom Room Rules — Stock Selling
 **Priority:** Medium
 **Created:** 2026-08-30
-**Status:** Ideation — mode selection pending
+**Status:** Mode B implemented (stories 14.1–14.9). Modes A and C remain design-only; Mode A ships as the `100` sell factor.
 
 ---
 

@@ -271,6 +271,11 @@ function decideMergerStock(diff: BotDifficulty, gameState: any, actor: any): Bot
 }
 
 function decideBuy(diff: BotDifficulty, gameState: any, actor: any): BotMove {
+  // Bots never sell (Epic 14, story 14.8 — deliberate, not an oversight). The
+  // sell_stocks action is optional and is never a required phase transition, so
+  // a bot turn in a room with Stock Selling enabled proceeds exactly as below
+  // and cannot stall. Giving bots a sell strategy is explicitly out of scope.
+  //
   // Buying is incremental for humans, but a bot commits its whole purchase in a
   // single action — once it has bought this turn, end the turn rather than
   // re-entering this decision on the next drive-loop tick.

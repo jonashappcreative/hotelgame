@@ -29,6 +29,8 @@ import {
   getBoardDimensions,
   getEligibleChains,
   getBonusTier,
+  getSellPriceFactor,
+  settleSale,
   getStockPrice,
   getBonuses,
   getAdjacentTiles,
@@ -41,7 +43,7 @@ import {
 
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
-          'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'skip_buy' |
+          'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'sell_stocks' | 'skip_buy' |
           'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn' | 'bot_tick';
   roomId: string;
   payload?: any;
@@ -163,6 +165,7 @@ async function handleGameAction(opts: {
     const { boardRows: globalBoardRows, boardColsCount: globalBoardColsCount } = getBoardDimensions(globalRulesSnap);
     const globalEligibleChains: ChainName[] = getEligibleChains(globalRulesSnap);
     const globalBonusTier: string = getBonusTier(globalRulesSnap);
+    const globalSellFactor: number = getSellPriceFactor(globalRulesSnap);
 
     // Handle different actions
     let result: { success: boolean; error?: string; data?: any; turnEnded?: boolean } = { success: false };
@@ -1256,6 +1259,11 @@ async function handleGameAction(opts: {
         // A purchase no longer ends the turn: the player keeps buying until the
         // per-turn cap is spent or nothing left in the bank is affordable.
         const purchasedThisTurn = alreadyPurchased + totalQuantity;
+        // Chains touched this turn can't be sold back this turn (Epic 14.3).
+        const chainsBoughtThisTurn = [...new Set<ChainName>([
+          ...((gameState.chains_bought_this_turn ?? []) as ChainName[]),
+          ...(purchases || []).filter(p => p.quantity > 0).map(p => p.chain),
+        ])];
         const canBuyMore = purchasedThisTurn < MAX_STOCKS_PER_TURN &&
           (Object.keys(CHAINS) as ChainName[]).some(c =>
             gameState.chains[c]?.isActive &&
@@ -1270,6 +1278,7 @@ async function handleGameAction(opts: {
             .update({
               stock_bank: newStockBank,
               stocks_purchased_this_turn: purchasedThisTurn,
+              chains_bought_this_turn: chainsBoughtThisTurn,
               game_log: gameLog,
             })
             .eq('room_id', roomId);
@@ -1321,6 +1330,8 @@ async function handleGameAction(opts: {
             stock_bank: newStockBank,
             tile_bag: tileBag,
             stocks_purchased_this_turn: 0,
+            stocks_sold_this_turn: 0,
+            chains_bought_this_turn: [],
             last_placed_tile: null,
             game_log: gameLog,
             winner,
@@ -1330,6 +1341,93 @@ async function handleGameAction(opts: {
           .eq('room_id', roomId);
 
         result = { success: true, turnEnded: true };
+        break;
+      }
+
+      // Stock Selling (Epic 14, Mode B "Broker's Cut"). Lives inside the
+      // buy_stock phase with its own per-turn allowance: selling never ends the
+      // turn and never changes the phase. All validation and arithmetic happens
+      // in settleSale (server/lib/rules.ts) so it stays unit-testable.
+      case 'sell_stocks': {
+        if (!gameState || gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'buy_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (globalSellFactor <= 0) {
+          return new Response(JSON.stringify({ error: 'Stock selling is not enabled in this room' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const sales = payload?.sales as { chain: ChainName; quantity: number }[];
+        const soldThisTurn = gameState.stocks_sold_this_turn ?? 0;
+
+        const outcome = settleSale({
+          sales,
+          chains: gameState.chains,
+          stocks: playerData.stocks,
+          stockBank: gameState.stock_bank,
+          soldThisTurn,
+          chainsBoughtThisTurn: (gameState.chains_bought_this_turn ?? []) as ChainName[],
+          factor: globalSellFactor,
+        });
+
+        if (!outcome.ok) {
+          return new Response(JSON.stringify({ error: outcome.error }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const { proceeds, totalQuantity: soldQuantity, newStocks, newStockBank: bankAfterSale, lines } =
+          outcome.settlement;
+
+        // Write ordering matters — there are no transactions here. Cash and
+        // stocks move together in one player row update; the bank follows. A
+        // failure between the two can only under-return shares to the bank, it
+        // can never duplicate cash or shares.
+        await adminClient
+          .from('game_players')
+          .update({ cash: playerData.cash + proceeds, stocks: newStocks })
+          .eq('id', playerData.id);
+
+        const sellLog = [...gameState.game_log];
+        for (const line of lines) {
+          sellLog.push({
+            timestamp: Date.now(),
+            playerId: `player-${myPlayerIndex}`,
+            playerName: playerData.player_name,
+            action: 'Sold stocks',
+            details: `${line.quantity} ${CHAINS[line.chain].displayName} for $${line.amount.toLocaleString()}`,
+          });
+        }
+
+        try {
+          await adminClient
+            .from('game_states')
+            .update({
+              stock_bank: bankAfterSale,
+              stocks_sold_this_turn: soldThisTurn + soldQuantity,
+              game_log: sellLog,
+            })
+            .eq('room_id', roomId);
+        } catch (bankError) {
+          console.warn('sell_stocks: bank/counter write failed after player was paid:', bankError);
+          throw bankError;
+        }
+
+        result = { success: true, turnEnded: false, data: { proceeds } };
         break;
       }
 
@@ -1390,6 +1488,8 @@ async function handleGameAction(opts: {
             phase: newPhase,
             tile_bag: tileBag,
             stocks_purchased_this_turn: 0,
+            stocks_sold_this_turn: 0,
+            chains_bought_this_turn: [],
             last_placed_tile: null,
             winner,
             round_number: skipNewRound,
@@ -1694,6 +1794,8 @@ async function handleGameAction(opts: {
             phase: newPhase,
             tile_bag: autoTileBag,
             stocks_purchased_this_turn: 0,
+            stocks_sold_this_turn: 0,
+            chains_bought_this_turn: [],
             last_placed_tile: null,
             round_number: newRoundNumber,
             turn_deadline_epoch: newDeadline,
@@ -1740,6 +1842,8 @@ async function handleGameAction(opts: {
             phase: newPhase,
             tile_bag: autoTileBag,
             stocks_purchased_this_turn: 0,
+            stocks_sold_this_turn: 0,
+            chains_bought_this_turn: [],
             last_placed_tile: null,
             merger: null,
             pending_chain_foundation: null,

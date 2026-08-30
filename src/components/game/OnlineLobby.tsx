@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info, Bot, X, Plus } from 'lucide-react';
+import { Users, Copy, Loader2, ArrowLeft, Check, RefreshCw, Settings, AlertTriangle, Timer, Shield, Eye, Trophy, Grid3X3, Link, DollarSign, Info, Bot, X, Plus, Repeat2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { CustomRules, DEFAULT_RULES } from '@/types/game';
 import { fetchRoomRules } from '@/utils/multiplayerService';
@@ -38,6 +38,7 @@ const getActiveRulesSummary = (rules: CustomRules): string[] => {
   summary.push(`🏆 Bonus: ${rules.bonusTierEnabled ? (rules.bonusTier === 'flat' ? 'Flat' : rules.bonusTier === 'aggressive' ? '15x/5x' : '10x/5x') : '10x/5x'}`);
   summary.push(`📐 Board: ${rules.boardSizeEnabled ? rules.boardSize.replace('x', '×') : '9×12'}`);
   summary.push(`🔗 Max ${rules.chainFoundingEnabled ? rules.maxChains : '7'} chains`);
+  if (rules.stockSellingEnabled) summary.push(`💱 Sell at ${rules.sellPriceFactor}%`);
   return summary;
 };
 
@@ -720,6 +721,39 @@ export const OnlineLobby = ({
                         <SelectItem value="standard">Standard — 10x / 5x (Default)</SelectItem>
                         <SelectItem value="flat">Flat — Equal payout</SelectItem>
                         <SelectItem value="aggressive">Aggressive — 15x / 5x</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Stock Selling */}
+              <div className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Repeat2 className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Stock Selling</span>
+                    <InfoTooltip text="Lets players sell shares back to the bank during their buy phase, up to 3 per turn on top of what they buy. The bank pays less than it charges — that spread is the price of getting out early. Shares bought this turn can't be sold the same turn." />
+                  </div>
+                  <Switch
+                    checked={draftRules.stockSellingEnabled}
+                    onCheckedChange={(val) => setDraftRules(prev => ({ ...prev, stockSellingEnabled: val }))}
+                  />
+                </div>
+                {draftRules.stockSellingEnabled && (
+                  <div className="mt-3 pl-6">
+                    <Select
+                      value={draftRules.sellPriceFactor}
+                      onValueChange={(val) => setDraftRules(prev => ({ ...prev, sellPriceFactor: val }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">Full Value — 100% of market price</SelectItem>
+                        <SelectItem value="90">Broker — 90%</SelectItem>
+                        <SelectItem value="75">Standard — 75% (Default)</SelectItem>
+                        <SelectItem value="50">Fire Sale — 50%</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

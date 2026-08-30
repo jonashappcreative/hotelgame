@@ -4,7 +4,7 @@ import {
   getUserIdFromToken,
   signInAnonymous,
 } from '@/integrations/api/client';
-import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES } from '@/types/game';
+import { GameState, ChainName, TileId, TileState, PlayerState, ChainState, CustomRules, DEFAULT_RULES, ELIGIBLE_CHAINS_5, ELIGIBLE_CHAINS_6, ELIGIBLE_CHAINS_7 } from '@/types/game';
 
 // Get or create an authenticated session (anonymous or existing user)
 export const getOrCreateAuthSession = async (): Promise<string | null> => {
@@ -392,6 +392,8 @@ export const dbToGameState = (
     merger: dbState.merger || null,
     mergerAdjacentChains: dbState.merger_adjacent_chains || null,
     stocksPurchasedThisTurn: dbState.stocks_purchased_this_turn,
+    stocksSoldThisTurn: dbState.stocks_sold_this_turn ?? 0,
+    chainsBoughtThisTurn: (dbState.chains_bought_this_turn ?? []) as ChainName[],
     gameLog: dbState.game_log || [],
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
@@ -412,6 +414,23 @@ export const dbToGameState = (
       const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
       const count = rs?.boardSizeEnabled && rs?.boardSize === '6x10' ? 10 : 12;
       return ['A','B','C','D','E','F','G','H','I','J','K','L'].slice(0, count);
+    })(),
+    // Derived exactly as the server derives them (server/lib/rules.ts) so an
+    // online game carries real values instead of relying on `??` fallbacks.
+    bonusTier: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      if (!rs?.bonusTierEnabled) return 'standard';
+      return (rs.bonusTier || 'standard') as 'standard' | 'flat' | 'aggressive';
+    })(),
+    maxChains: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      return rs?.chainFoundingEnabled ? parseInt(rs.maxChains) : 7;
+    })(),
+    eligibleChains: (() => {
+      const rs = dbState.rules_snapshot as import('@/types/game').CustomRules | null;
+      if (!rs?.chainFoundingEnabled) return ELIGIBLE_CHAINS_7;
+      const max = parseInt(rs.maxChains);
+      return max === 5 ? ELIGIBLE_CHAINS_5 : max === 6 ? ELIGIBLE_CHAINS_6 : ELIGIBLE_CHAINS_7;
     })(),
   };
 };

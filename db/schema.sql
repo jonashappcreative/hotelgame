@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS game_states (
   pending_chain_foundation  TEXT[],
   merger                    JSONB,
   stocks_purchased_this_turn INTEGER NOT NULL DEFAULT 0,
+  stocks_sold_this_turn     INTEGER NOT NULL DEFAULT 0,
+  chains_bought_this_turn   TEXT[] NOT NULL DEFAULT '{}',
   game_log                  JSONB NOT NULL DEFAULT '[]',
   winner                    VARCHAR(100),
   end_game_votes            TEXT[] DEFAULT '{}',
@@ -144,6 +146,12 @@ CREATE TABLE IF NOT EXISTS game_states (
   round_number              INTEGER DEFAULT 0,
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Stock Selling (Epic 14, added post-launch): selling has its own per-turn
+-- budget, and chains bought this turn cannot be sold again in the same turn.
+-- Idempotent so this file can be re-applied to an already-provisioned DB.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS stocks_sold_this_turn INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS chains_bought_this_turn TEXT[] NOT NULL DEFAULT '{}';
 
 DROP TRIGGER IF EXISTS update_game_states_updated_at ON game_states;
 CREATE TRIGGER update_game_states_updated_at
@@ -206,6 +214,8 @@ CREATE VIEW game_states_public AS
     game_log,
     end_game_votes,
     stocks_purchased_this_turn,
+    stocks_sold_this_turn,
+    chains_bought_this_turn,
     merger,
     winner,
     updated_at,

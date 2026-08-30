@@ -83,6 +83,19 @@ export const getStockPrice = (chainName: ChainName, size: number): number => {
   return prices[prices.length - 1];
 };
 
+// Fraction of market price the bank pays back. 0 means the Stock Selling rule
+// is off; a factor of 1 ("Full Value") is a legitimate, spread-free setting.
+// Mirror of getSellPriceFactor in server/lib/rules.ts — keep in sync.
+export const getSellPriceFactor = (rules: CustomRules | null): number => {
+  if (!rules?.stockSellingEnabled) return 0;
+  return parseInt(rules.sellPriceFactor) / 100;
+};
+
+// What the bank pays for one share, rounded down to the nearest $10 so the
+// figure always reads like a price on a chain card.
+export const getSellPrice = (chainName: ChainName, size: number, factor: number): number =>
+  Math.floor((getStockPrice(chainName, size) * factor) / 10) * 10;
+
 // Get majority and minority bonuses based on tier
 // standard: 10x majority / 5x minority
 // aggressive: 15x majority / 5x minority
@@ -232,6 +245,8 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     merger: null,
     mergerAdjacentChains: null,
     stocksPurchasedThisTurn: 0,
+    stocksSoldThisTurn: 0,
+    chainsBoughtThisTurn: [],
     gameLog: [{
       timestamp: Date.now(),
       playerId: 'system',
@@ -487,6 +502,32 @@ export const canBuyMoreStock = (
   );
 };
 
+// Shares the current player may still sell this turn. Selling has its own
+// budget, so a turn can be a rebalance rather than a buy-or-sell choice.
+export const getRemainingSellAllowance = (state: GameState): number =>
+  Math.max(0, MAX_STOCKS_PER_TURN - (state.stocksSoldThisTurn ?? 0));
+
+// True when the player has something they could actually sell: the rule is on,
+// allowance is left, and they hold shares in an active chain they didn't buy
+// this turn. Mirrors canBuyMoreStock and, with it, gates the automatic turn end.
+export const canSellStock = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): boolean => {
+  if (getSellPriceFactor(state.rulesSnapshot) <= 0) return false;
+  if (getRemainingSellAllowance(state) === 0) return false;
+
+  const stocks = state.players[playerIndex]?.stocks;
+  if (!stocks) return false;
+  const boughtThisTurn = state.chainsBoughtThisTurn ?? [];
+
+  return (Object.keys(state.chains) as ChainName[]).some(chain =>
+    state.chains[chain].isActive &&
+    (stocks[chain] ?? 0) > 0 &&
+    !boughtThisTurn.includes(chain)
+  );
+};
+
 // Buy stocks
 export const buyStocks = (
   state: GameState,
@@ -511,6 +552,10 @@ export const buyStocks = (
   newState.stockBank = newStockBank;
   newState.stocksPurchasedThisTurn =
     state.stocksPurchasedThisTurn + purchases.reduce((sum, p) => sum + p.quantity, 0);
+  // Recorded so the sell panel can block flipping a purchase in the same turn.
+  newState.chainsBoughtThisTurn = [
+    ...new Set([...(state.chainsBoughtThisTurn ?? []), ...purchases.map(p => p.chain)]),
+  ];
 
   newState.players = [...newState.players];
   newState.players[newState.currentPlayerIndex] = currentPlayer;
@@ -602,6 +647,8 @@ export const endTurn = (state: GameState): GameState => {
   newState.roundNumber = nextPlayerIndex === 0 ? state.roundNumber + 1 : state.roundNumber;
   newState.phase = 'place_tile';
   newState.stocksPurchasedThisTurn = 0;
+  newState.stocksSoldThisTurn = 0;
+  newState.chainsBoughtThisTurn = [];
   newState.lastPlacedTile = null;
 
   return newState;

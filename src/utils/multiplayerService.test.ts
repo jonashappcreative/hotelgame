@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TileId } from '@/types/game';
-import { DEFAULT_RULES } from '@/types/game';
+import { DEFAULT_RULES, ELIGIBLE_CHAINS_5 } from '@/types/game';
 import type { CustomRules } from '@/types/game';
 
 // ---------------------------------------------------------------------------
@@ -490,6 +490,57 @@ describe('multiplayerService', () => {
       expect(result.lastPlacedTile).toBe('5F');
       expect(result.stocksPurchasedThisTurn).toBe(1);
       expect(result.gameLog).toHaveLength(1);
+    });
+
+    // Epic 14: the sell counters and the three rule-derived fields that used to
+    // arrive undefined and survive only on `??` fallbacks downstream.
+    it('maps the sell counters, defaulting them for rows written before Epic 14', () => {
+      const base = {
+        board: {}, current_player_index: 0, phase: 'buy_stock',
+        chains: {}, stock_bank: {}, tile_bag: [],
+        stocks_purchased_this_turn: 0, game_log: [],
+      };
+
+      const legacy = dbToGameState(base, [], 'ABC123');
+      expect(legacy.stocksSoldThisTurn).toBe(0);
+      expect(legacy.chainsBoughtThisTurn).toEqual([]);
+
+      const current = dbToGameState(
+        { ...base, stocks_sold_this_turn: 2, chains_bought_this_turn: ['tower'] },
+        [],
+        'ABC123'
+      );
+      expect(current.stocksSoldThisTurn).toBe(2);
+      expect(current.chainsBoughtThisTurn).toEqual(['tower']);
+    });
+
+    it('derives bonusTier, maxChains and eligibleChains from the rules snapshot', () => {
+      const base = {
+        board: {}, current_player_index: 0, phase: 'place_tile',
+        chains: {}, stock_bank: {}, tile_bag: [],
+        stocks_purchased_this_turn: 0, game_log: [],
+      };
+
+      const defaults = dbToGameState(base, [], 'ABC123');
+      expect(defaults.bonusTier).toBe('standard');
+      expect(defaults.maxChains).toBe(7);
+      expect(defaults.eligibleChains).toHaveLength(7);
+
+      const custom = dbToGameState(
+        {
+          ...base,
+          rules_snapshot: {
+            ...DEFAULT_RULES,
+            bonusTierEnabled: true, bonusTier: 'aggressive',
+            chainFoundingEnabled: true, maxChains: '5',
+          },
+        },
+        [],
+        'ABC123'
+      );
+      expect(custom.bonusTier).toBe('aggressive');
+      expect(custom.maxChains).toBe(5);
+      expect(custom.eligibleChains).toEqual(ELIGIBLE_CHAINS_5);
     });
 
     it('handles missing board data gracefully', () => {

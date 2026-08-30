@@ -1,6 +1,6 @@
 import { MAX_STOCKS_PER_TURN } from '@/types/game';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ArrowRight, ShoppingCart } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Banknote, ShoppingCart } from 'lucide-react';
 
 interface EndTurnConfirmModalProps {
   /** Shares already bought this turn (0 when the player hasn't bought at all). */
@@ -9,6 +9,12 @@ interface EndTurnConfirmModalProps {
   pendingShares: number;
   /** Cost of those unconfirmed shares. */
   pendingCost: number;
+  /** Shares sitting in the sell panel that were never confirmed. */
+  pendingSellShares?: number;
+  /** Proceeds those unconfirmed sales would have raised. */
+  pendingProceeds?: number;
+  /** False when the turn is only still open because the player can sell. */
+  canStillBuy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +23,9 @@ export const EndTurnConfirmModal = ({
   purchasedThisTurn,
   pendingShares,
   pendingCost,
+  pendingSellShares = 0,
+  pendingProceeds = 0,
+  canStillBuy = true,
   onConfirm,
   onCancel,
 }: EndTurnConfirmModalProps) => {
@@ -30,12 +39,18 @@ export const EndTurnConfirmModal = ({
         </div>
         <div>
           <h3 className="text-lg font-semibold">
-            {boughtNothing ? "You haven't bought any stock" : 'You can still buy stock'}
+            {!canStillBuy
+              ? 'You can still sell stock'
+              : boughtNothing
+                ? "You haven't bought any stock"
+                : 'You can still buy stock'}
           </h3>
           <p className="text-sm text-muted-foreground">
-            {boughtNothing
-              ? 'You can still afford shares this turn. End your turn without buying?'
-              : `You've bought ${purchasedThisTurn} of ${MAX_STOCKS_PER_TURN} shares and can still afford another. End your turn anyway?`}
+            {!canStillBuy
+              ? 'You hold shares the bank would buy back this turn. End your turn anyway?'
+              : boughtNothing
+                ? 'You can still afford shares this turn. End your turn without buying?'
+                : `You've bought ${purchasedThisTurn} of ${MAX_STOCKS_PER_TURN} shares and can still afford another. End your turn anyway?`}
           </p>
         </div>
       </div>
@@ -54,6 +69,24 @@ export const EndTurnConfirmModal = ({
               ${pendingCost.toLocaleString()}
             </span>{' '}
             that you never confirmed. Ending your turn discards the selection.
+          </p>
+        </div>
+      )}
+
+      {/* Same footgun on the sell side of the panel. */}
+      {pendingSellShares > 0 && (
+        <div className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-secondary/50 border border-border/50">
+          <Banknote className="w-4 h-4 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            You have{' '}
+            <span className="font-semibold text-foreground">
+              {pendingSellShares} share{pendingSellShares !== 1 ? 's' : ''}
+            </span>{' '}
+            marked to sell for{' '}
+            <span className="font-mono font-semibold text-foreground">
+              ${pendingProceeds.toLocaleString()}
+            </span>{' '}
+            that you never confirmed. Ending your turn discards the sale.
           </p>
         </div>
       )}

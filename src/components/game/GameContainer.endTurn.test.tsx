@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GameContainer } from './GameContainer';
+import { DEFAULT_RULES } from '@/types/game';
 import type { GameState, PlayerState, ChainName, ChainState, TileId } from '@/types/game';
 
 // GameContainer only needs playSfx; keep Howler out of jsdom.
@@ -45,6 +46,8 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     merger: null,
     mergerAdjacentChains: null,
     stocksPurchasedThisTurn: 0,
+    stocksSoldThisTurn: 0,
+    chainsBoughtThisTurn: [],
     gameLog: [],
     winner: null,
     endGameVotes: [],
@@ -63,8 +66,9 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
 
 const noop = () => {};
 
-const renderGame = (gameState: GameState) => {
+const renderGame = (gameState: GameState, opts: { withSelling?: boolean } = {}) => {
   const onEndTurn = vi.fn();
+  const onSellStocks = vi.fn();
   render(
     <GameContainer
       gameState={gameState}
@@ -74,12 +78,13 @@ const renderGame = (gameState: GameState) => {
       onPayMergerBonuses={noop}
       onMergerStockChoice={noop}
       onBuyStocks={noop}
+      onSellStocks={opts.withSelling ? onSellStocks : undefined}
       onEndTurn={onEndTurn}
       onEndGameVote={noop}
       onNewGame={noop}
     />
   );
-  return { onEndTurn };
+  return { onEndTurn, onSellStocks };
 };
 
 const clickEndTurn = () =>
@@ -157,5 +162,50 @@ describe('GameContainer — End Turn confirmation', () => {
 
     expect(screen.queryByRole('button', { name: /end turn/i })).not.toBeInTheDocument();
     await waitFor(() => expect(onEndTurn).toHaveBeenCalled(), { timeout: 2000 });
+  });
+});
+
+// Story 14.7: with stock selling on, the buy phase isn't over just because the
+// player can't afford anything — they may still want to liquidate.
+describe('GameContainer — End Turn with stock selling enabled', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  const sellableState = () => {
+    const state = makeGameState({
+      rulesSnapshot: { ...DEFAULT_RULES, stockSellingEnabled: true, sellPriceFactor: '75' },
+    });
+    state.players[0].cash = 100; // can't afford Sackson at $200
+    state.players[0].stocks.sackson = 2;
+    return state;
+  };
+
+  it('does not auto-end the turn for a broke player who can still sell', async () => {
+    const { onEndTurn } = renderGame(sellableState(), { withSelling: true });
+
+    expect(screen.getByRole('button', { name: /end turn/i })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(onEndTurn).not.toHaveBeenCalled();
+  });
+
+  it('still auto-ends for a broke player holding nothing sellable', async () => {
+    const state = sellableState();
+    state.players[0].stocks.sackson = 0;
+    const { onEndTurn } = renderGame(state, { withSelling: true });
+
+    await waitFor(() => expect(onEndTurn).toHaveBeenCalled(), { timeout: 2000 });
+  });
+
+  it('warns about a pending sale before ending the turn', async () => {
+    const { onEndTurn } = renderGame(sellableState(), { withSelling: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Sell$/ }));
+    fireEvent.click(screen.getByLabelText('Sell one more Sackson'));
+    clickEndTurn();
+
+    expect(screen.getByText('You can still sell stock')).toBeInTheDocument();
+    expect(screen.getByText(/marked to sell/)).toBeInTheDocument();
+    expect(onEndTurn).not.toHaveBeenCalled();
   });
 });

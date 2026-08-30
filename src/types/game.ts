@@ -80,6 +80,10 @@ export interface GameState {
   merger: MergerState | null;
   mergerAdjacentChains: ChainName[] | null;
   stocksPurchasedThisTurn: number;
+  /** Shares sold back to the bank this turn — a budget separate from buying. */
+  stocksSoldThisTurn: number;
+  /** Chains bought this turn; they cannot be sold again in the same turn. */
+  chainsBoughtThisTurn: ChainName[];
   gameLog: GameLogEntry[];
   winner: string | null;
   endGameVotes: string[];
@@ -163,6 +167,9 @@ export interface CustomRules {
   startingConditionsEnabled: boolean;
   startingCash: string;
   startingTiles: string;
+  stockSellingEnabled: boolean;
+  /** Percent of market price the bank pays back: '100' | '90' | '75' | '50'. */
+  sellPriceFactor: string;
 }
 
 export const DEFAULT_RULES: CustomRules = {
@@ -183,4 +190,6 @@ export const DEFAULT_RULES: CustomRules = {
   startingConditionsEnabled: false,
   startingCash: '6000',
   startingTiles: '6',
+  stockSellingEnabled: false,
+  sellPriceFactor: '75',
 };

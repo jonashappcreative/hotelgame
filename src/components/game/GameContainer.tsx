@@ -4,7 +4,7 @@ import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
 import { PlayerCard } from './PlayerCard';
-import { StockPurchase } from './StockPurchase';
+import { StockPurchase, type PendingTrade } from './StockPurchase';
 import { ChainFounder } from './ChainFounder';
 import { InfoCard } from './InfoCard';
 import { GameLog } from './GameLog';
@@ -21,7 +21,7 @@ import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, g
 import { analyzeMerger } from '@/utils/mergerLogic';
 import { Clock, WifiOff, ArrowRight, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canBuyMoreStock } from '@/utils/gameLogic';
+import { canBuyMoreStock, canSellStock } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
@@ -33,6 +33,8 @@ interface GameContainerProps {
   onPayMergerBonuses: () => void;
   onMergerStockChoice: (decision: MergerStockDecision) => void;
   onBuyStocks: (purchases: { chain: string; quantity: number }[]) => void;
+  /** Sell shares back to the bank. Omitted where the mode isn't wired up. */
+  onSellStocks?: (sales: { chain: ChainName; quantity: number }[]) => void;
   onEndTurn: () => void;
   onEndGameVote: (vote: boolean) => void;
   onNewGame: () => void;
@@ -54,6 +56,7 @@ export const GameContainer = ({
   onPayMergerBonuses,
   onMergerStockChoice,
   onBuyStocks,
+  onSellStocks,
   onEndTurn,
   onEndGameVote,
   onNewGame,
@@ -72,7 +75,9 @@ export const GameContainer = ({
   // End Turn confirmation, plus the shares picked but never confirmed in the
   // buy panel so the warning can name what's about to be discarded.
   const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
-  const [pendingPurchase, setPendingPurchase] = useState({ shares: 0, cost: 0 });
+  const [pendingPurchase, setPendingPurchase] = useState<PendingTrade>({
+    shares: 0, cost: 0, sellShares: 0, proceeds: 0,
+  });
 
   // Merger animation: tiles still showing their OLD chain color (pre-merger),
   // removed one-by-one on a stagger to trigger a real CSS color transition.
@@ -111,34 +116,41 @@ export const GameContainer = ({
   // allowance or can't afford any available stock.
   const buyPhaseActive = gameState.phase === 'buy_stock' && isMyTurn;
   const canBuyAnything = buyPhaseActive && canBuyMoreStock(gameState, myPlayerIndex);
+  // With stock selling on, the buy phase isn't finished just because nothing is
+  // affordable — the player may still want to liquidate.
+  const canSellAnything = buyPhaseActive && !!onSellStocks && canSellStock(gameState, myPlayerIndex);
+  const canTradeAnything = canBuyAnything || canSellAnything;
 
   useEffect(() => {
-    if (buyPhaseActive && !canBuyAnything) {
+    if (buyPhaseActive && !canTradeAnything) {
       const t = setTimeout(() => onEndTurn?.(), 800);
       return () => clearTimeout(t);
     }
-  }, [buyPhaseActive, canBuyAnything]);
+  }, [buyPhaseActive, canTradeAnything]);
 
   // Leaving the buy phase (turn ended, timer expired) clears the confirmation so
   // it can't reappear on the player's next turn.
   useEffect(() => {
     if (!buyPhaseActive) {
       setShowEndTurnConfirm(false);
-      setPendingPurchase({ shares: 0, cost: 0 });
+      setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
     }
   }, [buyPhaseActive]);
 
   // Stable identity so the buy panel's report doesn't re-fire the effect, and a
   // bail-out so an unchanged selection doesn't spin a render loop.
-  const handlePendingChange = useCallback((pending: { shares: number; cost: number }) => {
+  const handlePendingChange = useCallback((pending: PendingTrade) => {
     setPendingPurchase(prev =>
-      prev.shares === pending.shares && prev.cost === pending.cost ? prev : pending
+      prev.shares === pending.shares && prev.cost === pending.cost &&
+      prev.sellShares === pending.sellShares && prev.proceeds === pending.proceeds
+        ? prev
+        : pending
     );
   }, []);
 
   const handleConfirmEndTurn = () => {
     setShowEndTurnConfirm(false);
-    setPendingPurchase({ shares: 0, cost: 0 });
+    setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
     onEndTurn();
   };
 
@@ -330,12 +342,15 @@ export const GameContainer = ({
       )}
 
       {/* End Turn Confirmation - warns when stock is still affordable */}
-      {showEndTurnConfirm && buyPhaseActive && canBuyAnything && (
+      {showEndTurnConfirm && buyPhaseActive && canTradeAnything && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
           <EndTurnConfirmModal
             purchasedThisTurn={gameState.stocksPurchasedThisTurn}
             pendingShares={pendingPurchase.shares}
             pendingCost={pendingPurchase.cost}
+            pendingSellShares={pendingPurchase.sellShares}
+            pendingProceeds={pendingPurchase.proceeds}
+            canStillBuy={canBuyAnything}
             onConfirm={handleConfirmEndTurn}
             onCancel={() => setShowEndTurnConfirm(false)}
           />
@@ -518,7 +533,9 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
+                      playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
+                      onSell={onSellStocks}
                       onPendingChange={handlePendingChange}
                     />
                   ) : isOnlineMode ? (
@@ -534,7 +551,9 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
+                      playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
+                      onSell={onSellStocks}
                       onPendingChange={handlePendingChange}
                     />
                   )
@@ -599,7 +618,7 @@ export const GameContainer = ({
               />
               {/* End Turn — shown below tiles during the buy phase */}
               {buyPhaseActive && (
-                canBuyAnything ? (
+                canTradeAnything ? (
                   <Button size="lg" className="w-full" onClick={() => setShowEndTurnConfirm(true)}>
                     <ArrowRight className="w-4 h-4 mr-2" />
                     End Turn

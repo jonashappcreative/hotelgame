@@ -143,6 +143,48 @@ describe('decideBotMove — buy stock', () => {
     expect(move.action).toBe('skip_buy');
   });
 
+  // Story 14.8: bots never sell. Selling is optional and never a required phase
+  // transition, so a room with the rule on plays out exactly as one without it.
+  for (const diff of DIFFS) {
+    it(`${diff}: plays a normal buy turn with stock selling enabled, never selling`, () => {
+      const chains = makeChains({ tower: ['1A', '1B'], continental: ['2A', '2B', '2C', '2D'] });
+      const rules_snapshot = { stockSellingEnabled: true, sellPriceFactor: '75' };
+
+      for (let i = 0; i < 30; i++) {
+        const players = [{
+          player_index: 0,
+          cash: 6000,
+          stocks: { ...zeroStocks(), continental: 4 },
+          tiles: [],
+          is_bot: true,
+          bot_difficulty: diff,
+        }];
+        const gs = baseState({ phase: 'buy_stock', chains, rules_snapshot });
+        const move = decideBotMove(diff, 'buy_stock', gs, players, actorOf(players));
+        expect(['buy_stocks', 'skip_buy']).toContain(move.action);
+        expect(move.action).not.toBe('sell_stocks');
+      }
+    });
+  }
+
+  it('still ends its turn with the rule on and nothing affordable', () => {
+    const chains = makeChains({ continental: ['2A', '2B', '2C', '2D'] });
+    const players = [{
+      player_index: 0,
+      cash: 100,
+      stocks: { ...zeroStocks(), continental: 3 },
+      tiles: [],
+      is_bot: true,
+      bot_difficulty: 'hard',
+    }];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: { stockSellingEnabled: true, sellPriceFactor: '50' },
+    });
+    expect(decideBotMove('hard', 'buy_stock', gs, players, actorOf(players)).action).toBe('skip_buy');
+  });
+
   // Buying no longer ends the turn, so the drive loop re-enters the buy phase.
   // A bot commits its whole purchase at once and must then end the turn.
   for (const diff of DIFFS) {

@@ -30,6 +30,8 @@ export interface CustomRules {
   startingConditionsEnabled: boolean;
   startingCash: string;
   startingTiles: string;
+  stockSellingEnabled: boolean;
+  sellPriceFactor: string;
 }
 
 export const DEFAULT_RULES: CustomRules = {
@@ -50,6 +52,8 @@ export const DEFAULT_RULES: CustomRules = {
   startingConditionsEnabled: false,
   startingCash: '6000',
   startingTiles: '6',
+  stockSellingEnabled: false,
+  sellPriceFactor: '75',
 };
 
 export interface MergerStockDecision {
@@ -106,6 +110,14 @@ export function getBonusTier(rules: CustomRules): string {
   return rules.bonusTierEnabled ? rules.bonusTier : 'standard';
 }
 
+// Fraction of market price the bank pays when buying a share back. 0 means the
+// Stock Selling rule is off, which is also the only value that disables selling
+// — a factor of 1 ("Full Value") is a legitimate, spread-free setting.
+export function getSellPriceFactor(rules: CustomRules): number {
+  if (!rules.stockSellingEnabled) return 0;
+  return parseInt(rules.sellPriceFactor) / 100;
+}
+
 // Helper functions
 export function getStockPrice(chainName: ChainName, size: number): number {
   if (size === 0) return 0;
@@ -118,6 +130,96 @@ export function getStockPrice(chainName: ChainName, size: number): number {
     }
   }
   return prices[prices.length - 1];
+}
+
+// What the bank pays for one share, rounded down to the nearest $10 so the
+// figure always reads like a price on a chain card. `factor` comes from
+// getSellPriceFactor; a factor of 1 is the identity of getStockPrice.
+export function getSellPrice(chainName: ChainName, size: number, factor: number): number {
+  return Math.floor((getStockPrice(chainName, size) * factor) / 10) * 10;
+}
+
+export interface SaleRequest {
+  chain: ChainName;
+  quantity: number;
+}
+
+export interface SaleSettlement {
+  /** Cash the seller receives for the whole basket. */
+  proceeds: number;
+  /** Shares sold across all chains. */
+  totalQuantity: number;
+  /** Seller's holdings after the sale. */
+  newStocks: Record<ChainName, number>;
+  /** Bank holdings after the sale. */
+  newStockBank: Record<ChainName, number>;
+  /** Per-chain breakdown, for the game log. */
+  lines: { chain: ChainName; quantity: number; amount: number }[];
+}
+
+// Pure validation + settlement for a sale basket. The engine case in
+// server/api/game-action.ts does nothing but persist what this returns, which
+// keeps every rejection rule testable without a database.
+export function settleSale(opts: {
+  sales: SaleRequest[];
+  chains: Record<ChainName, { tiles: TileId[]; isActive: boolean }>;
+  stocks: Record<ChainName, number>;
+  stockBank: Record<ChainName, number>;
+  soldThisTurn: number;
+  chainsBoughtThisTurn: ChainName[];
+  factor: number;
+}): { ok: true; settlement: SaleSettlement } | { ok: false; error: string } {
+  const { sales, chains, stocks, stockBank, soldThisTurn, chainsBoughtThisTurn, factor } = opts;
+
+  if (factor <= 0) return { ok: false, error: 'Stock selling is not enabled in this room' };
+  if (!Array.isArray(sales) || sales.length === 0) {
+    return { ok: false, error: 'No shares selected to sell' };
+  }
+
+  // Collapse duplicate entries so a basket can't slip past the per-chain checks
+  // by naming the same chain twice.
+  const wanted = new Map<ChainName, number>();
+  for (const sale of sales) {
+    const qty = Number(sale?.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return { ok: false, error: 'Sale quantity must be a positive whole number' };
+    }
+    if (!chains[sale.chain]) return { ok: false, error: `Unknown chain: ${sale.chain}` };
+    wanted.set(sale.chain, (wanted.get(sale.chain) ?? 0) + qty);
+  }
+
+  const totalQuantity = [...wanted.values()].reduce((sum, q) => sum + q, 0);
+  if (soldThisTurn + totalQuantity > MAX_STOCKS_PER_TURN) {
+    return { ok: false, error: `Cannot sell more than ${MAX_STOCKS_PER_TURN} stocks per turn` };
+  }
+
+  const newStocks = { ...stocks };
+  const newStockBank = { ...stockBank };
+  const lines: { chain: ChainName; quantity: number; amount: number }[] = [];
+  let proceeds = 0;
+
+  for (const [chain, quantity] of wanted) {
+    if (!chains[chain].isActive) {
+      return { ok: false, error: `Cannot sell stock in inactive chain: ${chain}` };
+    }
+    if (chainsBoughtThisTurn.includes(chain)) {
+      return { ok: false, error: `Cannot sell ${CHAINS[chain].displayName} — bought this turn` };
+    }
+    if ((stocks[chain] ?? 0) < quantity) {
+      return {
+        ok: false,
+        error: `You only hold ${stocks[chain] ?? 0} ${CHAINS[chain].displayName} share(s)`,
+      };
+    }
+
+    const amount = getSellPrice(chain, chains[chain].tiles.length, factor) * quantity;
+    proceeds += amount;
+    newStocks[chain] = (newStocks[chain] ?? 0) - quantity;
+    newStockBank[chain] = (newStockBank[chain] ?? 0) + quantity;
+    lines.push({ chain, quantity, amount });
+  }
+
+  return { ok: true, settlement: { proceeds, totalQuantity, newStocks, newStockBank, lines } };
 }
 
 export function getBonuses(chainName: ChainName, size: number, bonusTier: string = 'standard'): { majority: number; minority: number } {

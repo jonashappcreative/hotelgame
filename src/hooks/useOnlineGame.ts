@@ -475,6 +475,30 @@ export const useOnlineGame = () => {
     toast({ title: 'Turn Complete', description: `${gameState.players[nextPlayerIndex].name}'s turn` });
   }, [gameState, roomId, myPlayerIndex, refreshGameState]);
 
+  // Selling never ends the turn or changes the phase — it just settles and the
+  // panel re-reads the refreshed state. A rejection leaves the player's pending
+  // selection alone so they can correct it.
+  const handleSellStocks = useCallback(async (sales: { chain: ChainName; quantity: number }[]) => {
+    if (!gameState || !roomId) return;
+
+    if (gameState.currentPlayerIndex !== myPlayerIndex) {
+      toast({ title: 'Not Your Turn', variant: 'destructive' });
+      return;
+    }
+
+    const result = await executeGameAction('sell_stocks', roomId, { sales });
+
+    if (!result.success) {
+      toast({ title: 'Sale rejected', description: result.error, variant: 'destructive' });
+      // The player row is written before the bank, so a partial failure leaves
+      // the display stale until we re-read; cheap enough to always do it.
+      await refreshGameState();
+      return;
+    }
+
+    await refreshGameState();
+  }, [gameState, roomId, myPlayerIndex, refreshGameState]);
+
   const handleSkipBuyStock = useCallback(async () => {
     if (!gameState || !roomId) return;
 
@@ -678,6 +702,7 @@ export const useOnlineGame = () => {
     handlePayMergerBonuses,
     handleMergerStockChoice,
     handleBuyStocks,
+    handleSellStocks,
     handleSkipBuyStock,
     handleEndGameVote,
     handleNewGame,
