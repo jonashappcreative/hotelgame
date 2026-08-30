@@ -21,6 +21,11 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // Ratchet: ~100 pre-existing `any`s, mostly untyped DB rows and game-state
+      // payloads in server/. Warn rather than error so lint can block
+      // on everything else today; retype them incrementally and promote this back
+      // to "error" once the count reaches zero. Do not add new ones.
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 );

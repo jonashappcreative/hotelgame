@@ -1,0 +1,89 @@
+# Quality gates. Runs on every long-lived branch and every PR between them.
+# Deployment lives in deploy.yml and only ever fires on main.
+name: CI
+
+on:
+  push:
+    branches: [main, staging, dev]
+  pull_request:
+    branches: [main, staging, dev]
+
+# A new push to the same branch/PR supersedes the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      # Blocking on errors. The ~115 remaining `any`s are warnings by config
+      # (see eslint.config.js) and do not fail the build — but no new error-level
+      # violation can land.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
+
+  # Guards the one thing that must never reach production wrong: a release whose
+  # version, changelog and tag disagree. Only applies to PRs targeting main.
+  release-guard:
+    name: Release guard
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Changelog must be updated
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          if ! echo "$CHANGED" | grep -q '^src/data/versionHistory.ts$'; then
+            echo "::error::src/data/versionHistory.ts was not updated."
+            echo "Every release to main needs a changelog entry. Run /release in Claude Code."
+            exit 1
+          fi
+          echo "Changelog updated."
+
+      - name: package.json version must match the top changelog entry
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TOP=$(node -e "
+            const s = require('fs').readFileSync('src/data/versionHistory.ts','utf8');
+            process.stdout.write(s.match(/version:\s*'([^']+)'/)[1]);
+          ")
+          echo "package.json: $PKG / changelog top entry: $TOP"
+          if [ "$PKG" != "$TOP" ]; then
+            echo "::error::Version mismatch — package.json is $PKG but the changelog's newest entry is $TOP."
+            exit 1
+          fi
+
+      - name: Version must not already be released
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          if git rev-parse -q --verify "refs/tags/v$PKG" >/dev/null; then
+            echo "::error::Tag v$PKG already exists — bump the version before merging."
+            exit 1
+          fi
+          echo "v$PKG is unreleased."

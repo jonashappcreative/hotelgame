@@ -1,5 +1,6 @@
 // =============================================================================
-// cleanup-rooms — scheduled Netlify Function (runs every 5 minutes)
+// cleanup-rooms — closes idle rooms. Driven by the setInterval in
+// server/server.ts (every 5 minutes); not an HTTP route.
 // =============================================================================
 // "Closes" rooms that have seen no player activity for the last 10 minutes —
 // this covers both finished games whose players have moved on and rooms that
@@ -18,7 +19,7 @@
 // to run unauthenticated on a schedule; it can never touch an active game.
 // =============================================================================
 
-import { query } from './_shared/db';
+import { query } from '../lib/db';
 
 const IDLE_MINUTES = 10;
 
@@ -58,5 +59,3 @@ export default async (_req: Request): Promise<Response> => {
   }
 };
 
-// Netlify scheduled-function config: run every 5 minutes.
-export const config = { schedule: '*/5 * * * *' };

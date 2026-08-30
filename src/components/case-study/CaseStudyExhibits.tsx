@@ -154,10 +154,10 @@ export const PlaceFoundExhibit = () => {
     setStatus('Your move. Tap any glowing tile in your hand to place it on the board.');
   };
 
+  // Mount-only: seed the board and tear down any pending animation timer.
   useEffect(() => {
     reset();
     return () => clearTimeout(timer.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const placeTile = (id: string) => {

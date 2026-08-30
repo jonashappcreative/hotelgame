@@ -2,10 +2,10 @@
 // Creates a registered user (bcrypt-hashed password) and returns a 7-day JWT.
 
 import bcrypt from 'bcryptjs';
-import { query } from './_shared/db';
-import { signToken } from './_shared/auth';
-import { getCorsHeaders, jsonResponse } from './_shared/cors';
-import { serverError } from './_shared/errors';
+import { query } from '../lib/db';
+import { signToken } from '../lib/auth';
+import { getCorsHeaders, jsonResponse } from '../lib/cors';
+import { serverError } from '../lib/errors';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

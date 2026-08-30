@@ -1,11 +1,11 @@
 // =============================================================================
-// account — Netlify Function: profile + game history (per authenticated user)
+// account — profile + game history (per authenticated user)
 // =============================================================================
 
-import { query } from './_shared/db';
-import { verifyAuth } from './_shared/auth';
-import { getCorsHeaders, jsonResponse } from './_shared/cors';
-import { serverError } from './_shared/errors';
+import { query } from '../lib/db';
+import { verifyAuth } from '../lib/auth';
+import { getCorsHeaders, jsonResponse } from '../lib/cors';
+import { serverError } from '../lib/errors';
 
 export default async (req: Request): Promise<Response> => {
   const cors = getCorsHeaders(req);

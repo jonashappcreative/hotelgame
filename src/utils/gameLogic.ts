@@ -155,7 +155,7 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     : 'standard') as 'standard' | 'flat' | 'aggressive';
 
   // Initialize tile bag
-  let tileBag = shuffle(generateAllTiles(boardRows, colsCount));
+  const tileBag = shuffle(generateAllTiles(boardRows, colsCount));
 
   // Initialize board
   const board = new Map<TileId, TileState>();

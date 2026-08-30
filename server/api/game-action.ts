@@ -1,5 +1,5 @@
 // =============================================================================
-// game-action — Netlify Function (Node 20, Functions v2 / Web Request API)
+// game-action — the game engine endpoint (Node 20, Web Request/Response API)
 // =============================================================================
 // Ported from supabase/functions/game-action/index.ts (Deno). The game logic is
 // identical; only the infrastructure boundary changed:
@@ -8,14 +8,14 @@
 //   * after each mutation        ->  notifyWsServer() fans out to the Hetzner relay
 // =============================================================================
 
-import { db } from './_shared/db';
-import { verifyAuth } from './_shared/auth';
-import { getCorsHeaders } from './_shared/cors';
-import { notifyWsServer } from './_shared/ws';
-import { decideBotMove, type BotDifficulty } from './_shared/bot';
+import { db } from '../lib/db';
+import { verifyAuth } from '../lib/auth';
+import { getCorsHeaders } from '../lib/cors';
+import { notifyWsServer } from '../lib/ws';
+import { decideBotMove, type BotDifficulty } from '../lib/bot';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
-// _shared/rules.ts so the bot (_shared/bot.ts) evaluates moves with the exact
+// ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
 // same logic this engine enforces.
 import {
   type ChainName,
@@ -36,7 +36,7 @@ import {
   checkGameEnd,
   getStockholderRankings,
   calculateFinalScores,
-} from './_shared/rules';
+} from '../lib/rules';
 
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
@@ -228,7 +228,7 @@ async function handleGameAction(opts: {
         const initEligibleChains = getEligibleChains(rules);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
+        const tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -339,7 +339,7 @@ async function handleGameAction(opts: {
         const playerNames = allPlayers.map(p => p.player_name);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles());
+        const tileBag = shuffle(generateAllTiles());
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -511,7 +511,7 @@ async function handleGameAction(opts: {
 
         // Determine action and new phase
         let newPhase = gameState.phase;
-        let newChains = { ...chains };
+        const newChains = { ...chains };
         let pendingChainFoundation = null;
         let mergerAdjacentChains = null;
         let merger = null;
@@ -712,7 +712,7 @@ async function handleGameAction(opts: {
 
         // Give founding bonus
         const newStockBank = { ...gameState.stock_bank };
-        let playerStocks = { ...playerData.stocks };
+        const playerStocks = { ...playerData.stocks };
 
         if (newStockBank[chainName] > 0) {
           playerStocks[chainName] = (playerStocks[chainName] || 0) + 1;
@@ -991,7 +991,7 @@ async function handleGameAction(opts: {
           }
         } else {
           // Find first player with shares starting from current player
-          let startIdx = myPlayerIndex;
+          const startIdx = myPlayerIndex;
           for (let i = 0; i < allPlayers.length; i++) {
             const idx = (startIdx + i) % allPlayers.length;
             if (allPlayers[idx].stocks[defunctChain] > 0) {
@@ -1066,7 +1066,7 @@ async function handleGameAction(opts: {
 
         // Process decision
         const salePrice = getStockPrice(defunctChain, gameState.chains[defunctChain].tiles.length);
-        let newCash = playerData.cash + (decision.sell * salePrice);
+        const newCash = playerData.cash + (decision.sell * salePrice);
 
         const sharesToReceive = decision.trade / 2;
         const availableShares = Math.min(sharesToReceive, gameState.stock_bank[survivingChain]);
@@ -1592,8 +1592,8 @@ async function handleGameAction(opts: {
         const autoBonusTier: string = getBonusTier(autoRules);
         const autoBoard = { ...gameState.board };
         const autoChains = { ...gameState.chains };
-        let autoStockBank = { ...gameState.stock_bank };
-        let autoTileBag = [...gameState.tile_bag];
+        const autoStockBank = { ...gameState.stock_bank };
+        const autoTileBag = [...gameState.tile_bag];
         const autoPlayerTiles: string[] = playerData.tiles || [];
 
         const autoGameLog = [...gameState.game_log, {

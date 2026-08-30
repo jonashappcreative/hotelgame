@@ -1,5 +1,5 @@
 // =============================================================================
-// API client — thin fetch wrappers around the Netlify Functions.
+// API client — thin fetch wrappers around the backend API (server/api/).
 // Replaces the Supabase JS client. The auth token (JWT) lives in localStorage
 // and is attached as a Bearer header on every request.
 // =============================================================================

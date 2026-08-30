@@ -7,16 +7,16 @@ import { createAdaptorServer } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Server as SocketServer } from 'socket.io';
-import { setSocketServer } from '../netlify/functions/_shared/ws';
+import { setSocketServer } from './lib/ws';
 
-// Netlify Function handlers (Web Request/Response API — work unchanged)
-import authAnonymous from '../netlify/functions/auth-anonymous';
-import authSignup from '../netlify/functions/auth-signup';
-import authLogin from '../netlify/functions/auth-login';
-import gameAction from '../netlify/functions/game-action';
-import rooms from '../netlify/functions/rooms';
-import account from '../netlify/functions/account';
-import cleanupRooms from '../netlify/functions/cleanup-rooms';
+// Route handlers (plain Web Request/Response functions — see server/api/)
+import authAnonymous from './api/auth-anonymous';
+import authSignup from './api/auth-signup';
+import authLogin from './api/auth-login';
+import gameAction from './api/game-action';
+import rooms from './api/rooms';
+import account from './api/account';
+import cleanupRooms from './api/cleanup-rooms';
 
 const PORT = Number(process.env.PORT) || 3000;
 

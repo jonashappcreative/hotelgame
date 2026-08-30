@@ -1,11 +1,11 @@
 -- =============================================================================
--- Acquire — Netlify DB (Neon Postgres) consolidated schema
+-- Hotel Game — Postgres 16 consolidated schema
 -- =============================================================================
 -- This is the single, idempotent schema for the post-Supabase backend.
 -- It replaces the entire supabase/migrations/ history.
 --
 -- Key differences from the Supabase schema:
---   * No Row Level Security. Access control moves to the Netlify Functions
+--   * No Row Level Security. Access control lives in the API handlers
 --     layer (JWT verification via `jose`), which is the only thing that talks
 --     to this database. The browser never connects directly.
 --   * `auth.users` is replaced by a local `users` table. All `user_id` FKs
@@ -81,7 +81,7 @@ CREATE TRIGGER update_game_rooms_updated_at
 -- game_players — per-player state (cash, stocks, tiles, connection)
 -- -----------------------------------------------------------------------------
 -- Sensitive columns (tiles, session_id) are never returned to the browser;
--- the Netlify Functions layer serves a player only their own tiles
+-- the API layer serves a player only their own tiles
 -- (WHERE user_id = <jwt sub>). The game_players_public view mirrors this.
 CREATE TABLE IF NOT EXISTS game_players (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS game_history (
 
 -- -----------------------------------------------------------------------------
 -- Public views — the browser-facing projection that strips sensitive columns.
--- Without RLS these are plain views; the Netlify Functions layer queries them
+-- Without RLS these are plain views; the API layer queries them
 -- (instead of the base tables) whenever it returns data to the client.
 -- -----------------------------------------------------------------------------
 
@@ -217,8 +217,8 @@ CREATE VIEW game_states_public AS
 -- =============================================================================
 -- Notes on dropped Supabase constructs (now enforced in the app layer):
 --   * check_room_creation_limit() trigger relied on auth.uid(); the
---     "max 5 active rooms per user" rule is enforced in the Netlify Function
---     that creates rooms instead.
---   * cleanup_abandoned_rooms() — run as a scheduled Netlify Function or a
---     manual maintenance query rather than a DB-side RPC.
+--     "max 5 active rooms per user" rule is enforced in server/api/rooms.ts
+--     instead.
+--   * cleanup_abandoned_rooms() — handled by server/api/cleanup-rooms.ts, which
+--     server.ts runs on a 5-minute timer, rather than a DB-side RPC.
 -- =============================================================================
