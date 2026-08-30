@@ -314,7 +314,7 @@ export const useGameState = () => {
   const handleSkipBuyStock = useCallback(() => {
     if (!gameState) return;
 
-    let newState = endTurn(gameState);
+    const newState = endTurn(gameState);
     
     // Check for game end
     if (checkGameEnd(newState)) {
@@ -335,7 +335,7 @@ export const useGameState = () => {
     if (!gameState) return;
 
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    let newState = { ...gameState };
+    const newState = { ...gameState };
     
     if (vote && !newState.endGameVotes.includes(currentPlayer.id)) {
       newState.endGameVotes = [...newState.endGameVotes, currentPlayer.id];

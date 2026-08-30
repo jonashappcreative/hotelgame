@@ -32,17 +32,14 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      # Non-blocking: ~117 pre-existing errors. Runs so the count is visible and
-      # can be driven down; flip to blocking (drop continue-on-error) once clean.
+      # Blocking on errors. The ~115 remaining `any`s are warnings by config
+      # (see eslint.config.js) and do not fail the build — but no new error-level
+      # violation can land.
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
-      # Non-blocking: vitest 4.0.18 has a worker-spawn bug and runs 0 tests.
-      # Fix = pin to 4.0.0 or downgrade to 3.x, then drop continue-on-error.
       - name: Test
         run: npm run test:run
-        continue-on-error: true
 
       - name: Build
         run: npm run build

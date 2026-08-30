@@ -23,9 +23,9 @@ Nothing reaches `main` except a merged PR from `staging`.
 | Step | Blocking |
 |---|---|
 | Type check (`tsc --noEmit`) | yes |
+| Lint (`eslint .`) | yes — on errors |
+| Test (`vitest run`, 202 tests) | yes |
 | Build (`vite build`) | yes |
-| Lint | **no** — ~117 pre-existing errors |
-| Test | **no** — vitest 4.0.18 worker-spawn bug runs 0 tests |
 
 The `release-guard` job runs only on PRs into `main` and blocks the merge unless:
 1. `src/data/versionHistory.ts` was changed,
@@ -36,12 +36,15 @@ The `release-guard` job runs only on PRs into `main` and blocks the merge unless
 
 The tag is created by CI *after* a healthy deploy, so a tag means "this shipped and answered", not "someone typed a number".
 
-### The gates are not yet real
+### The `any` backlog
 
-Lint and test are `continue-on-error: true` — they run and report, but a red result still merges. Until both are blocking, CI green means "it compiles and builds", nothing more. To fix:
+`@typescript-eslint/no-explicit-any` is set to **warn**, not error (`eslint.config.js`). ~115 pre-existing `any`s remain, mostly untyped DB rows and game-state payloads in `netlify/functions/`. They surface in every CI run but don't fail it.
 
-- **Tests:** pin vitest to `4.0.0` or drop to `3.x`, confirm `npm run test:run` actually executes tests, then remove `continue-on-error` from the Test step.
-- **Lint:** drive the ~117 errors down (`npm run lint`), then remove `continue-on-error` from the Lint step.
+This is a ratchet, not an amnesty: everything else lints at error level, so no *new* error-level violation can land while the `any`s get retyped incrementally. When the count reaches zero, promote the rule back to `"error"`.
+
+### A note on vitest
+
+The suite runs on the `forks` pool (`vite.config.ts`). vitest 4's default `threads` pool fails to spawn workers on macOS here and silently reports 0 tests — which is what made the suite look broken. It was never broken; CI on Ubuntu ran it fine the whole time. Don't switch the pool back.
 
 ## Branch protection (do this once, in the GitHub UI)
 
