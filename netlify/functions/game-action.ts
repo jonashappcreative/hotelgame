@@ -228,7 +228,7 @@ async function handleGameAction(opts: {
         const initEligibleChains = getEligibleChains(rules);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
+        const tileBag = shuffle(generateAllTiles(initBoardRows, initBoardColsCount));
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -339,7 +339,7 @@ async function handleGameAction(opts: {
         const playerNames = allPlayers.map(p => p.player_name);
 
         // Initialize tile bag
-        let tileBag = shuffle(generateAllTiles());
+        const tileBag = shuffle(generateAllTiles());
 
         // Initialize board
         const board: Record<string, any> = {};
@@ -511,7 +511,7 @@ async function handleGameAction(opts: {
 
         // Determine action and new phase
         let newPhase = gameState.phase;
-        let newChains = { ...chains };
+        const newChains = { ...chains };
         let pendingChainFoundation = null;
         let mergerAdjacentChains = null;
         let merger = null;
@@ -712,7 +712,7 @@ async function handleGameAction(opts: {
 
         // Give founding bonus
         const newStockBank = { ...gameState.stock_bank };
-        let playerStocks = { ...playerData.stocks };
+        const playerStocks = { ...playerData.stocks };
 
         if (newStockBank[chainName] > 0) {
           playerStocks[chainName] = (playerStocks[chainName] || 0) + 1;
@@ -991,7 +991,7 @@ async function handleGameAction(opts: {
           }
         } else {
           // Find first player with shares starting from current player
-          let startIdx = myPlayerIndex;
+          const startIdx = myPlayerIndex;
           for (let i = 0; i < allPlayers.length; i++) {
             const idx = (startIdx + i) % allPlayers.length;
             if (allPlayers[idx].stocks[defunctChain] > 0) {
@@ -1066,7 +1066,7 @@ async function handleGameAction(opts: {
 
         // Process decision
         const salePrice = getStockPrice(defunctChain, gameState.chains[defunctChain].tiles.length);
-        let newCash = playerData.cash + (decision.sell * salePrice);
+        const newCash = playerData.cash + (decision.sell * salePrice);
 
         const sharesToReceive = decision.trade / 2;
         const availableShares = Math.min(sharesToReceive, gameState.stock_bank[survivingChain]);
@@ -1592,8 +1592,8 @@ async function handleGameAction(opts: {
         const autoBonusTier: string = getBonusTier(autoRules);
         const autoBoard = { ...gameState.board };
         const autoChains = { ...gameState.chains };
-        let autoStockBank = { ...gameState.stock_bank };
-        let autoTileBag = [...gameState.tile_bag];
+        const autoStockBank = { ...gameState.stock_bank };
+        const autoTileBag = [...gameState.tile_bag];
         const autoPlayerTiles: string[] = playerData.tiles || [];
 
         const autoGameLog = [...gameState.game_log, {

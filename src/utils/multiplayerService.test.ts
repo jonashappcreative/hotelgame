@@ -12,12 +12,13 @@ const { mockApiFetch, mockGetUserIdFromToken, mockSignInAnonymous } = vi.hoisted
   mockSignInAnonymous: vi.fn(),
 }));
 
-const socketListeners: Record<string, Function> = {};
+type SocketHandler = (...args: unknown[]) => void;
+const socketListeners: Record<string, SocketHandler> = {};
 const { mockSocketEmit, mockSocketDisconnect, mockIo } = vi.hoisted(() => {
   const mockSocketEmit = vi.fn();
   const mockSocketDisconnect = vi.fn();
   const mockIo = vi.fn(() => ({
-    on: vi.fn().mockImplementation((event: string, handler: Function) => {
+    on: vi.fn().mockImplementation((event: string, handler: SocketHandler) => {
       socketListeners[event] = handler;
     }),
     emit: mockSocketEmit,

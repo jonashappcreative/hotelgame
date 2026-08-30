@@ -34,6 +34,10 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // vitest 4's default "threads" pool fails to spawn workers on macOS here and
+    // reports 0 tests run. "forks" is unaffected and costs ~nothing at this suite
+    // size, so it's the default everywhere rather than a local-only workaround.
+    pool: "forks",
     include: [
       "src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
       "netlify/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",

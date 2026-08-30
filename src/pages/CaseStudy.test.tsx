@@ -28,7 +28,7 @@ describe('CaseStudy page', () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Place tile 2D' }));
     await waitFor(() =>
-      expect(screen.getByText(/choose the brand/i)).toBeInTheDocument()
+      expect(screen.getByText(/choose which chain to establish/i)).toBeInTheDocument()
     );
     fireEvent.click(screen.getByRole('button', { name: /Tower budget/ }));
     expect(screen.getByText(/founder's bonus/i)).toBeInTheDocument();
