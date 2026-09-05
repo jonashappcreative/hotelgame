@@ -3,7 +3,9 @@
 **Date:** 2026-09-05
 **Scope:** `server/lib/bot.ts` (373 lines), driven by `driveBotsLoop` in `server/api/game-action.ts`, scored against `server/lib/rules.ts`.
 **Nature:** Read-only analysis. No code was changed.
-**Revision:** v2 — incorporates Jonas's corrections on dead tiles, cash valuation and chain-founding tier preference, plus the new merger-liquidity requirement and the revised selling spec per difficulty (Story 14.8 scope explicitly superseded).
+**Revision:** v3 — v2 incorporated Jonas's corrections on dead tiles, cash valuation and chain-founding tier preference, plus the merger-liquidity requirement and the revised selling spec (Story 14.8 superseded). v3 records that the rework has now been implemented.
+
+> **Status: implemented.** Sections 1–6 describe the bot as it was *before* the rework and are kept as the rationale for it. Section 7 lists what was built; §9 maps each recommendation to where it landed. The findings below are historical unless §9 says otherwise.
 
 ---
 
@@ -286,3 +288,40 @@ Resolved during review, superseding earlier assumptions:
 - **Founding is not tier-first.** Hard must be free to found a cheaper chain when that buys a faster or more certain majority.
 - **Cash is not to be hoarded**; the requirement is liquidity awareness (can I act next turn?), not preservation.
 - **Dead-tile exchange only when no legal placement exists** — current behaviour is correct and stays.
+
+---
+
+## 9. Implementation status
+
+Landed in `server/lib/bot.ts` (rewritten) and `server/lib/bot.test.ts` (43 tests, up from 22).
+
+| # | Recommendation | Status | Where |
+|---|---|---|---|
+| 1 | Fix hard's sign-inverted buy score | done | `shareValue` — replaced with a dollar-valued model: price headroom + bonus actually unlocked + 2:1 trade equity |
+| 2 | Opponent-holdings and 13-share terms | done | `expectedBonus`, `confidence`, `MAJORITY_LOCK`; applied by both medium and hard |
+| 3 | Distinct hard tile score | done | `hardPlacementScore` vs `mediumPlacementScore` — no longer shared |
+| 4 | Hand lookahead | done | `findMergeTargets`, `handAdjacency` — hand is read one round ahead |
+| 5 | Cheap-share arbitrage | done | `shareValue` trade term + full confidence on a merge the bot can fire itself |
+| 6 | Cost-to-dominate founding | done | `rankFoundingChains` — ROI on cash-to-majority; tier is a +5 tiebreak |
+| 7 | Liquidity and denial in merges | done | `mergeValue` — full-price liquidation weighted by `CASH_URGENCY`, rival take by `DENIAL_WEIGHT`, plus a re-arm penalty |
+| 8 | Defensive growth | done | `growValue` — penalises pushing a rival's chain to safe size or over the end-game line |
+| 9 | Easy: random merger split | done | `decideMergerStock` easy branch; buy is now a random 0–3 quantity, not a 50% skip |
+| 10 | Medium: cash-blocked selling | done | `mediumSale` — the five rules from §4.2 |
+| 11 | Hard: strategic selling | done | `hardSale` — sells only when proceeds unblock a strictly more valuable share |
+| 12 | Sell → buy → end sequencing | done | `decideBuyPhase`; guard now reads `stocks_sold_this_turn` as well as `stocks_purchased_this_turn` |
+| 13 | Gate on sell factor | done | `ctx.sellFactor > 0` |
+| 14 | Strategic tests | done | 19 behavioural tests plus an 800-case fuzz that round-trips every sell payload through `settleSale` |
+| 15 | Header comment / unused import | done | Header rewritten; `getSafeChainSize` is now actually used (end-game and safety awareness) |
+| 16 | Measure via the Epic 16 `bots` panel | **open** | Deliberately left for after the dashboard ships — see below |
+
+### What is deliberately still open
+
+- **No measurement yet.** The stats dashboard's `bots` panel is the regression check for whether hard now beats medium. It cannot be read until the dashboard is live, so the tuning constants (`GROWTH_HORIZON`, `DENIAL_WEIGHT`, `CASH_URGENCY`, `MIN_CONFIDENCE`) are first-principles estimates, not fitted values. Expect one tuning pass after real games exist.
+- **The Epic 14 migration still has to be run by hand** before sell-capable bots reach the server — `deploy.sh` does not apply `db/migrations/2026-08-30-epic14-stock-selling.sql`.
+- **`driveBotsLoop`'s 60-move cap** now covers slightly fewer bot turns, because a selling turn costs one extra move. Harmless in any room with a human (their next action restarts the loop), untouched here.
+
+### Behaviour worth knowing
+
+- **Hard buys one share, not three, of an uncontested chain.** Once it is sole majority the second share unlocks no further bonus, so its value drops to bare appreciation and hard spends the rest of its allowance elsewhere. This is correct play and reads as "smarter" at the table.
+- **Medium and hard now diverge on founding.** Medium still reaches for premium chains (tier-first, with noise); hard founds where a majority is cheapest, which is usually budget. Two difficulties visibly playing different openings.
+- **Easy's merger split varies run to run** and can legally sell, trade, keep, or mix — the deterministic "always keep" is gone.
