@@ -594,3 +594,154 @@ describe('sell payloads round-trip through settleSale', () => {
     });
   }
 });
+
+// =============================================================================
+// Epic 18 — Story 18.6: bots declare
+// =============================================================================
+// Every difficulty must be able to declare. With automatic end detection gone,
+// a bot-only table that never declares never finishes, so this is a liveness
+// requirement rather than a strategic flourish; the difficulties differ only in
+// when, and all three share the one-round backstop.
+describe('decideBotMove — declaring the game over', () => {
+  const giantChain = () => makeChains({
+    tower: Array.from({ length: 41 }, (_, i) => `T${i}`),
+    sackson: ['1A', '1B'],
+  });
+
+  // A seat holding nothing, so no difficulty sees a lead worth playing on for.
+  const seat = (idx: number, diff: BotDifficulty, over: any = {}) => ({
+    player_index: idx, cash: 6000, stocks: zeroStocks(),
+    tiles: ['1A', '3D', '5F'], is_bot: true, bot_difficulty: diff, ...over,
+  });
+
+  for (const diff of DIFFS) {
+    it(`${diff}: never declares before a condition is met`, () => {
+      const players = [seat(0, diff), seat(1, diff)];
+      const gs = baseState({ phase: 'place_tile', chains: makeChains({ tower: ['1A', '1B'] }) });
+      expect(decideBotMove(diff, 'place_tile', gs, players, actorOf(players)).action)
+        .not.toBe('declare_game_end');
+    });
+
+    it(`${diff}: never declares out of turn`, () => {
+      const players = [seat(0, diff), seat(1, diff)];
+      const gs = baseState({ phase: 'place_tile', chains: giantChain(), current_player_index: 1 });
+      expect(decideBotMove(diff, 'place_tile', gs, players, actorOf(players, 0)).action)
+        .not.toBe('declare_game_end');
+    });
+
+    it(`${diff}: never declares during a merger phase`, () => {
+      const players = [seat(0, diff), seat(1, diff)];
+      const gs = baseState({
+        phase: 'merger_choose_survivor', chains: giantChain(),
+        merger: { survivingChain: null, defunctChains: ['sackson'], currentPlayerIndex: 0 },
+      });
+      expect(decideBotMove(diff, 'merger_choose_survivor', gs, players, actorOf(players)).action)
+        .not.toBe('declare_game_end');
+    });
+
+    it(`${diff}: never declares twice`, () => {
+      const players = [seat(0, diff), seat(1, diff)];
+      const gs = baseState({ phase: 'place_tile', chains: giantChain(), end_declared_by: 1 });
+      expect(decideBotMove(diff, 'place_tile', gs, players, actorOf(players)).action)
+        .not.toBe('declare_game_end');
+    });
+
+    // The backstop: whatever the difficulty would prefer, a condition that has
+    // stood a full round ends the game. Without it a table of hard bots that
+    // all want to keep growing their positions would deadlock.
+    it(`${diff}: declares unconditionally once the condition has stood a round`, () => {
+      // Leading on net worth AND holding a growable majority — the one state
+      // where hard would otherwise keep playing.
+      const players = [
+        seat(0, diff, { cash: 50000, stocks: { ...zeroStocks(), sackson: 12 } }),
+        seat(1, diff),
+      ];
+      const gs = baseState({
+        phase: 'place_tile', chains: giantChain(),
+        round_number: 9, end_condition_round: 8,
+      });
+      expect(decideBotMove(diff, 'place_tile', gs, players, actorOf(players)).action)
+        .toBe('declare_game_end');
+    });
+  }
+
+  it('easy declares as soon as it legally can', () => {
+    // Losing badly — easy declares anyway, which is the slightly bad play.
+    const players = [seat(0, 'easy'), seat(1, 'easy', { cash: 60000 })];
+    const gs = baseState({ phase: 'place_tile', chains: giantChain() });
+    expect(decideBotMove('easy', 'place_tile', gs, players, actorOf(players)).action)
+      .toBe('declare_game_end');
+  });
+
+  it('medium declares while it is winning and plays on while it is not', () => {
+    const ahead = [seat(0, 'medium', { cash: 60000 }), seat(1, 'medium')];
+    const behind = [seat(0, 'medium'), seat(1, 'medium', { cash: 60000 })];
+    const gs = baseState({ phase: 'place_tile', chains: giantChain() });
+
+    expect(decideBotMove('medium', 'place_tile', gs, ahead, actorOf(ahead)).action)
+      .toBe('declare_game_end');
+    expect(decideBotMove('medium', 'place_tile', gs, behind, actorOf(behind)).action)
+      .not.toBe('declare_game_end');
+  });
+
+  it('hard keeps playing while it leads a chain it could still grow', () => {
+    // Ahead on net worth, but its majority in the young sackson chain still has
+    // room — exactly the strategic opt-out the rule exists for.
+    const players = [
+      seat(0, 'hard', { cash: 60000, stocks: { ...zeroStocks(), sackson: 10 } }),
+      seat(1, 'hard'),
+    ];
+    const gs = baseState({ phase: 'place_tile', chains: giantChain() });
+    expect(decideBotMove('hard', 'place_tile', gs, players, actorOf(players)).action)
+      .not.toBe('declare_game_end');
+  });
+
+  it('hard cashes out when it is ahead with nothing left to grow', () => {
+    const players = [seat(0, 'hard', { cash: 60000 }), seat(1, 'hard')];
+    const gs = baseState({ phase: 'place_tile', chains: giantChain() });
+    expect(decideBotMove('hard', 'place_tile', gs, players, actorOf(players)).action)
+      .toBe('declare_game_end');
+  });
+
+  it('declares from the buy phase too, not just before placing', () => {
+    const players = [seat(0, 'easy'), seat(1, 'easy')];
+    const gs = baseState({ phase: 'buy_stock', chains: giantChain() });
+    expect(decideBotMove('easy', 'buy_stock', gs, players, actorOf(players)).action)
+      .toBe('declare_game_end');
+  });
+
+  it('plays its turn out normally once the declaration is recorded', () => {
+    // The drive loop re-enters after the declaration lands; the bot must then
+    // make its real move rather than declaring again.
+    const players = [seat(0, 'easy'), seat(1, 'easy')];
+    const gs = baseState({ phase: 'place_tile', chains: giantChain(), end_declared_by: 0 });
+    const move = decideBotMove('easy', 'place_tile', gs, players, actorOf(players));
+    expect(['place_tile', 'discard_tile']).toContain(move.action);
+  });
+
+  it('takes the all-safe route in a room with chain safety on', () => {
+    const chains = makeChains({
+      tower: Array.from({ length: 12 }, (_, i) => `T${i}`),
+      sackson: Array.from({ length: 14 }, (_, i) => `S${i}`),
+    });
+    const players = [seat(0, 'easy'), seat(1, 'easy')];
+    const gs = baseState({
+      phase: 'place_tile', chains, rules_snapshot: { chainSafety: '11' },
+    });
+    expect(decideBotMove('easy', 'place_tile', gs, players, actorOf(players)).action)
+      .toBe('declare_game_end');
+  });
+
+  it('never takes the all-safe route in a default room', () => {
+    // chainSafety defaults to 'none', which makes no chain safe — so 41 tiles
+    // stays the only way to end a game with today's defaults.
+    const chains = makeChains({
+      tower: Array.from({ length: 12 }, (_, i) => `T${i}`),
+      sackson: Array.from({ length: 14 }, (_, i) => `S${i}`),
+    });
+    const players = [seat(0, 'easy'), seat(1, 'easy')];
+    const gs = baseState({ phase: 'place_tile', chains });
+    expect(decideBotMove('easy', 'place_tile', gs, players, actorOf(players)).action)
+      .not.toBe('declare_game_end');
+  });
+});

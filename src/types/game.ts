@@ -87,6 +87,11 @@ export interface GameState {
   gameLog: GameLogEntry[];
   winner: string | null;
   endGameVotes: string[];
+  /**
+   * Seat that declared the game will end (Epic 18); null until someone does.
+   * The game ends when that player's turn ends, not when they declare.
+   */
+  endDeclaredBy: number | null;
   roundNumber: number;
   rulesSnapshot: CustomRules | null;
   turnDeadlineEpoch: number | null;

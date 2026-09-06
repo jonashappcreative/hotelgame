@@ -253,6 +253,7 @@ export const initializeGame = (playerNames: string[], rawRules: CustomRules = DE
     }],
     winner: null,
     endGameVotes: [],
+    endDeclaredBy: null,
     roundNumber: 0,
     // Carry the rules the game was built from, and derive chain safety from
     // them rather than pinning it at 11 — the default is now "no safe chains".
@@ -656,11 +657,45 @@ export const endTurn = (state: GameState): GameState => {
 // Check if game should end
 // Game ends ONLY when any chain reaches the end-game tile threshold.
 // Small board (6 rows) uses 30; standard board uses 41.
+// Still the local hot-seat engine's end condition — online play declares
+// instead (Epic 18, canDeclareGameEnd below).
 export const checkGameEnd = (state: GameState): boolean => {
   const endSize = state.boardRows === 6 ? 30 : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(state.chains).filter(c => c.isActive);
   return activeChains.some(c => c.tiles.length >= endSize);
 };
+
+/**
+ * Client mirror of server/lib/rules.ts canDeclareGameEnd (Epic 18). Whether the
+ * player whose turn it is may declare the game over: one active chain at the
+ * end-game size, or every active chain safe.
+ *
+ * The empty-board guard is the all-safe condition's precondition — "every
+ * active chain is safe" is vacuously true with no chains, which would let a
+ * player end the game on turn one.
+ */
+export const canDeclareGameEnd = (state: GameState): boolean =>
+  endConditionReason(state) !== null;
+
+/**
+ * Which condition is met, so the UI can name it — the two read completely
+ * differently at the table. `null` when the game cannot be declared over.
+ */
+export const endConditionReason = (state: GameState): 'threshold' | 'all_safe' | null => {
+  const activeChains = Object.values(state.chains ?? {}).filter(c => c?.isActive);
+  if (activeChains.length === 0) return null;
+
+  const endSize = state.boardRows === 6 ? 30 : END_GAME_CHAIN_SIZE;
+  if (activeChains.some(c => c.tiles.length >= endSize)) return 'threshold';
+  // safeChainSize is null when chainSafety is 'none' (the default), which makes
+  // isSafe permanently false — so this route never fires in a default room.
+  if (state.safeChainSize !== null && activeChains.every(c => c.isSafe)) return 'all_safe';
+  return null;
+};
+
+/** True once a player has announced the end; the game ends when their turn does. */
+export const isEndDeclared = (state: GameState): boolean =>
+  state.endDeclaredBy !== null && state.endDeclaredBy !== undefined;
 
 // Calculate final scores
 export const calculateFinalScores = (state: GameState): PlayerState[] => {

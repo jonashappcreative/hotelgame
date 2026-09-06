@@ -23,12 +23,15 @@ import {
   discardTile,
   endTurn,
   checkGameEnd,
+  canDeclareGameEnd,
+  endConditionReason,
   calculateFinalScores,
   getPlayerNetWorth,
   getAvailableChainsForFoundation,
   hasPlayableTiles,
 } from './gameLogic';
 import type { GameState, PlayerState, ChainName, TileId, CustomRules } from '@/types/game';
+import { END_CONDITION_CASES, chainsForCase } from '@/test/endConditionCases';
 import { DEFAULT_RULES, ELIGIBLE_CHAINS_5, ELIGIBLE_CHAINS_6 } from '@/types/game';
 
 describe('gameLogic', () => {
@@ -1929,4 +1932,23 @@ describe('gameLogic', () => {
       expect(placedTiles).toHaveLength(1);
     });
   });
+});
+
+// Epic 18. The browser mirror of server/lib/rules.ts canDeclareGameEnd, run
+// against the same shared truth table the server suite uses
+// (src/test/endConditionCases.ts) — the client decides whether to offer the
+// button, the server decides whether to accept it, and they must agree.
+describe('canDeclareGameEnd (client mirror)', () => {
+  for (const c of END_CONDITION_CASES) {
+    it(c.name, () => {
+      const state = {
+        chains: chainsForCase(c),
+        boardRows: c.boardRows,
+        safeChainSize: c.safeChainSize,
+      } as unknown as GameState;
+
+      expect(canDeclareGameEnd(state)).toBe(c.canDeclare);
+      expect(endConditionReason(state)).toBe(c.reason);
+    });
+  }
 });

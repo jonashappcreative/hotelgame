@@ -127,10 +127,47 @@ describe('summariseChains', () => {
 });
 
 describe('endReasonForAction', () => {
-  it('distinguishes the three ways a game ends', () => {
-    expect(endReasonForAction('end_game_vote')).toBe('vote');
+  it('is only the fallback for a game nobody declared', () => {
     expect(endReasonForAction('auto_end_turn')).toBe('auto');
     expect(endReasonForAction('place_tile')).toBe('threshold');
+    // Since Epic 18 the game ends on whichever action closed the declaring
+    // player's turn, so the action name can never carry 'declared' itself —
+    // recordGameResult resolves that from end_declared_by instead.
+    expect(endReasonForAction('skip_buy')).toBe('threshold');
+    expect(endReasonForAction('buy_stocks')).toBe('threshold');
+  });
+});
+
+// Epic 18.8. The game ends on a buy_stocks / skip_buy / auto_end_turn action,
+// none of which can tell from its own name that a declaration is what ended it.
+// The reason is resolved from end_declared_by on the row recordGameResult
+// already fetches — no extra query.
+describe('recordGameResult — the declared end reason', () => {
+  const reasonOf = (roomId: string) =>
+    resultRows.find((params) => params[0] === roomId)?.[6];
+
+  it('records a declared game as declared, not threshold', async () => {
+    stateRow.end_declared_by = 1;
+    await recordGameResult('room-1', 'threshold');
+    expect(reasonOf('room-1')).toBe('declared');
+  });
+
+  it('records a declared game that timed out as declared, not auto', async () => {
+    stateRow.end_declared_by = 0;
+    await recordGameResult('room-1', 'auto');
+    expect(reasonOf('room-1')).toBe('declared');
+  });
+
+  it('treats seat 0 as a real declaration, not a falsy one', async () => {
+    stateRow.end_declared_by = 0;
+    await recordGameResult('room-1', 'threshold');
+    expect(reasonOf('room-1')).toBe('declared');
+  });
+
+  it('keeps the caller reason when nobody declared', async () => {
+    stateRow.end_declared_by = null;
+    await recordGameResult('room-1', 'stalemate');
+    expect(reasonOf('room-1')).toBe('stalemate');
   });
 });
 

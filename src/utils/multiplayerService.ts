@@ -474,6 +474,8 @@ export const dbToGameState = (
     gameLog: dbState.game_log || [],
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
+    // Epic 18. `?? null` rather than `|| null` so seat 0 declaring survives.
+    endDeclaredBy: dbState.end_declared_by ?? null,
     roundNumber: dbState.round_number ?? 0,
     // Every rules read goes through normalizeRules, so a game started before
     // Epic 15 keeps its original behaviour and every derived value below comes

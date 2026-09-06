@@ -40,7 +40,8 @@ import {
   getAdjacentTiles,
   shuffle,
   generateAllTiles,
-  checkGameEnd,
+  canDeclareGameEnd,
+  endConditionReason,
   getStockholderRankings,
   calculateFinalScores,
 } from '../lib/rules';
@@ -48,7 +49,7 @@ import {
 interface GameActionRequest {
   action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
           'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'sell_stocks' | 'skip_buy' |
-          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn' | 'bot_tick';
+          'discard_tile' | 'declare_game_end' | 'new_game' | 'update_room_status' | 'auto_end_turn' | 'bot_tick';
   roomId: string;
   payload?: any;
 }
@@ -179,6 +180,19 @@ async function handleGameAction(opts: {
     const globalEligibleChains: ChainName[] = getEligibleChains(globalRulesSnap);
     const globalBonusTier: string = getBonusTier(globalRulesSnap);
     const globalSellFactor: number = getSellPriceFactor(globalRulesSnap);
+
+    // Epic 18. An end condition being met unlocks a declaration; it never ends
+    // anything by itself. `end_condition_round` records the round it was first
+    // observed at a turn boundary — stamped once, never cleared. Only the bots'
+    // "declare unconditionally after a full round" backstop reads it, and that
+    // backstop is what stops a table of bots that all want to keep playing from
+    // running forever.
+    const stampEndConditionRound = (
+      chains: Record<ChainName, any>,
+      roundNumber: number,
+    ): number | null =>
+      gameState?.end_condition_round ??
+      (canDeclareGameEnd(chains, globalBoardRows, safeChainSize) ? roundNumber : null);
 
     // Handle different actions
     let result: { success: boolean; error?: string; data?: any; turnEnded?: boolean } = { success: false };
@@ -618,38 +632,10 @@ async function handleGameAction(opts: {
           newPhase = 'buy_stock';
         }
 
-        // Check for game end
-        if (checkGameEnd(newChains, globalBoardRows) && newPhase === 'buy_stock') {
-          newPhase = 'game_over';
-          const scoredPlayers = allPlayers.map(p => ({
-            id: `player-${p.player_index}`,
-            name: p.player_name,
-            cash: p.cash,
-            stocks: p.stocks,
-          }));
-          const winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
-
-          const { error: updateError } = await adminClient
-            .from('game_states')
-            .update({
-              board: newBoard,
-              chains: newChains,
-              phase: newPhase,
-              last_placed_tile: tileId,
-              pending_chain_foundation: pendingChainFoundation,
-              merger,
-              game_log: gameLog,
-              winner,
-            })
-            .eq('room_id', roomId);
-
-          if (updateError) {
-            return new Response(JSON.stringify({ error: 'Failed to update game state', detail: updateError.message }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-        } else {
+        // Epic 18: placing the 41st tile no longer ends the game here. Meeting
+        // an end condition only unlocks a declaration; the placement proceeds
+        // to buy_stock so the declaring player still finishes their turn.
+        {
           const { error: updateError } = await adminClient
             .from('game_states')
             .update({
@@ -760,30 +746,17 @@ async function handleGameAction(opts: {
           details: 'Received 1 bonus share',
         }];
 
-        let newPhase = 'buy_stock';
-        let winner = null;
-
-        if (checkGameEnd(newChains, globalBoardRows)) {
-          newPhase = 'game_over';
-          const scoredPlayers = allPlayers.map(p => ({
-            id: `player-${p.player_index}`,
-            name: p.player_name,
-            cash: p.player_index === myPlayerIndex ? playerData.cash : p.cash,
-            stocks: p.player_index === myPlayerIndex ? playerStocks : p.stocks,
-          }));
-          winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
-        }
-
+        // Epic 18: founding a chain never ends the game, however large the
+        // cluster. The turn continues into the buy phase as it otherwise would.
         await adminClient
           .from('game_states')
           .update({
             board: newBoard,
             chains: newChains,
             stock_bank: newStockBank,
-            phase: newPhase,
+            phase: 'buy_stock',
             pending_chain_foundation: null,
             game_log: gameLog,
-            winner,
           })
           .eq('room_id', roomId);
 
@@ -1300,7 +1273,14 @@ async function handleGameAction(opts: {
             getStockPrice(c, gameState.chains[c].tiles.length) <= newCash
           );
 
-        if (canBuyMore) {
+        // Epic 18: once the game *can* be ended, the turn stops ending itself.
+        // A declaration is worthless if the player is swept past the decision
+        // by buying their last affordable share, so the turn stays open and the
+        // player leaves it deliberately through skip_buy. Mirrored client-side
+        // in GameContainer's auto-end effect.
+        const endDeclarable = canDeclareGameEnd(gameState.chains, globalBoardRows, safeChainSize);
+
+        if (canBuyMore || endDeclarable) {
           // Same player, same turn deadline — only the bank and counter move.
           await adminClient
             .from('game_states')
@@ -1341,7 +1321,11 @@ async function handleGameAction(opts: {
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains, globalBoardRows)) {
+        // Epic 18: the game ends here only because this player announced it —
+        // and only for the seat that announced it, so a declaration can never
+        // leak into someone else's turn. The purchases just made are in the
+        // final score, which is the whole point of finishing the turn.
+        if (gameState.end_declared_by === myPlayerIndex) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1366,6 +1350,7 @@ async function handleGameAction(opts: {
             game_log: gameLog,
             winner,
             round_number: newRoundNumber,
+            end_condition_round: stampEndConditionRound(gameState.chains, currentRoundNumber),
             turn_deadline_epoch: newPhase === 'game_over' ? null : newDeadline,
           })
           .eq('room_id', roomId);
@@ -1501,7 +1486,9 @@ async function handleGameAction(opts: {
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains, globalBoardRows)) {
+        // Epic 18: same branch as buy_stocks — a declared turn ends the game
+        // when it ends, and only for the seat that declared.
+        if (gameState.end_declared_by === myPlayerIndex) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1524,6 +1511,7 @@ async function handleGameAction(opts: {
             last_placed_tile: null,
             winner,
             round_number: skipNewRound,
+            end_condition_round: stampEndConditionRound(gameState.chains, skipCurrentRound),
             turn_deadline_epoch: newPhase === 'game_over' ? null : skipNewDeadline,
           })
           .eq('room_id', roomId);
@@ -1614,7 +1602,13 @@ async function handleGameAction(opts: {
         break;
       }
 
-      case 'end_game_vote': {
+      // Epic 18. Announcing the end, in the sense the physical rules mean it:
+      // the player says so during their turn, then finishes that turn as
+      // normal, and the game ends when the turn does. Nothing here changes the
+      // current turn — the branch that ends the game lives in buy_stocks,
+      // skip_buy and auto_end_turn. Replaces the majority end-game vote, which
+      // was a mechanic the board game does not have.
+      case 'declare_game_end': {
         if (!gameState) {
           return new Response(JSON.stringify({ error: 'Game not started' }), {
             status: 400,
@@ -1622,45 +1616,60 @@ async function handleGameAction(opts: {
           });
         }
 
+        // Only the player whose turn it is may declare. Everyone else can see
+        // the condition is met — chain sizes are public — but cannot act on it.
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Merger phases are excluded (as the retired vote also excluded them):
+        // the board is mid-transition and chain sizes are not final.
         if (!['place_tile', 'buy_stock'].includes(gameState.phase)) {
-          return new Response(JSON.stringify({ error: 'Cannot vote to end game during an active action phase' }), {
+          return new Response(JSON.stringify({ error: 'Cannot declare the game over during an active action phase' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        const vote = payload?.vote as boolean;
-        const playerId = `player-${myPlayerIndex}`;
-        const endGameVotes = gameState.end_game_votes || [];
-
-        if (vote && !endGameVotes.includes(playerId)) {
-          const newVotes = [...endGameVotes, playerId];
-          const humanPlayers = allPlayers.filter((p: any) => !p.is_bot);
-          const votesNeeded = Math.max(1, Math.ceil(humanPlayers.length / 2));
-
-          let newPhase = gameState.phase;
-          let winner = null;
-
-          if (newVotes.length >= votesNeeded) {
-            newPhase = 'game_over';
-            const scoredPlayers = allPlayers.map(p => ({
-              id: `player-${p.player_index}`,
-              name: p.player_name,
-              cash: p.cash,
-              stocks: p.stocks,
-            }));
-            winner = calculateFinalScores(scoredPlayers, gameState.chains, globalBonusTier)[0].name;
-          }
-
-          await adminClient
-            .from('game_states')
-            .update({
-              end_game_votes: newVotes,
-              phase: newPhase,
-              winner,
-            })
-            .eq('room_id', roomId);
+        // A declaration cannot be withdrawn, and the first one stands.
+        if (gameState.end_declared_by !== null && gameState.end_declared_by !== undefined) {
+          return new Response(JSON.stringify({ error: 'The game has already been declared over' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
+
+        // The condition is evaluated now, when the declaration is made — not
+        // when the turn ends.
+        if (!canDeclareGameEnd(gameState.chains, globalBoardRows, safeChainSize)) {
+          return new Response(JSON.stringify({ error: 'No end-game condition is met' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const declareReason = endConditionReason(gameState.chains, globalBoardRows, safeChainSize);
+        const declareLog = [...gameState.game_log, {
+          timestamp: Date.now(),
+          playerId: `player-${myPlayerIndex}`,
+          playerName: playerData.player_name,
+          action: 'Declared the game over',
+          details: declareReason === 'all_safe'
+            ? 'Every active chain is safe — the game ends after this turn'
+            : `A chain has reached ${globalBoardRows === 6 ? 30 : 41} tiles — the game ends after this turn`,
+        }];
+
+        await adminClient
+          .from('game_states')
+          .update({
+            end_declared_by: myPlayerIndex,
+            end_condition_round: stampEndConditionRound(gameState.chains, gameState.round_number ?? 0),
+            game_log: declareLog,
+          })
+          .eq('room_id', roomId);
 
         result = { success: true };
         break;
@@ -1793,7 +1802,10 @@ async function handleGameAction(opts: {
               : null;
           let phase = 'place_tile';
           let autoWinner: string | null = null;
-          if (checkGameEnd(chains, autoBoardRows)) {
+          // Epic 18: a declared turn that times out still ends the game — a
+          // player can neither stall out of the consequence nor lose the
+          // declaration by running down the clock.
+          if (gameState.end_declared_by === myPlayerIndex) {
             phase = 'game_over';
             const scored = allPlayers.map(p => ({
               id: `player-${p.player_index}`,
@@ -1803,7 +1815,14 @@ async function handleGameAction(opts: {
             }));
             autoWinner = calculateFinalScores(scored, chains, autoBonusTier)[0].name;
           }
-          return { nextPlayerIndex: npi, newRoundNumber: nrn, newDeadline: phase === 'game_over' ? null : nd, newPhase: phase, winner: autoWinner };
+          return {
+            nextPlayerIndex: npi,
+            newRoundNumber: nrn,
+            newDeadline: phase === 'game_over' ? null : nd,
+            newPhase: phase,
+            winner: autoWinner,
+            endConditionRound: stampEndConditionRound(chains, curRound),
+          };
         };
 
         let autoNewPlayerTiles = [...autoPlayerTiles];
@@ -1820,7 +1839,8 @@ async function handleGameAction(opts: {
 
           await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
 
-          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(autoChains);
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner, endConditionRound } =
+            computeAutoNextTurn(autoChains);
           await adminClient.from('game_states').update({
             current_player_index: nextPlayerIndex,
             phase: newPhase,
@@ -1830,6 +1850,7 @@ async function handleGameAction(opts: {
             chains_bought_this_turn: [],
             last_placed_tile: null,
             round_number: newRoundNumber,
+            end_condition_round: endConditionRound,
             turn_deadline_epoch: newDeadline,
             game_log: autoGameLog,
             winner,
@@ -1865,7 +1886,8 @@ async function handleGameAction(opts: {
           const drawn = autoTileBag.pop();
           if (drawn) autoNewPlayerTiles.push(drawn);
           await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
-          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(chains);
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner, endConditionRound } =
+            computeAutoNextTurn(chains);
           await adminClient.from('game_states').update({
             board: autoBoard,
             chains,
@@ -1880,6 +1902,7 @@ async function handleGameAction(opts: {
             merger: null,
             pending_chain_foundation: null,
             round_number: newRoundNumber,
+            end_condition_round: endConditionRound,
             turn_deadline_epoch: newDeadline,
             game_log: autoGameLog,
             winner,
@@ -2040,7 +2063,19 @@ async function handleGameAction(opts: {
     // running, and skipped entirely once the game is over. Awaited on purpose:
     // 'new_game' deletes the game_states row, and the record is built from it.
     if (result.success && gameState && gameState.phase !== 'game_over') {
-      await recordIfFinished(roomId, endReasonForAction(action));
+      // Epic 18.7 — the stalemate backstop. Removing automatic end detection
+      // makes one dead end reachable: the bag is empty, no player holds a
+      // playable tile, and nobody has declared. discard_tile already refuses on
+      // an empty bag, so there is nothing any player could still do, and with
+      // the vote retired there is no human escape either. Acquire's own answer
+      // is that the game ends when no one can place a tile — the single piece
+      // of automatic ending this epic keeps, as a liveness guarantee rather
+      // than a rules decision. Gated on the pre-action bag already being empty,
+      // so ordinary play pays nothing for it.
+      const stalled = (gameState.tile_bag?.length ?? 0) === 0
+        ? await endIfStalemate(roomId)
+        : false;
+      await recordIfFinished(roomId, stalled ? 'stalemate' : endReasonForAction(action));
     }
 
     return new Response(JSON.stringify(result), {
@@ -2053,6 +2088,75 @@ async function handleGameAction(opts: {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
+}
+
+// Epic 18.7. End the game when the board is dead: the tile bag is empty and no
+// player holds a tile they could legally place. Only ever called at a turn
+// boundary (phase 'place_tile') so a mid-merger state is never mistaken for a
+// stalemate. Returns true when this call is the one that ended the game.
+async function endIfStalemate(roomId: string): Promise<boolean> {
+  try {
+    const { data: state } = await db.from('game_states').select('*').eq('room_id', roomId).single();
+    if (!state || state.phase !== 'place_tile') return false;
+    if ((state.tile_bag?.length ?? 0) > 0) return false;
+
+    const { data: players } = await db
+      .from('game_players').select('*').eq('room_id', roomId).order('player_index');
+    if (!players || players.length === 0) return false;
+
+    const rules: CustomRules = normalizeRules(state.rules_snapshot);
+    const { boardRows, boardColsCount } = getBoardDimensions(rules);
+    const eligible: ChainName[] = getEligibleChains(rules);
+    const chains = state.chains ?? {};
+    const board = state.board ?? {};
+
+    // Same legality test the turn timer uses in auto_end_turn: a tile is dead
+    // if it would merge two safe chains, or would found an eighth chain.
+    const isPlayable = (tileId: string): boolean => {
+      const adjChains = new Set<ChainName>();
+      let adjUnincorporated = 0;
+      for (const adj of getAdjacentTiles(tileId, boardRows, boardColsCount)) {
+        const t = board[adj];
+        if (!t?.placed) continue;
+        if (t.chain) adjChains.add(t.chain as ChainName);
+        else adjUnincorporated++;
+      }
+      const ca = Array.from(adjChains);
+      if (ca.length >= 2 && ca.filter(c => chains[c]?.isSafe).length >= 2) return false;
+      if (ca.length === 0 && adjUnincorporated > 0 &&
+          eligible.filter(c => !chains[c]?.isActive).length === 0) return false;
+      return true;
+    };
+
+    if (players.some((p: any) => (p.tiles ?? []).some(isPlayable))) return false;
+
+    const scored = players.map((p: any) => ({
+      id: `player-${p.player_index}`,
+      name: p.player_name,
+      cash: p.cash,
+      stocks: p.stocks,
+    }));
+    const winner = calculateFinalScores(scored, chains, getBonusTier(rules))[0]?.name ?? null;
+
+    await db.from('game_states').update({
+      phase: 'game_over',
+      winner,
+      turn_deadline_epoch: null,
+      game_log: [...(state.game_log ?? []), {
+        timestamp: Date.now(),
+        playerId: 'system',
+        playerName: 'System',
+        action: 'Game over — no player can place a tile',
+        details: 'The tile bag is empty and every remaining tile is unplayable.',
+      }],
+    }).eq('room_id', roomId);
+
+    return true;
+  } catch (error) {
+    // A backstop that throws must not fail the action that triggered it.
+    console.error('endIfStalemate error:', error);
+    return false;
   }
 }
 
@@ -2221,7 +2325,6 @@ async function completeMergerInDb(
   // Update chains
   const completeMergerRules: CustomRules = normalizeRules(gameState.rules_snapshot);
   const completeMergerSafeSize: number | null = getSafeChainSize(completeMergerRules);
-  const completeMergerBonusTier: string = getBonusTier(completeMergerRules);
   const newChains = { ...gameState.chains };
   const existingTiles = newChains[survivingChain].tiles;
   const allTiles = [...new Set([...existingTiles, ...tilesToAdd])];
@@ -2249,19 +2352,10 @@ async function completeMergerInDb(
     details: `${CHAINS[survivingChain].displayName} absorbed ${merger.defunctChains.map((c: ChainName) => CHAINS[c].displayName).join(', ')}. Now has ${allTiles.length} tiles.`,
   });
 
-  let newPhase = 'buy_stock';
-  let winner = null;
-
-  if (checkGameEnd(newChains, cmBoardRows)) {
-    newPhase = 'game_over';
-    const scoredPlayers = allPlayers.map(p => ({
-      id: `player-${p.player_index}`,
-      name: p.player_name,
-      cash: p.cash,
-      stocks: p.stocks,
-    }));
-    winner = calculateFinalScores(scoredPlayers, newChains, completeMergerBonusTier)[0].name;
-  }
+  // Epic 18: a merger that pushes a chain past the end-game size no longer ends
+  // the game mid-turn. It exits to buy_stock like any other merger, and the
+  // player may declare from there.
+  const newPhase = 'buy_stock';
 
   await adminClient
     .from('game_states')
@@ -2271,7 +2365,6 @@ async function completeMergerInDb(
       phase: newPhase,
       merger: null,
       game_log: gameLog,
-      winner,
     })
     .eq('room_id', roomId);
 

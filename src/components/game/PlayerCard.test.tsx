@@ -41,6 +41,7 @@ const makeGameState = (players: PlayerState[], overrides: Partial<GameState> = {
   gameLog: [],
   winner: null,
   endGameVotes: [],
+  endDeclaredBy: null,
   roundNumber: 0,
   rulesSnapshot: null,
   turnDeadlineEpoch: null,

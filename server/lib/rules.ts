@@ -228,10 +228,57 @@ export function generateAllTiles(boardRows: number = 9, boardColsCount: number =
 
 export const SMALL_BOARD_END_GAME_SIZE = 30;
 
+// The 41-tile threshold on its own. Since Epic 18 the online engine no longer
+// ends a game off this — it is kept for the local hot-seat engine's mirror and
+// as the size half of canDeclareGameEnd below.
 export function checkGameEnd(chains: Record<ChainName, any>, boardRows: number = 9): boolean {
   const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(chains).filter((c: any) => c.isActive);
   return activeChains.some((c: any) => c.tiles.length >= endSize);
+}
+
+/**
+ * Whether the player whose turn it is may *declare* the game over (Epic 18).
+ * Acquire's two conditions, and nothing else ends a game on the online path:
+ *   1. one active chain has reached the end-game size (41, or 30 on 6 rows), or
+ *   2. every active chain is safe.
+ *
+ * The `active.length === 0` guard is the second condition's precondition, not an
+ * optimisation: "every active chain is safe" is vacuously true of an empty
+ * board, which would otherwise let anyone end the game on turn one.
+ *
+ * Condition 2 is inert whenever chain safety is off (`chainSafety: 'none'` makes
+ * getSafeChainSize return null and every chain permanently unsafe), which is the
+ * default — so a default room's only route to the end remains a 41-tile chain.
+ */
+export function canDeclareGameEnd(
+  chains: Record<ChainName, any>,
+  boardRows: number = 9,
+  safeChainSize: number | null = null,
+): boolean {
+  const active = Object.values(chains ?? {}).filter((c: any) => c?.isActive);
+  if (active.length === 0) return false;
+
+  const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
+  const hasGiant = active.some((c: any) => c.tiles.length >= endSize);
+  const allSafe = safeChainSize !== null && active.every((c: any) => c.isSafe);
+
+  return hasGiant || allSafe;
+}
+
+/** Which of the two conditions is met, for UI that has to name it. */
+export function endConditionReason(
+  chains: Record<ChainName, any>,
+  boardRows: number = 9,
+  safeChainSize: number | null = null,
+): 'threshold' | 'all_safe' | null {
+  const active = Object.values(chains ?? {}).filter((c: any) => c?.isActive);
+  if (active.length === 0) return null;
+
+  const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
+  if (active.some((c: any) => c.tiles.length >= endSize)) return 'threshold';
+  if (safeChainSize !== null && active.every((c: any) => c.isSafe)) return 'all_safe';
+  return null;
 }
 
 export function getStockholderRankings(players: any[], chainName: ChainName): { majority: any[]; minority: any[] } {

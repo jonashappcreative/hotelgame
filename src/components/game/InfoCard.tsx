@@ -3,7 +3,7 @@ import { getStockPrice, getBonuses } from '@/utils/gameLogic';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Info, Star } from 'lucide-react';
+import { Info, Star, Flag } from 'lucide-react';
 
 interface InfoCardProps {
   gameState: GameState;
@@ -11,6 +11,10 @@ interface InfoCardProps {
 
 export const InfoCard = ({ gameState }: InfoCardProps) => {
   const chainNames = Object.keys(CHAINS) as ChainName[];
+
+  // Epic 18: mark the chain that put the game within reach of an end, so the
+  // condition is visible to every player and not just to whoever could declare.
+  const endGameSize = gameState.boardRows === 6 ? 30 : 41;
 
   return (
     <Dialog>
@@ -48,6 +52,12 @@ export const InfoCard = ({ gameState }: InfoCardProps) => {
                     <div className={cn("w-3 h-3 rounded-full", `chain-${chain}`)} />
                     <span className="font-medium text-sm">{CHAINS[chain].displayName}</span>
                     {state.isSafe && <Star className="w-3 h-3 text-cash-neutral fill-current" />}
+                    {state.isActive && state.tiles.length >= endGameSize && (
+                      <Flag
+                        className="w-3 h-3 text-chain-merger"
+                        aria-label={`At ${endGameSize}+ tiles — the game can be declared over`}
+                      />
+                    )}
                   </div>
                   
                   {state.isActive ? (

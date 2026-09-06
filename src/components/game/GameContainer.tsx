@@ -13,16 +13,16 @@ import { GameOver } from './GameOver';
 import { MergerSurvivorChoice } from './MergerSurvivorChoice';
 import { MergerBonusDisplay } from './MergerBonusDisplay';
 import { MergerStockDecision as MergerStockDecisionComponent } from './MergerStockDecision';
-import { EndGameVote } from './EndGameVote';
+import { EndGameDeclaration } from './EndGameDeclaration';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { EndTurnConfirmModal } from './EndTurnConfirmModal';
 import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock, WifiOff, ArrowRight, Trophy } from 'lucide-react';
+import { Clock, WifiOff, ArrowRight, Trophy, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canBuyMoreStock, canSellStock } from '@/utils/gameLogic';
+import { canBuyMoreStock, canSellStock, endConditionReason } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
@@ -37,7 +37,13 @@ interface GameContainerProps {
   /** Sell shares back to the bank. Omitted where the mode isn't wired up. */
   onSellStocks?: (sales: { chain: ChainName; quantity: number }[]) => void;
   onEndTurn: () => void;
-  onEndGameVote: (vote: boolean) => void;
+  /**
+   * Announce that the game ends after this turn (Epic 18). Resolves true when
+   * the declaration was accepted. Omitted in local hot-seat play, where the
+   * engine still ends the game automatically — its absence is what keeps the
+   * old behaviour on that path.
+   */
+  onDeclareGameEnd?: () => Promise<boolean>;
   onNewGame: () => void;
   /** Leave the room / go back to the lobby. Works for every player (online). */
   onReturnToLobby?: () => void;
@@ -59,7 +65,7 @@ export const GameContainer = ({
   onBuyStocks,
   onSellStocks,
   onEndTurn,
-  onEndGameVote,
+  onDeclareGameEnd,
   onNewGame,
   onReturnToLobby,
   onDiscardTile,
@@ -121,12 +127,28 @@ export const GameContainer = ({
   const canSellAnything = buyPhaseActive && !!onSellStocks && canSellStock(gameState, myPlayerIndex);
   const canTradeAnything = canBuyAnything || canSellAnything;
 
+  // Epic 18. Which end-game condition is met, if any — a null reason means the
+  // game cannot be ended yet. Local hot-seat play keeps the old automatic end,
+  // so this whole path is inert without an onDeclareGameEnd handler.
+  const endCondition = onDeclareGameEnd ? endConditionReason(gameState) : null;
+  const endDeclaredBy = gameState.endDeclaredBy ?? null;
+  const endDeclared = endDeclaredBy !== null;
+  const iDeclared = endDeclared && endDeclaredBy === myPlayerIndex;
+  const endGameSize = gameState.boardRows === 6 ? 30 : 41;
+
+  // The turn no longer ends itself once the game can be ended. A declaration is
+  // worthless if the player is swept past the decision, so the buy phase stays
+  // open and the player leaves it deliberately through the modal below. Third
+  // term of the gate Epic 14 widened with canSellAnything; mirrored server-side
+  // in game-action.ts's buy_stocks handler.
+  const turnMayAutoEnd = !canTradeAnything && endCondition === null;
+
   useEffect(() => {
-    if (buyPhaseActive && !canTradeAnything) {
+    if (buyPhaseActive && turnMayAutoEnd) {
       const t = setTimeout(() => onEndTurn?.(), 800);
       return () => clearTimeout(t);
     }
-  }, [buyPhaseActive, canTradeAnything]);
+  }, [buyPhaseActive, turnMayAutoEnd]);
 
   // Leaving the buy phase (turn ended, timer expired) clears the confirmation so
   // it can't reappear on the player's next turn.
@@ -150,6 +172,18 @@ export const GameContainer = ({
 
   const handleConfirmEndTurn = () => {
     setShowEndTurnConfirm(false);
+    setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
+    onEndTurn();
+  };
+
+  // Declare and end the turn in one gesture. The declaration is awaited rather
+  // than fired alongside: the server reads end_declared_by when the turn ends,
+  // so a turn that ended first would simply pass to the next player. A rejected
+  // declaration leaves the turn open — the player sees the error and can retry.
+  const handleDeclareAndEndTurn = async () => {
+    if (!onDeclareGameEnd) return;
+    setShowEndTurnConfirm(false);
+    if (!(await onDeclareGameEnd())) return;
     setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
     onEndTurn();
   };
@@ -280,11 +314,6 @@ export const GameContainer = ({
     return analysis.potentialSurvivors;
   };
 
-  // Check if end game voting is allowed
-  const canCallEndGameVote = 
-    gameState.phase !== 'game_over' &&
-    ['place_tile', 'buy_stock'].includes(gameState.phase);
-
   // Handle tile selection (show confirmation modal)
   const handleTileSelect = (tileId: TileId) => {
     setSelectedTile(tileId);
@@ -341,8 +370,9 @@ export const GameContainer = ({
         </div>
       )}
 
-      {/* End Turn Confirmation - warns when stock is still affordable */}
-      {showEndTurnConfirm && buyPhaseActive && canTradeAnything && (
+      {/* End Turn Confirmation — warns when stock is still affordable, and once
+          the game can be ended, carries the declaration decision (Epic 18). */}
+      {showEndTurnConfirm && buyPhaseActive && !turnMayAutoEnd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
           <EndTurnConfirmModal
             purchasedThisTurn={gameState.stocksPurchasedThisTurn}
@@ -351,6 +381,10 @@ export const GameContainer = ({
             pendingSellShares={pendingPurchase.sellShares}
             pendingProceeds={pendingPurchase.proceeds}
             canStillBuy={canBuyAnything}
+            endCondition={endCondition}
+            endGameSize={endGameSize}
+            alreadyDeclared={iDeclared}
+            onDeclareAndEnd={onDeclareGameEnd ? handleDeclareAndEndTurn : undefined}
             onConfirm={handleConfirmEndTurn}
             onCancel={() => setShowEndTurnConfirm(false)}
           />
@@ -409,15 +443,47 @@ export const GameContainer = ({
             )}
             <InfoCard gameState={gameState} />
             <AudioSettingsButton variant="outline" />
-            <EndGameVote
-              gameState={gameState}
-              currentPlayerId={myPlayer.id}
-              onVote={onEndGameVote}
-              canCallVote={canCallEndGameVote}
-              botCount={botCount}
-            />
+            {onDeclareGameEnd && (
+              <EndGameDeclaration
+                gameState={gameState}
+                myPlayerIndex={myPlayerIndex}
+                onDeclare={() => { void onDeclareGameEnd(); }}
+              />
+            )}
           </div>
         </header>
+
+        {/* Epic 18. The announcement, made visible the way it is audible around
+            a physical table — every player's remaining decisions depend on
+            knowing the game ends after this turn. And when the condition is met
+            but nobody has declared, that is shown too, so the strategic
+            opt-out reads as a choice someone is making rather than a bug. */}
+        {(endDeclared || endCondition !== null) && gameState.phase !== 'game_over' && (
+          <div
+            className={`flex items-center gap-3 rounded-xl border p-3 mb-4 lg:mb-6 ${
+              endDeclared
+                ? 'border-chain-merger/50 bg-chain-merger/10'
+                : 'border-primary/30 bg-primary/5'
+            }`}
+          >
+            <Flag className={`w-5 h-5 shrink-0 ${endDeclared ? 'text-chain-merger' : 'text-primary'}`} />
+            <div>
+              <p className="font-semibold text-sm">
+                {endDeclared
+                  ? `${gameState.players[endDeclaredBy!]?.name ?? 'A player'} has declared the game will end after this turn.`
+                  : 'The game can now be ended.'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {endDeclared
+                  ? 'Final scores are calculated as soon as that turn finishes.'
+                  : `${endCondition === 'all_safe'
+                      ? 'Every chain on the board is safe'
+                      : `A chain has reached ${endGameSize} tiles`}` +
+                    ` — ${isMyTurn ? 'you may declare it over on this turn' : `${currentPlayer.name} may declare it over on this turn`}.`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Main Layout */}
         <div className="grid lg:grid-cols-[1fr_320px] gap-4 lg:gap-6">
@@ -619,7 +685,7 @@ export const GameContainer = ({
               />
               {/* End Turn — shown below tiles during the buy phase */}
               {buyPhaseActive && (
-                canTradeAnything ? (
+                !turnMayAutoEnd ? (
                   <Button size="lg" className="w-full" onClick={() => setShowEndTurnConfirm(true)}>
                     <ArrowRight className="w-4 h-4 mr-2" />
                     End Turn

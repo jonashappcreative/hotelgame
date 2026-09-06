@@ -53,6 +53,7 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     gameLog: [],
     winner: null,
     endGameVotes: [],
+  endDeclaredBy: null,
     roundNumber: 1,
     rulesSnapshot: { ...DEFAULT_RULES, stockSelling: '75' },
     turnDeadlineEpoch: null,

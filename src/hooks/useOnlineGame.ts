@@ -578,28 +578,26 @@ export const useOnlineGame = () => {
     }
   }, [gameState, roomId, myPlayerIndex, refreshGameState]);
 
-  const handleEndGameVote = useCallback(async (vote: boolean) => {
-    if (!gameState || !roomId || myPlayerIndex === null) return;
+  // Epic 18. Announce that the game ends after this turn. The turn itself is
+  // untouched — the player still places, resolves any merger and buys — so this
+  // deliberately does not end the turn or change the phase.
+  const handleDeclareGameEnd = useCallback(async (): Promise<boolean> => {
+    if (!gameState || !roomId || myPlayerIndex === null) return false;
 
-    const result = await executeGameAction('end_game_vote', roomId, { vote });
-    
+    const result = await executeGameAction('declare_game_end', roomId);
+
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
-      return;
+      return false;
     }
 
-    const botCount = players.filter(p => p.is_bot).length;
-    const humanCount = gameState.players.length - botCount;
-    const votesNeeded = Math.max(1, Math.ceil(humanCount / 2));
-    const currentVotes = gameState.endGameVotes.length + (vote ? 1 : 0);
-    
-    if (currentVotes >= votesNeeded) {
-      toast({ title: 'Game Ended', description: 'Players voted to end the game' });
-    } else {
-      toast({ title: 'Vote Recorded', description: `${currentVotes}/${votesNeeded} votes` });
-    }
+    toast({
+      title: 'Game Over Declared',
+      description: 'Finish your turn as normal — the game ends when your turn does.',
+    });
 
     await refreshGameState();
+    return true;
   }, [gameState, roomId, myPlayerIndex, refreshGameState]);
 
   const handleNewGame = useCallback(async () => {
@@ -767,7 +765,7 @@ export const useOnlineGame = () => {
     handleBuyStocks,
     handleSellStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
+    handleDeclareGameEnd,
     handleNewGame,
     handleAutoEndTurn,
 

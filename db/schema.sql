@@ -176,6 +176,12 @@ CREATE TABLE IF NOT EXISTS game_states (
 ALTER TABLE game_states ADD COLUMN IF NOT EXISTS stocks_sold_this_turn INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE game_states ADD COLUMN IF NOT EXISTS chains_bought_this_turn TEXT[] NOT NULL DEFAULT '{}';
 
+-- End-Game Declaration (Epic 18, added post-launch). The seat that announced
+-- the game will end (NULL = nobody has), and the round an end condition was
+-- first seen, which anchors the bots' declaration backstop.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_declared_by INTEGER DEFAULT NULL;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_condition_round INTEGER DEFAULT NULL;
+
 DROP TRIGGER IF EXISTS update_game_states_updated_at ON game_states;
 CREATE TRIGGER update_game_states_updated_at
   BEFORE UPDATE ON game_states
@@ -233,14 +239,14 @@ CREATE TABLE IF NOT EXISTS game_results (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'valid_end_reason') THEN
-    ALTER TABLE game_results
-      ADD CONSTRAINT valid_end_reason
-      CHECK (end_reason IN ('threshold', 'vote', 'auto', 'unknown'));
-  END IF;
-END $$;
+-- 'declared' and 'stalemate' are Epic 18's reasons; 'threshold' and 'vote' are
+-- legacy values no new game writes, kept for historical rows. Dropped and
+-- recreated rather than guarded on existence, so re-applying this file to a
+-- database provisioned before Epic 18 actually widens the constraint.
+ALTER TABLE game_results DROP CONSTRAINT IF EXISTS valid_end_reason;
+ALTER TABLE game_results
+  ADD CONSTRAINT valid_end_reason
+  CHECK (end_reason IN ('declared', 'stalemate', 'threshold', 'vote', 'auto', 'unknown'));
 
 CREATE INDEX IF NOT EXISTS idx_game_results_ended_at ON game_results (ended_at DESC);
 
@@ -305,6 +311,8 @@ CREATE VIEW game_states_public AS
     pending_chain_foundation,
     game_log,
     end_game_votes,
+    end_declared_by,
+    end_condition_round,
     stocks_purchased_this_turn,
     stocks_sold_this_turn,
     chains_bought_this_turn,

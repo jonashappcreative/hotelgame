@@ -51,6 +51,7 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     gameLog: [],
     winner: null,
     endGameVotes: [],
+  endDeclaredBy: null,
     roundNumber: 1,
     rulesSnapshot: null,
     turnDeadlineEpoch: null,
@@ -66,12 +67,19 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
 
 const noop = () => {};
 
-const renderGame = (gameState: GameState, opts: { withSelling?: boolean } = {}) => {
+const renderGame = (
+  gameState: GameState,
+  opts: { withSelling?: boolean; online?: boolean; declareFails?: boolean } = {},
+) => {
   const onEndTurn = vi.fn();
   const onSellStocks = vi.fn();
+  const onDeclareGameEnd = vi.fn(async () => !opts.declareFails);
   render(
     <GameContainer
       gameState={gameState}
+      // Epic 18's declaration path is the online path; local hot-seat keeps the
+      // engine's own automatic end, and passing no handler is what selects it.
+      myPlayerIndex={opts.online ? gameState.currentPlayerIndex : undefined}
       onTilePlacement={noop}
       onFoundChain={noop}
       onChooseMergerSurvivor={noop}
@@ -80,11 +88,11 @@ const renderGame = (gameState: GameState, opts: { withSelling?: boolean } = {}) 
       onBuyStocks={noop}
       onSellStocks={opts.withSelling ? onSellStocks : undefined}
       onEndTurn={onEndTurn}
-      onEndGameVote={noop}
+      onDeclareGameEnd={opts.online ? onDeclareGameEnd : undefined}
       onNewGame={noop}
     />
   );
-  return { onEndTurn, onSellStocks };
+  return { onEndTurn, onSellStocks, onDeclareGameEnd };
 };
 
 const clickEndTurn = () =>
@@ -207,5 +215,171 @@ describe('GameContainer — End Turn with stock selling enabled', () => {
     expect(screen.getByText('You can still sell stock')).toBeInTheDocument();
     expect(screen.getByText(/marked to sell/)).toBeInTheDocument();
     expect(onEndTurn).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Epic 18 — Story 18.4: once the game can be ended, turns stop ending themselves
+// =============================================================================
+// The declaration is worthless if the player never gets to make it, so the buy
+// phase stops auto-closing while a condition holds and the turn leaves through
+// the modal instead.
+describe('GameContainer — ending a turn once the game can be ended', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  // A board with a 41-tile chain: the condition is met, so the turn must not
+  // end itself even though the allowance is spent and nothing is affordable.
+  const endableState = (overrides: Partial<GameState> = {}) => {
+    const state = makeGameState({ stocksPurchasedThisTurn: 3, ...overrides });
+    state.chains.sackson = {
+      name: 'sackson',
+      tiles: Array.from({ length: 41 }, (_, i) => `t${i}`) as TileId[],
+      isActive: true,
+      isSafe: false,
+    };
+    return state;
+  };
+
+  // Every active chain safe — the second route, invisible in a default room.
+  const allSafeState = () => {
+    const state = makeGameState({ stocksPurchasedThisTurn: 3 });
+    state.chains.sackson = {
+      name: 'sackson',
+      tiles: Array.from({ length: 12 }, (_, i) => `t${i}`) as TileId[],
+      isActive: true,
+      isSafe: true,
+    };
+    return state;
+  };
+
+  it('does not auto-end the turn once a chain has reached 41 tiles', async () => {
+    const { onEndTurn } = renderGame(endableState(), { online: true });
+
+    expect(screen.getByRole('button', { name: /end turn/i })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(onEndTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-end the turn when nothing is affordable either', async () => {
+    const state = endableState();
+    state.stocksPurchasedThisTurn = 0;
+    state.players[0].cash = 0;
+    const { onEndTurn } = renderGame(state, { online: true });
+
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(onEndTurn).not.toHaveBeenCalled();
+  });
+
+  it('names the met condition and offers the choice', () => {
+    renderGame(endableState(), { online: true });
+
+    clickEndTurn();
+
+    expect(screen.getByText('The game can be ended')).toBeInTheDocument();
+    // Named in both the banner and the modal — one reminder, two places.
+    expect(screen.getAllByText(/A chain has reached 41 tiles/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /declare & end game/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /keep playing/i })).toBeInTheDocument();
+  });
+
+  it('names the all-safe condition on that route instead', () => {
+    renderGame(allSafeState(), { online: true });
+
+    clickEndTurn();
+
+    expect(screen.getAllByText(/Every chain on the board is safe/).length).toBeGreaterThan(0);
+  });
+
+  it('Declare & End Game declares and then ends the turn', async () => {
+    const { onEndTurn, onDeclareGameEnd } = renderGame(endableState(), { online: true });
+
+    clickEndTurn();
+    fireEvent.click(screen.getByRole('button', { name: /declare & end game/i }));
+
+    await waitFor(() => expect(onDeclareGameEnd).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onEndTurn).toHaveBeenCalledOnce());
+  });
+
+  it('leaves the turn open when the declaration is rejected', async () => {
+    const { onEndTurn, onDeclareGameEnd } = renderGame(
+      endableState(), { online: true, declareFails: true },
+    );
+
+    clickEndTurn();
+    fireEvent.click(screen.getByRole('button', { name: /declare & end game/i }));
+
+    await waitFor(() => expect(onDeclareGameEnd).toHaveBeenCalledOnce());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onEndTurn).not.toHaveBeenCalled();
+  });
+
+  it('End Turn — Keep Playing ends the turn without declaring', async () => {
+    const { onEndTurn, onDeclareGameEnd } = renderGame(endableState(), { online: true });
+
+    clickEndTurn();
+    fireEvent.click(screen.getByRole('button', { name: /keep playing/i }));
+
+    expect(onEndTurn).toHaveBeenCalledOnce();
+    expect(onDeclareGameEnd).not.toHaveBeenCalled();
+  });
+
+  it('confirms rather than re-offering the choice to a player who already declared', () => {
+    renderGame(endableState({ endDeclaredBy: 0 }), { online: true });
+
+    clickEndTurn();
+
+    expect(screen.getByText('Ending this turn ends the game')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /declare & end game/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /end turn & finish game/i })).toBeInTheDocument();
+  });
+
+  it('shows every player that the game will end after this turn', () => {
+    // Bob's browser, watching Alice's declared turn.
+    const state = endableState({ endDeclaredBy: 0, currentPlayerIndex: 0 });
+    render(
+      <GameContainer
+        gameState={state}
+        myPlayerIndex={1}
+        onTilePlacement={noop}
+        onFoundChain={noop}
+        onChooseMergerSurvivor={noop}
+        onPayMergerBonuses={noop}
+        onMergerStockChoice={noop}
+        onBuyStocks={noop}
+        onEndTurn={noop}
+        onDeclareGameEnd={async () => true}
+        onNewGame={noop}
+      />
+    );
+
+    expect(
+      screen.getByText('Alice has declared the game will end after this turn.')
+    ).toBeInTheDocument();
+  });
+
+  it('shows every player that the condition is met while nobody has declared', () => {
+    renderGame(endableState(), { online: true });
+
+    expect(screen.getByText('The game can now be ended.')).toBeInTheDocument();
+  });
+
+  // The gate only widens once a condition holds — with none met, nothing about
+  // the buy phase changes.
+  it('is byte-identical to before when no condition is met', async () => {
+    const { onEndTurn } = renderGame(
+      makeGameState({ stocksPurchasedThisTurn: 3 }), { online: true },
+    );
+
+    expect(screen.queryByRole('button', { name: /end turn/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(onEndTurn).toHaveBeenCalled(), { timeout: 2000 });
+  });
+
+  // Local hot-seat play keeps the engine's automatic end (see Out of Scope).
+  it('leaves local hot-seat play auto-ending as before', async () => {
+    const { onEndTurn } = renderGame(endableState());
+
+    await waitFor(() => expect(onEndTurn).toHaveBeenCalled(), { timeout: 2000 });
   });
 });

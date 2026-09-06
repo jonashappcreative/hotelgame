@@ -35,7 +35,6 @@ const Index = () => {
     handleMergerStockChoice,
     handleBuyStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
     resetGame,
   } = useGameState();
 
@@ -192,7 +191,6 @@ const Index = () => {
       onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
       onEndTurn={handleSkipBuyStock}
-      onEndGameVote={handleEndGameVote}
       onNewGame={() => {
         resetGame();
         setMode('select');

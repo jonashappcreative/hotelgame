@@ -7,9 +7,15 @@ import {
   getSellPrice,
   getStockPrice,
   settleSale,
+  canDeclareGameEnd,
+  endConditionReason,
   type ChainName,
   type CustomRules,
 } from './rules';
+import {
+  END_CONDITION_CASES,
+  chainsForCase,
+} from '../../src/test/endConditionCases';
 
 const ALL: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
@@ -200,5 +206,26 @@ describe('settleSale', () => {
     const res = settleSale({ ...base, factor: 1, sales: [{ chain: 'continental', quantity: 2 }] });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.settlement.proceeds).toBe(getStockPrice('continental', 7) * 2);
+  });
+});
+
+// Epic 18. Runs the shared truth table (src/test/endConditionCases.ts) that
+// src/utils/gameLogic.test.ts runs against the browser mirror, so the two
+// implementations of one rule cannot drift apart.
+describe('canDeclareGameEnd', () => {
+  for (const c of END_CONDITION_CASES) {
+    it(c.name, () => {
+      const chains = chainsForCase(c) as unknown as Record<ChainName, any>;
+      expect(canDeclareGameEnd(chains, c.boardRows, c.safeChainSize)).toBe(c.canDeclare);
+      expect(endConditionReason(chains, c.boardRows, c.safeChainSize)).toBe(c.reason);
+    });
+  }
+
+  it('defaults to safety off, so an all-safe board alone cannot end a game', () => {
+    const chains = chainsForCase({
+      name: '', sizes: { tower: 11 }, safe: ['tower'], boardRows: 9,
+      safeChainSize: 11, canDeclare: true, reason: 'all_safe',
+    }) as unknown as Record<ChainName, any>;
+    expect(canDeclareGameEnd(chains)).toBe(false);
   });
 });

@@ -41,6 +41,7 @@ import {
   MAX_STOCKS_PER_TURN,
   END_GAME_CHAIN_SIZE,
   SMALL_BOARD_END_GAME_SIZE,
+  canDeclareGameEnd,
 } from './rules';
 import { STOCKS_PER_CHAIN } from '../../src/types/game';
 
@@ -71,6 +72,10 @@ const CASH_URGENCY = 1.6;
 // Floor on how much an uncontested-looking standing is trusted early, when the
 // bank is still full and anyone can still buy in.
 const MIN_CONFIDENCE = 0.15;
+// Epic 18 liveness. Rounds an end condition may stand before every bot declares
+// on sight, whatever it would otherwise prefer. Without this a table of hard
+// bots that all want to keep growing their positions never finishes.
+const DECLARE_BACKSTOP_ROUNDS = 1;
 
 // Tier ranking, now a tiebreak only (see rankFoundingChains).
 const TIER_RANK: Record<string, number> = { budget: 0, midrange: 1, premium: 2 };
@@ -907,6 +912,78 @@ function toPurchases(bought: Record<string, number>): { chain: string; quantity:
     .map(([chain, quantity]) => ({ chain, quantity }));
 }
 
+// --- end-game declaration (Epic 18) ------------------------------------------
+
+// Liquidation value of a seat: cash plus what its shares are worth at current
+// chain sizes. Bonuses are left out on purpose — they swing on standings that
+// are still contested, and every seat is measured the same way here.
+function seatNetWorth(ctx: Ctx, cash: number, stocks: Record<string, number>): number {
+  let total = cash;
+  for (const c of ctx.active) total += (stocks?.[c] ?? 0) * priceOf(ctx, c);
+  return total;
+}
+
+const myNetWorth = (ctx: Ctx): number => seatNetWorth(ctx, ctx.cash, ctx.me.stocks ?? {});
+
+const bestRivalNetWorth = (ctx: Ctx): number =>
+  ctx.rivals.reduce((best, p) => Math.max(best, seatNetWorth(ctx, p.cash, p.stocks)), 0);
+
+// A position worth staying in the game for: we lead a chain that still has room
+// to grow, so more tiles on it mean a bigger bonus for us at payout. A safe
+// chain at the end-game size has nothing left to give.
+function holdsGrowableLead(ctx: Ctx): boolean {
+  return ctx.active.some((c) => {
+    const mine = myShares(ctx, c);
+    if (mine <= 0) return false;
+    const rivals = rivalShares(ctx, c);
+    if (mine <= (rivals.length > 0 ? Math.max(...rivals) : 0)) return false;
+    return sizeOf(ctx, c) < ctx.endGameSize;
+  });
+}
+
+/**
+ * Should this bot announce the game over on this turn?
+ *
+ * Every difficulty has to be able to declare: with automatic end detection gone
+ * (Epic 18), a bot-only table that never declares never finishes. That makes
+ * this a liveness requirement rather than a flourish, so the difficulties
+ * differ only in *when*, and all three share the backstop.
+ */
+function shouldDeclareGameEnd(ctx: Ctx): boolean {
+  const gs = ctx.gs;
+
+  // Mirrors the engine's own validation (game-action.ts declare_game_end): a
+  // rejected move stops the drive loop for the turn, so a bot must never emit
+  // one it knows to be illegal.
+  if (gs.end_declared_by !== null && gs.end_declared_by !== undefined) return false;
+  if (gs.current_player_index !== ctx.myIndex) return false;
+  if (!['place_tile', 'buy_stock'].includes(gs.phase)) return false;
+  if (!canDeclareGameEnd(ctx.chains, ctx.boardRows, ctx.safeSize)) return false;
+
+  // The backstop, for every difficulty. Once the condition has stood a full
+  // round, whoever's turn it is ends it — otherwise a table of hard bots that
+  // all prefer to keep playing would deadlock.
+  const since = gs.end_condition_round;
+  const round = gs.round_number ?? 0;
+  if (typeof since === 'number' && round - since >= DECLARE_BACKSTOP_ROUNDS) return true;
+
+  switch (ctx.diff) {
+    // Ends it the moment it legally can — simple, and slightly bad play, which
+    // is on-brand for easy.
+    case 'easy':
+      return true;
+
+    // Stops while it is winning, plays on while it is not.
+    case 'medium':
+      return myNetWorth(ctx) > bestRivalNetWorth(ctx);
+
+    // Takes the strategic opt-out the rule exists for: cashes out when ahead,
+    // but keeps playing while it has a majority it can still grow.
+    case 'hard':
+      return myNetWorth(ctx) > bestRivalNetWorth(ctx) && !holdsGrowableLead(ctx);
+  }
+}
+
 // --- entry point -------------------------------------------------------------
 
 export function decideBotMove(
@@ -917,6 +994,11 @@ export function decideBotMove(
   actor: any,
 ): BotMove {
   const ctx = buildCtx(difficulty, gameState, players, actor);
+
+  // Epic 18: declaring is a free action — it changes nothing about this turn,
+  // so the bot announces first and then plays the turn out normally on the
+  // drive loop's next pass, buying and placing exactly as it otherwise would.
+  if (shouldDeclareGameEnd(ctx)) return { action: 'declare_game_end' };
 
   switch (phase) {
     case 'place_tile':

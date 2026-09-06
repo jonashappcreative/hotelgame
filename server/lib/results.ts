@@ -27,7 +27,11 @@ import {
   calculateFinalScores,
 } from './rules';
 
-export type EndReason = 'threshold' | 'vote' | 'auto' | 'unknown';
+// 'declared' and 'stalemate' are Epic 18's reasons. 'threshold' and 'vote' are
+// legacy: no new game records either — the engine no longer ends a game off a
+// chain size, and the majority vote is retired — but historical rows carry them
+// and the dashboard still renders them, so treat this as open-ended.
+export type EndReason = 'declared' | 'stalemate' | 'threshold' | 'vote' | 'auto' | 'unknown';
 
 /** A row as Postgres hands it back; every read is coerced at the point of use. */
 type Row = Record<string, any>;
@@ -48,12 +52,13 @@ const APP_VERSION: string | null = (() => {
 })();
 
 /**
- * Map the action that ended the game to the reason we store. The engine reaches
- * 'game_over' from a merger/placement threshold, a majority end-game vote, or
- * the turn timer auto-ending a turn.
+ * Map the action that ended the game to the reason we store — a fallback only.
+ * Since Epic 18 a game ends on a buy_stocks / skip_buy / auto_end_turn action,
+ * none of which can tell from its own name that a *declaration* is what ended
+ * it. recordGameResult resolves that from state instead (end_declared_by), and
+ * only falls back to this when nobody declared.
  */
 export function endReasonForAction(action: string): EndReason {
-  if (action === 'end_game_vote') return 'vote';
   if (action === 'auto_end_turn') return 'auto';
   return 'threshold';
 }
@@ -161,11 +166,20 @@ export async function recordGameResult(
     if (!room) return false;
 
     const [state] = await query<Row>(
-      `SELECT phase, chains, game_log, round_number, rules_snapshot, updated_at
+      `SELECT phase, chains, game_log, round_number, rules_snapshot, updated_at, end_declared_by
          FROM game_states WHERE room_id = $1`,
       [roomId],
     );
     if (!state || state.phase !== 'game_over') return false;
+
+    // Epic 18: a declared end is invisible to the action name — the game ends
+    // on whatever action closed the declaring player's turn. The row this
+    // function already fetches carries the answer, so resolving it here costs
+    // no extra query. Everything else keeps the caller's reason.
+    const resolvedReason: EndReason =
+      state.end_declared_by !== null && state.end_declared_by !== undefined
+        ? 'declared'
+        : endReason;
 
     // Cheap pre-check so the common "already recorded" path costs one indexed
     // lookup instead of a transaction. The unique index is still the authority.
@@ -215,7 +229,7 @@ export async function recordGameResult(
          RETURNING id`,
         [
           roomId, room.room_code, startedAt, endedAt, durationSeconds, state.round_number ?? 0,
-          endReason, seats.length, seats.filter((s) => !s.is_bot).length, seats.filter((s) => s.is_bot).length,
+          resolvedReason, seats.length, seats.filter((s) => !s.is_bot).length, seats.filter((s) => s.is_bot).length,
           winner?.display_name ?? null, winner?.is_bot ?? null, winner?.bot_difficulty ?? null,
           winner?.final_total ?? null,
           JSON.stringify(rules), JSON.stringify(finalChains), mergers,
@@ -243,7 +257,7 @@ export async function recordGameResult(
         );
       }
 
-      console.log(`results: recorded game ${room.room_code} (${seats.length}p, ${endReason})`);
+      console.log(`results: recorded game ${room.room_code} (${seats.length}p, ${resolvedReason})`);
       return true;
     });
   } catch (err) {

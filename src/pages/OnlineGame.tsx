@@ -43,7 +43,7 @@ const OnlineGame = () => {
     handleBuyStocks,
     handleSellStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
+    handleDeclareGameEnd,
     handleNewGame,
     handleAutoEndTurn,
   } = useOnlineGame();
@@ -101,7 +101,7 @@ const OnlineGame = () => {
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
       onSellStocks={handleSellStocks}
       onEndTurn={handleSkipBuyStock}
-      onEndGameVote={handleEndGameVote}
+      onDeclareGameEnd={handleDeclareGameEnd}
       onNewGame={handleNewGame}
       onReturnToLobby={handleLeaveRoom}
       onAutoEndTurn={handleAutoEndTurn}
