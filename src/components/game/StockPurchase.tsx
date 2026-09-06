@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ChainName, GameState, CHAINS, MAX_STOCKS_PER_TURN } from '@/types/game';
+import { ChainName, GameState, CHAINS } from '@/types/game';
+import {
+  getStockAllowance,
+  isFreeStockActive,
+  POWER_CARD_INFO,
+} from '@/types/power-cards';
+import { PowerTradePanel } from './PowerTradePanel';
 import {
   getStockPrice,
   getSellPrice,
@@ -9,7 +15,7 @@ import {
 } from '@/utils/gameLogic';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Minus, Plus, ShoppingCart, Banknote } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Banknote, Sparkles } from 'lucide-react';
 
 /** Shares picked but not yet confirmed, on either side of the panel. */
 export interface PendingTrade {
@@ -29,6 +35,8 @@ interface StockPurchaseProps {
   onSell?: (sales: { chain: ChainName; quantity: number }[]) => void;
   /** Reports shares picked but not yet confirmed, so End Turn can warn about them. */
   onPendingChange?: (pending: PendingTrade) => void;
+  /** Power-card trade (Epic 17). Omitted where power cards aren't wired up. */
+  onPowerTrade?: (give: { chain: ChainName; quantity: number }[], receive: ChainName) => void;
 }
 
 const noSelections = (): Record<ChainName, number> => ({
@@ -48,6 +56,7 @@ export const StockPurchase = ({
   onPurchase,
   onSell,
   onPendingChange,
+  onPowerTrade,
 }: StockPurchaseProps) => {
   const [selections, setSelections] = useState<Record<ChainName, number>>(noSelections);
   // Kept separate from `selections` so switching tabs preserves both baskets.
@@ -57,7 +66,14 @@ export const StockPurchase = ({
 
   const totalSelected = Object.values(selections).reduce((a, b) => a + b, 0);
   // Shares left in the per-turn cap after what's already been bought this turn.
+  // The cap itself is 5 under Extra Purchase and 3 otherwise (Epic 17).
   const allowance = getRemainingStockAllowance(gameState);
+  const activePowerCard = gameState.activePowerCard ?? null;
+  const buyCap = getStockAllowance(activePowerCard);
+  // Free Shares zeroes the price and nothing else — the bank must still hold
+  // the shares and the chain must still be active.
+  const freeShares = isFreeStockActive(activePowerCard);
+  const tradeActive = activePowerCard?.card === 'stock_trade' && !!onPowerTrade;
 
   // Selling is a room rule; the factor is 0 when it's off. Buying and selling
   // have independent per-turn budgets, so this is its own allowance.
@@ -86,11 +102,13 @@ export const StockPurchase = ({
       return priceA - priceB;
     });
 
+  const priceOf = (chain: ChainName): number =>
+    freeShares ? 0 : getStockPrice(chain, gameState.chains[chain].tiles.length);
+
   const getTotalCost = (): number => {
     return (Object.entries(selections) as [ChainName, number][]).reduce((total, [chain, qty]) => {
       if (qty === 0) return total;
-      const price = getStockPrice(chain, gameState.chains[chain].tiles.length);
-      return total + (price * qty);
+      return total + (priceOf(chain) * qty);
     }, 0);
   };
 
@@ -139,11 +157,8 @@ export const StockPurchase = ({
     // Check if adding would exceed max purchases
     if (delta > 0 && totalSelected >= allowance) return;
 
-    // Check if can afford
-    if (delta > 0) {
-      const price = getStockPrice(chain, gameState.chains[chain].tiles.length);
-      if (totalCost + price > playerCash) return;
-    }
+    // Check if can afford (always true while Free Shares is active)
+    if (delta > 0 && totalCost + priceOf(chain) > playerCash) return;
 
     setSelections(prev => ({ ...prev, [chain]: newQty }));
   };
@@ -182,6 +197,8 @@ export const StockPurchase = ({
     }
   };
 
+  // Nothing to buy and nothing to trade into — a trade needs an active chain on
+  // both sides, so there is genuinely nothing this panel could offer.
   if (activeChains.length === 0 && soldOutChains.length === 0) {
     return (
       <div className="bg-card rounded-xl p-6 text-center animate-slide-up">
@@ -198,10 +215,36 @@ export const StockPurchase = ({
         <h3 className="text-lg font-semibold">{showingSell ? 'Sell Stocks' : 'Buy Stocks'}</h3>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">
-            {showingSell ? remainingSales : remainingPurchases} of {MAX_STOCKS_PER_TURN} remaining
+            {showingSell ? remainingSales : remainingPurchases} of{' '}
+            {showingSell ? sellAllowance + totalSellSelected : buyCap} remaining
           </span>
         </div>
       </div>
+
+      {/* Which card is colouring this buy phase, named rather than implied —
+          "Free" prices and a cap of 5 are both surprising enough that the
+          player should be able to see why. */}
+      {activePowerCard && (
+        <div className="flex items-center gap-2 mb-4 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2">
+          <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+          <p className="text-xs">
+            <span className="font-semibold">{POWER_CARD_INFO[activePowerCard.card].name}</span>
+            <span className="text-muted-foreground"> — {POWER_CARD_INFO[activePowerCard.card].summary}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Trading has its own budget and never touches the buy allowance, so it
+          sits above the buy/sell switch rather than inside it. */}
+      {tradeActive && (
+        <div className="mb-4">
+          <PowerTradePanel
+            gameState={gameState}
+            playerStocks={playerStocks}
+            onTrade={onPowerTrade!}
+          />
+        </div>
+      )}
 
       {/* Buy / Sell segmented control — only when the room allows selling.
           Buying and selling have separate budgets, so this is a view switch,
@@ -323,7 +366,8 @@ export const StockPurchase = ({
             {/* Active purchasable chains */}
             {activeChains.map(chain => {
               const chainState = gameState.chains[chain];
-              const price = getStockPrice(chain, chainState.tiles.length);
+              const marketPrice = getStockPrice(chain, chainState.tiles.length);
+              const price = priceOf(chain);
               const available = gameState.stockBank[chain];
               const selected = selections[chain];
               const canBuyMore = selected < available && totalSelected < allowance && totalCost + price <= playerCash;
@@ -341,7 +385,15 @@ export const StockPurchase = ({
                     <div>
                       <p className="font-medium">{CHAINS[chain].displayName}</p>
                       <p className="text-xs text-muted-foreground">
-                        ${price.toLocaleString()} • {available} left
+                        {freeShares ? (
+                          <>
+                            <span className="line-through opacity-60">${marketPrice.toLocaleString()}</span>{' '}
+                            <span className="font-semibold text-primary">Free</span>
+                          </>
+                        ) : (
+                          <>${marketPrice.toLocaleString()}</>
+                        )}
+                        {' • '}{available} left
                       </p>
                     </div>
                   </div>

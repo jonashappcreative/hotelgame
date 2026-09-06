@@ -1,6 +1,6 @@
 import { MAX_STOCKS_PER_TURN } from '@/types/game';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ArrowRight, Banknote, Flag, ShoppingCart } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Banknote, Flag, ShoppingCart, Sparkles } from 'lucide-react';
 
 interface EndTurnConfirmModalProps {
   /** Shares already bought this turn (0 when the player hasn't bought at all). */
@@ -25,6 +25,11 @@ interface EndTurnConfirmModalProps {
   endGameSize?: number;
   /** True once this player has already announced the end this turn. */
   alreadyDeclared?: boolean;
+  /**
+   * Names of power cards the player could still usefully play (Epic 17). A card
+   * is a one-shot resource, so ending the turn must never forfeit one silently.
+   */
+  playableCardNames?: string[];
   /** Declare and end the turn in one gesture. */
   onDeclareAndEnd?: () => void;
   onConfirm: () => void;
@@ -41,6 +46,7 @@ export const EndTurnConfirmModal = ({
   endCondition = null,
   endGameSize = 41,
   alreadyDeclared = false,
+  playableCardNames = [],
   onDeclareAndEnd,
   onConfirm,
   onCancel,
@@ -104,6 +110,22 @@ export const EndTurnConfirmModal = ({
               ${pendingCost.toLocaleString()}
             </span>{' '}
             that you never confirmed. Ending your turn discards the selection.
+          </p>
+        </div>
+      )}
+
+      {/* A power card is spent once per game, so an unplayed one that is
+          playable right now is worth more warning than an unconfirmed basket. */}
+      {playableCardNames.length > 0 && (
+        <div className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-secondary/50 border border-border/50">
+          <Sparkles className="w-4 h-4 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            You can still play{' '}
+            <span className="font-semibold text-foreground">
+              {playableCardNames.join(' or ')}
+            </span>
+            {' '}this turn. Ending your turn keeps the card
+            {playableCardNames.length !== 1 ? 's' : ''} for a later one.
           </p>
         </div>
       )}

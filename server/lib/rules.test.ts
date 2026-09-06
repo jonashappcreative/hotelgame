@@ -7,6 +7,10 @@ import {
   getSellPrice,
   getStockPrice,
   settleSale,
+  settleTrade,
+  isTilePlayable,
+  MAX_POWER_TRADES,
+  TRADE_GIVE,
   canDeclareGameEnd,
   endConditionReason,
   type ChainName,
@@ -227,5 +231,206 @@ describe('canDeclareGameEnd', () => {
       safeChainSize: 11, canDeclare: true, reason: 'all_safe',
     }) as unknown as Record<ChainName, any>;
     expect(canDeclareGameEnd(chains)).toBe(false);
+  });
+});
+
+
+// =============================================================================
+// Epic 17 — Stock Trade
+// =============================================================================
+describe('settleTrade', () => {
+  const active: ChainName[] = ['tower', 'continental', 'imperial'];
+  const base = {
+    chains: chainsAt(7, active),
+    stocks: { ...zeroStocks(), tower: 4, continental: 2, imperial: 0, festival: 6 },
+    stockBank: fullBank(),
+    tradesUsed: 0,
+    chainsBoughtThisTurn: [] as ChainName[],
+  };
+
+  it('gives 2 and takes 1, moving both sides through the bank', () => {
+    const res = settleTrade({
+      ...base,
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.settlement.newStocks.tower).toBe(2);
+    expect(res.settlement.newStocks.continental).toBe(3);
+    expect(res.settlement.newStockBank.tower).toBe(27);
+    expect(res.settlement.newStockBank.continental).toBe(24);
+  });
+
+  it('accepts the 2 given across two different chains', () => {
+    const res = settleTrade({
+      ...base,
+      give: [{ chain: 'tower', quantity: 1 }, { chain: 'continental', quantity: 1 }],
+      receive: 'imperial',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.settlement.newStocks.tower).toBe(3);
+    expect(res.settlement.newStocks.continental).toBe(1);
+    expect(res.settlement.newStocks.imperial).toBe(1);
+  });
+
+  it(`requires exactly ${TRADE_GIVE} shares given, not fewer and not more`, () => {
+    for (const quantity of [1, 3]) {
+      const res = settleTrade({ ...base, give: [{ chain: 'tower', quantity }], receive: 'continental' });
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/exactly/i);
+    }
+  });
+
+  it(`allows ${MAX_POWER_TRADES} trades and refuses the next`, () => {
+    const res = settleTrade({
+      ...base,
+      tradesUsed: MAX_POWER_TRADES,
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/all 3 trades/i);
+  });
+
+  // Defunct certificates are worthless paper; laundering them into live stock
+  // would be the single most valuable thing the card could do.
+  it('refuses a defunct chain on the give side', () => {
+    const res = settleTrade({ ...base, give: [{ chain: 'festival', quantity: 2 }], receive: 'tower' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/not on the board/i);
+  });
+
+  it('refuses a defunct chain on the receive side', () => {
+    const res = settleTrade({ ...base, give: [{ chain: 'tower', quantity: 2 }], receive: 'festival' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/not on the board/i);
+  });
+
+  // Both halves of Epic 14's guard, or buy-then-trade routes around it.
+  it('refuses to give away a chain bought this turn', () => {
+    const res = settleTrade({
+      ...base,
+      chainsBoughtThisTurn: ['tower'],
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/bought this turn/i);
+  });
+
+  it('adds the chain received to chains_bought_this_turn', () => {
+    const res = settleTrade({
+      ...base,
+      chainsBoughtThisTurn: ['imperial'],
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.settlement.newChainsBoughtThisTurn.sort()).toEqual(['continental', 'imperial']);
+  });
+
+  it('refuses more shares than the player holds', () => {
+    const res = settleTrade({
+      ...base,
+      stocks: { ...zeroStocks(), tower: 1 },
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/only hold/i);
+  });
+
+  it('refuses to receive from an empty bank', () => {
+    const res = settleTrade({
+      ...base,
+      stockBank: { ...fullBank(), continental: 0 },
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/no continental shares left/i);
+  });
+
+  // The given shares return to the bank first, so the last share you just
+  // handed back is available to trade into.
+  it('lets the returned shares themselves fund the receive side', () => {
+    const res = settleTrade({
+      ...base,
+      stockBank: { ...fullBank(), tower: 0 },
+      give: [{ chain: 'tower', quantity: 2 }],
+      receive: 'tower',
+    });
+    expect(res.ok).toBe(true);
+    expect(res.settlement.newStocks.tower).toBe(3);
+    expect(res.settlement.newStockBank.tower).toBe(1);
+  });
+
+  it('collapses a chain named twice rather than letting it dodge the checks', () => {
+    const res = settleTrade({
+      ...base,
+      stocks: { ...zeroStocks(), tower: 1 },
+      give: [{ chain: 'tower', quantity: 1 }, { chain: 'tower', quantity: 1 }],
+      receive: 'continental',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/only hold 1/i);
+  });
+
+  it("leaves the caller's objects untouched", () => {
+    const stocks = { ...zeroStocks(), tower: 4 };
+    const stockBank = { ...fullBank() };
+    settleTrade({ ...base, stocks, stockBank, give: [{ chain: 'tower', quantity: 2 }], receive: 'continental' });
+    expect(stocks.tower).toBe(4);
+    expect(stockBank.tower).toBe(25);
+  });
+});
+
+// =============================================================================
+// isTilePlayable — one definition for the timer, the stalemate backstop, the
+// Building Spree exit and the bot, which each carried their own copy before.
+// =============================================================================
+describe('isTilePlayable', () => {
+  const eligibleChains: ChainName[] = ['tower', 'continental', 'imperial'];
+  const emptyBoard = () => ({} as Record<string, any>);
+
+  const placed = (tile: string, chain: ChainName | null) => ({ id: tile, placed: true, chain });
+
+  const call = (board: Record<string, any>, chains: Record<string, any>, tileId = '5F') =>
+    isTilePlayable({ tileId, board, chains, eligibleChains, boardRows: 9, boardColsCount: 12 });
+
+  it('an isolated tile is always playable', () => {
+    expect(call(emptyBoard(), chainsAt(0, []))).toBe(true);
+  });
+
+  it('a tile merging two safe chains is dead', () => {
+    const chains = {
+      tower: { tiles: [], isActive: true, isSafe: true },
+      continental: { tiles: [], isActive: true, isSafe: true },
+    };
+    expect(call({ '4F': placed('4F', 'tower'), '6F': placed('6F', 'continental') }, chains)).toBe(false);
+  });
+
+  it('a tile merging one safe chain with an unsafe one is fine', () => {
+    const chains = {
+      tower: { tiles: [], isActive: true, isSafe: true },
+      continental: { tiles: [], isActive: true, isSafe: false },
+    };
+    expect(call({ '4F': placed('4F', 'tower'), '6F': placed('6F', 'continental') }, chains)).toBe(true);
+  });
+
+  it('a tile that would found a chain when none are left is dead', () => {
+    const allActive = Object.fromEntries(
+      eligibleChains.map((c) => [c, { tiles: [], isActive: true, isSafe: false }]),
+    );
+    expect(call({ '4F': placed('4F', null) }, allActive)).toBe(false);
+  });
+
+  it('the same tile is playable while an eligible chain is still free', () => {
+    const someActive = {
+      tower: { tiles: [], isActive: true, isSafe: false },
+      continental: { tiles: [], isActive: false, isSafe: false },
+      imperial: { tiles: [], isActive: false, isSafe: false },
+    };
+    expect(call({ '4F': placed('4F', null) }, someActive)).toBe(true);
   });
 });

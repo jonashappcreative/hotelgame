@@ -15,8 +15,39 @@ export type TileId = string;
 // src/types/rules-normalize.ts so the browser engine and this one read the same
 // definitions. They are re-exported here because every server module already
 // imports its rule helpers from `../lib/rules`.
-export type { CustomRules } from '../../src/types/game';
-export { DEFAULT_RULES } from '../../src/types/game';
+export type { CustomRules, PowerCardId, ActivePowerCard } from '../../src/types/game';
+export {
+  DEFAULT_RULES,
+  POWER_CARDS,
+  EXTRA_BUY_LIMIT,
+  EXTRA_TILES_DRAW,
+  MULTI_TILE_LIMIT,
+  MAX_POWER_TRADES,
+  TRADE_GIVE,
+  TRADE_RECEIVE,
+} from '../../src/types/game';
+
+// Power-card legality (Epic 17). The server gates play_power_card on exactly
+// the function the client uses to disable a button, so the two can never
+// disagree about what is playable.
+export {
+  canPlayPowerCard,
+  canUseAnyPowerCard,
+  powerCardHasUse,
+  getStockAllowance,
+  isFreeStockActive,
+  isMultiTileActive,
+  remainingPowerTrades,
+  normalizeActivePowerCard,
+  normalizePowerCards,
+  isPowerCardId,
+  POWER_CARD_INFO,
+} from '../../src/types/power-cards';
+export type {
+  PowerCardLegality,
+  PowerCardTurnState,
+  PowerCardUseState,
+} from '../../src/types/power-cards';
 export {
   normalizeRules,
   validateRules,
@@ -49,6 +80,8 @@ export const CHAINS: Record<ChainName, { displayName: string; tier: 'budget' | '
   continental: { displayName: 'Continental', tier: 'premium' },
   imperial: { displayName: 'Imperial', tier: 'premium' },
 };
+
+import { MAX_POWER_TRADES, TRADE_GIVE, TRADE_RECEIVE } from '../../src/types/game';
 
 export const END_GAME_CHAIN_SIZE = 41;
 export const MAX_STOCKS_PER_TURN = 3;
@@ -177,6 +210,128 @@ export function settleSale(opts: {
   return { ok: true, settlement: { proceeds, totalQuantity, newStocks, newStockBank, lines } };
 }
 
+export interface TradeGive {
+  chain: ChainName;
+  quantity: number;
+}
+
+export interface TradeOutcome {
+  ok: boolean;
+  /** Present when ok. */
+  settlement?: TradeSettlement;
+  /** Present when the trade was rejected. */
+  error?: string;
+}
+
+export interface TradeSettlement {
+  /** Trader's holdings after the trade. */
+  newStocks: Record<ChainName, number>;
+  /** Bank holdings after the trade. */
+  newStockBank: Record<ChainName, number>;
+  /** chains_bought_this_turn after the received chain is added to it. */
+  newChainsBoughtThisTurn: ChainName[];
+  /** Per-chain breakdown of what was given, for the game log. */
+  given: { chain: ChainName; quantity: number }[];
+  received: ChainName;
+}
+
+/**
+ * Pure validation + settlement for one power-card trade (Epic 17, Stock Trade):
+ * TRADE_GIVE shares the player owns go back to the bank, TRADE_RECEIVE come out
+ * of it. Beside settleSale for the same reason — the engine case persists what
+ * this returns, so every rejection rule is testable without a database.
+ *
+ * Both sides are restricted to chains currently active on the board: defunct
+ * certificates are worthless paper and must not be launderable into live stock.
+ * Epic 14's "no selling what you bought this turn" guard extends to both halves
+ * — the give side is blocked for a chain bought this turn, and the chain
+ * received joins that list — or buy-then-trade would be a way around it.
+ */
+export function settleTrade(opts: {
+  give: TradeGive[];
+  receive: ChainName;
+  chains: Record<ChainName, { tiles: TileId[]; isActive: boolean }>;
+  stocks: Record<ChainName, number>;
+  stockBank: Record<ChainName, number>;
+  tradesUsed: number;
+  chainsBoughtThisTurn: ChainName[];
+}): TradeOutcome {
+  const { give, receive, chains, stocks, stockBank, tradesUsed, chainsBoughtThisTurn } = opts;
+
+  if (tradesUsed >= MAX_POWER_TRADES) {
+    return { ok: false, error: `You have used all ${MAX_POWER_TRADES} trades this turn` };
+  }
+  if (!Array.isArray(give) || give.length === 0) {
+    return { ok: false, error: 'No shares selected to trade away' };
+  }
+  if (!receive || !chains[receive]) {
+    return { ok: false, error: `Unknown chain: ${receive}` };
+  }
+
+  // Collapse duplicates so a request can't slip past the per-chain checks by
+  // naming the same chain twice.
+  const wanted = new Map<ChainName, number>();
+  for (const entry of give) {
+    const qty = Number(entry?.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return { ok: false, error: 'Trade quantity must be a positive whole number' };
+    }
+    if (!chains[entry.chain]) return { ok: false, error: `Unknown chain: ${entry.chain}` };
+    wanted.set(entry.chain, (wanted.get(entry.chain) ?? 0) + qty);
+  }
+
+  const totalGiven = [...wanted.values()].reduce((sum, q) => sum + q, 0);
+  if (totalGiven !== TRADE_GIVE) {
+    return { ok: false, error: `A trade gives exactly ${TRADE_GIVE} shares` };
+  }
+
+  const newStocks = { ...stocks };
+  const newStockBank = { ...stockBank };
+  const given: { chain: ChainName; quantity: number }[] = [];
+
+  for (const [chain, quantity] of wanted) {
+    if (!chains[chain].isActive) {
+      return { ok: false, error: `${CHAINS[chain].displayName} is not on the board` };
+    }
+    if (chainsBoughtThisTurn.includes(chain)) {
+      return { ok: false, error: `Cannot trade away ${CHAINS[chain].displayName} — bought this turn` };
+    }
+    if ((stocks[chain] ?? 0) < quantity) {
+      return {
+        ok: false,
+        error: `You only hold ${stocks[chain] ?? 0} ${CHAINS[chain].displayName} share(s)`,
+      };
+    }
+    newStocks[chain] = (newStocks[chain] ?? 0) - quantity;
+    newStockBank[chain] = (newStockBank[chain] ?? 0) + quantity;
+    given.push({ chain, quantity });
+  }
+
+  if (!chains[receive].isActive) {
+    return { ok: false, error: `${CHAINS[receive].displayName} is not on the board` };
+  }
+  // Checked against the bank *after* the given shares are returned, so trading
+  // 2 Tower for 1 Tower is legal (and pointless), and trading into a chain whose
+  // last share you just handed back works.
+  if ((newStockBank[receive] ?? 0) < TRADE_RECEIVE) {
+    return { ok: false, error: `No ${CHAINS[receive].displayName} shares left in the bank` };
+  }
+
+  newStockBank[receive] = (newStockBank[receive] ?? 0) - TRADE_RECEIVE;
+  newStocks[receive] = (newStocks[receive] ?? 0) + TRADE_RECEIVE;
+
+  return {
+    ok: true,
+    settlement: {
+      newStocks,
+      newStockBank,
+      newChainsBoughtThisTurn: [...new Set<ChainName>([...chainsBoughtThisTurn, receive])],
+      given,
+      received: receive,
+    },
+  };
+}
+
 export function getBonuses(chainName: ChainName, size: number, bonusTier: string = 'standard'): { majority: number; minority: number } {
   const price = getStockPrice(chainName, size);
   const majorityMult = bonusTier === 'aggressive' ? 15 : 10;
@@ -204,6 +359,38 @@ export function getAdjacentTiles(tileId: TileId, boardRows: number = 9, boardCol
   if (colIndex < cols.length - 1) adjacent.push(`${row}${cols[colIndex + 1]}`);
 
   return adjacent;
+}
+
+/**
+ * Whether a tile could legally be placed on the board as it stands. A tile is
+ * dead when it would merge two safe chains, or would found a chain with none
+ * left to found. Extracted so the four callers that need it — the turn timer,
+ * the stalemate backstop, the Building Spree exit and the bot — all agree.
+ */
+export function isTilePlayable(opts: {
+  tileId: TileId;
+  board: Record<string, any>;
+  chains: Record<string, any>;
+  eligibleChains: ChainName[];
+  boardRows: number;
+  boardColsCount: number;
+}): boolean {
+  const { tileId, board, chains, eligibleChains, boardRows, boardColsCount } = opts;
+
+  const adjacentChains = new Set<ChainName>();
+  let adjacentUnincorporated = 0;
+  for (const adj of getAdjacentTiles(tileId, boardRows, boardColsCount)) {
+    const tile = board[adj];
+    if (!tile?.placed) continue;
+    if (tile.chain) adjacentChains.add(tile.chain as ChainName);
+    else adjacentUnincorporated++;
+  }
+
+  const touching = Array.from(adjacentChains);
+  if (touching.length >= 2 && touching.filter((c) => chains[c]?.isSafe).length >= 2) return false;
+  if (touching.length === 0 && adjacentUnincorporated > 0 &&
+      eligibleChains.filter((c) => !chains[c]?.isActive).length === 0) return false;
+  return true;
 }
 
 export function shuffle<T>(array: T[]): T[] {

@@ -55,7 +55,6 @@ import {
   toggleReady,
   getSecurePlayerData,
   executeGameAction,
-  startGame,
   updateGameState,
   dbToGameState,
   subscribeToRoom,
@@ -325,18 +324,6 @@ describe('multiplayerService', () => {
       const result = await toggleReady('room-id');
       expect(mockApiFetch).toHaveBeenCalledWith('/game-action', expect.objectContaining({ action: 'toggle_ready' }));
       expect(result.success).toBe(true);
-    });
-  });
-
-  describe('startGame', () => {
-    it('calls start_game action and returns true on success', async () => {
-      mockApiFetch.mockResolvedValue({ ok: true, data: { success: true }, error: null });
-      expect(await startGame('room-id', {} as any)).toBe(true);
-    });
-
-    it('returns false on failure', async () => {
-      mockApiFetch.mockResolvedValue({ ok: false, data: null, error: 'err' });
-      expect(await startGame('room-id', {} as any)).toBe(false);
     });
   });
 

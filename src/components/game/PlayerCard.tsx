@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { PlayerState, ChainName, GameState, CHAINS } from '@/types/game';
+import { PlayerState, ChainName, GameState, CHAINS, PowerCardId, POWER_CARDS } from '@/types/game';
+import { POWER_CARD_INFO } from '@/types/power-cards';
+import { PowerCardDialog } from './PowerCardDialog';
+import { POWER_CARD_ICONS } from './powerCardIcons';
 import { getPlayerNetWorth, getStockPrice, getStockholderRankings } from '@/utils/gameLogic';
 import { cn } from '@/lib/utils';
 import { User, Crown, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
@@ -17,6 +20,7 @@ interface PlayerCardProps {
 
 export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cashVisibility = 'visible', myPlayerIndex }: PlayerCardProps) => {
   const [isExpanded, setIsExpanded] = useState(isCurrentTurn);
+  const [openCard, setOpenCard] = useState<PowerCardId | null>(null);
   const netWorth = getPlayerNetWorth(player, gameState.chains);
   const totalCash = gameState.players.reduce((sum, p) => sum + p.cash, 0);
 
@@ -52,6 +56,12 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cash
   const effectiveExpanded = isCurrentTurn || isExpanded;
 
   const isDisconnected = player.isConnected === false;
+
+  const powerCards = player.powerCards ?? [];
+  // Opponents only: your own five live in PowerCardBar, higher up the same
+  // rail, where they can actually be played. Repeating them here would be two
+  // rows of the same icons a few hundred pixels apart.
+  const showPowerCards = gameState.rulesSnapshot?.powerCards === 'on' && !isYou;
 
   return (
     <Collapsible open={effectiveExpanded} onOpenChange={setIsExpanded}>
@@ -121,6 +131,44 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cash
           </div>
         </CollapsibleTrigger>
 
+        {/* Remaining power cards (Epic 17). Outside the collapsible on purpose:
+            "what does everyone still hold" has to be one uninterrupted scan down
+            the rail, not five cards to expand one at a time.
+
+            Public information, so it renders for every seat regardless of the
+            room's cash visibility — that setting hides money and nothing else. */}
+        {showPowerCards && (
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-[10px] text-muted-foreground shrink-0">Cards left</p>
+            <div className="flex gap-1">
+              {POWER_CARDS.map((card) => {
+                const held = powerCards.includes(card);
+                const Icon = POWER_CARD_ICONS[card];
+                return (
+                  <button
+                    key={card}
+                    type="button"
+                    onClick={() => setOpenCard(card)}
+                    aria-label={`${POWER_CARD_INFO[card].name} — ${held ? 'still held' : 'spent'}`}
+                    title={`${POWER_CARD_INFO[card].name} — ${held ? 'still held' : 'spent'}`}
+                    className={cn(
+                      'relative flex h-5 w-5 items-center justify-center rounded border transition-colors',
+                      held
+                        ? 'border-primary/60 bg-primary/15 text-primary hover:bg-primary/25'
+                        : 'border-border/40 bg-muted/30 text-muted-foreground/40',
+                    )}
+                  >
+                    <Icon className="h-2.5 w-2.5" />
+                    {!held && (
+                      <span className="absolute inset-x-0.5 top-1/2 h-px -translate-y-1/2 bg-muted-foreground/50" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Collapsible content - Stocks */}
         <CollapsibleContent>
           <div className="mt-3 pt-3 border-t border-border/50">
@@ -169,6 +217,17 @@ export const PlayerCard = ({ player, gameState, isCurrentTurn, isYou, rank, cash
             )}
           </div>
         </CollapsibleContent>
+
+        {/* The same read-only dialog the player's own bar opens, so a card is
+            explained identically wherever it is clicked. */}
+        <PowerCardDialog
+          card={openCard}
+          // Always read-only: the one place a card can be played is its owner's
+          // own bar, and this card belongs to an opponent.
+          status={openCard && powerCards.includes(openCard) ? 'blocked' : 'spent'}
+          ownerName={player.name}
+          onClose={() => setOpenCard(null)}
+        />
       </div>
     </Collapsible>
   );

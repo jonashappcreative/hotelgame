@@ -5,7 +5,8 @@
 **Priority:** High
 **Created:** 2026-09-06
 **Branch:** `feature/end-game-declaration`
-**Status:** Implemented on `feature/end-game-declaration` (2026-09-06) — migration not yet applied
+**Status:** Implemented on `feature/end-game-declaration`, then carried onto `power-cards` (2026-09-06)
+— migration not yet applied
 
 ---
 
@@ -311,16 +312,16 @@ stall to avoid the consequence, and cannot lose the declaration by timing out.
 ### With Epic 17's Building Spree
 
 **These two epics rewrite the same call sites in opposite directions, and whichever ships second must fix
-the other.** [Epic 17](./Epic-17-power-cards.md) Story 17.9 currently says *"An end-game condition met on
-tile 2 ends the game there"*, which describes the behaviour Epic 18 deletes. Under Epic 18 the correct
-rule is:
+the other.** Epic 18 shipped first, so [Epic 17](./Epic-17-power-cards.md) Story 17.9's end-game ruling
+was dropped rather than inverted when it landed on top. The rule that stands is:
 
 > Meeting the condition on tile 2 of a spree ends nothing. The player may declare — the button appears
 > and the turn stops auto-ending — and either way the spree continues to tiles 3 and 4, then the buy
 > step, then the player ends the turn and, if declared, the game.
 
-**Recommended order: Epic 18 first.** It deletes six call sites that Epic 17 would otherwise have to
-carefully preserve and invert, and it establishes the auto-end gate that Epic 17's Story 17.4 extends.
+**That is the order it shipped in**, which is what made it cheap: Epic 18 deleted six call sites Epic 17
+would otherwise have had to preserve and invert, and it established the auto-end gate that Epic 17's
+Story 17.4 then extended with a third term.
 
 ### With bots
 

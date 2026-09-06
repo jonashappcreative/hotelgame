@@ -26,12 +26,15 @@ const submitted = (onConfirm: ReturnType<typeof vi.fn>): CustomRules => {
 };
 
 describe('RulesForm — Basic', () => {
-  it('shows exactly Board Size, Allow Selling and Chain Safety', () => {
+  it('shows exactly Board Size, Allow Selling, Chain Safety and Power Cards', () => {
     renderForm();
 
     expect(screen.getByText('Small board')).toBeInTheDocument();
     expect(screen.getByText('Allow selling')).toBeInTheDocument();
     expect(screen.getByText('Chain safety')).toBeInTheDocument();
+    // Epic 17 is Basic, not Advanced: turning it on changes how the game feels
+    // more than any Advanced toggle does, and a host should not have to hunt.
+    expect(screen.getByText('Power cards')).toBeInTheDocument();
 
     // Everything else is behind the disclosure.
     for (const label of [
@@ -50,6 +53,13 @@ describe('RulesForm — Basic', () => {
   it('submits the rules unchanged when nothing is touched', () => {
     const { onConfirm } = renderForm();
     expect(submitted(onConfirm)).toEqual(DEFAULT_RULES);
+  });
+
+  it("writes 'off' ⇄ 'on' from the Power cards switch, off by default", () => {
+    const { onConfirm } = renderForm();
+    expect(DEFAULT_RULES.powerCards).toBe('off');
+    fireEvent.click(screen.getByLabelText('Power cards'));
+    expect(submitted(onConfirm).powerCards).toBe('on');
   });
 
   it("writes 'off' ⇄ '75' from the Allow selling switch", () => {

@@ -1530,11 +1530,12 @@ describe('gameLogic', () => {
   });
 
   describe('DEFAULT_RULES', () => {
-    it('should contain all eleven v2 fields with their shipped defaults', () => {
+    it('should contain all twelve v2 fields with their shipped defaults', () => {
       expect(DEFAULT_RULES).toEqual({
         boardSize: 'large',
         stockSelling: 'off',
         chainSafety: 'none',
+        powerCards: 'off',
         turnTimer: 'off',
         disableTimerFirstRounds: true,
         cashVisibility: 'visible',

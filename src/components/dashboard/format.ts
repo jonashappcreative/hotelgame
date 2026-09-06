@@ -51,6 +51,7 @@ const RULE_VALUE_LABELS: Record<string, Record<string, string>> = {
   boardSize:               { large: 'Large (9×12)', small: 'Small (6×10)' },
   stockSelling:            { off: 'Off', '100': 'Full price', '90': '90% of price', '75': '75% of price', '50': '50% of price' },
   chainSafety:             { none: 'Aggressive (none safe)', '9': 'Safe at 9+', '11': 'Safe at 11+', '13': 'Safe at 13+', '15': 'Safe at 15+' },
+  powerCards:              { off: 'Off', on: 'On' },
   turnTimer:               { off: 'Off', '30': '30 seconds', '60': '60 seconds', '90': '90 seconds' },
   disableTimerFirstRounds: { true: 'Timer off early', false: 'Timer from turn 1' },
   cashVisibility:          { visible: 'Visible', hidden: 'Hidden', aggregate: 'Total only' },
@@ -65,6 +66,7 @@ export const RULE_LABELS: Record<string, string> = {
   boardSize: 'Board size',
   stockSelling: 'Selling shares',
   chainSafety: 'Chain safety',
+  powerCards: 'Power cards',
   turnTimer: 'Turn timer',
   disableTimerFirstRounds: 'Timer grace period',
   cashVisibility: 'Cash visibility',
@@ -77,7 +79,7 @@ export const RULE_LABELS: Record<string, string> = {
 
 /** Order the rules panel Basic-first, matching the lobby's own split. */
 export const RULE_ORDER = [
-  'boardSize', 'chainSafety', 'stockSelling',
+  'boardSize', 'chainSafety', 'stockSelling', 'powerCards',
   'bonusTier', 'cashVisibility', 'turnTimer', 'disableTimerFirstRounds',
   'maxChains', 'startingCash', 'startingTiles', 'startWithTileOnBoard',
 ];

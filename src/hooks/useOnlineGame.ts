@@ -6,7 +6,9 @@ import {
   MergerStockDecision,
   CustomRules,
   DEFAULT_RULES,
+  PowerCardId,
 } from '@/types/game';
+import { POWER_CARD_INFO } from '@/types/power-cards';
 import {
   initializeGame,
   analyzeTilePlacement,
@@ -578,6 +580,77 @@ export const useOnlineGame = () => {
     }
   }, [gameState, roomId, myPlayerIndex, refreshGameState]);
 
+  // ---- Power cards (Epic 17) -------------------------------------------------
+  // None of the three ends the turn or advances the phase on its own, so each
+  // just settles and lets the refreshed state re-render the panel. A rejection
+  // leaves the player's selection alone so they can correct it.
+
+  const handlePlayPowerCard = useCallback(async (card: PowerCardId): Promise<boolean> => {
+    if (!gameState || !roomId) return false;
+
+    if (gameState.currentPlayerIndex !== myPlayerIndex) {
+      toast({ title: 'Not Your Turn', variant: 'destructive' });
+      return false;
+    }
+
+    const result = await executeGameAction('play_power_card', roomId, { card });
+
+    if (!result.success) {
+      toast({ title: 'Card not played', description: result.error, variant: 'destructive' });
+      // The card is removed and marked active in one write, so a rejection
+      // changed nothing — but re-read anyway in case another client moved first.
+      await refreshGameState();
+      return false;
+    }
+
+    toast({
+      title: `${POWER_CARD_INFO[card].name} played`,
+      description: POWER_CARD_INFO[card].summary,
+    });
+
+    await refreshGameState();
+    return true;
+  }, [gameState, roomId, myPlayerIndex, refreshGameState]);
+
+  const handlePowerTrade = useCallback(async (
+    give: { chain: ChainName; quantity: number }[],
+    receive: ChainName,
+  ) => {
+    if (!gameState || !roomId) return;
+
+    if (gameState.currentPlayerIndex !== myPlayerIndex) {
+      toast({ title: 'Not Your Turn', variant: 'destructive' });
+      return;
+    }
+
+    const result = await executeGameAction('power_trade', roomId, { give, receive });
+
+    if (!result.success) {
+      toast({ title: 'Trade rejected', description: result.error, variant: 'destructive' });
+      // The player row is written before the bank, so a partial failure leaves
+      // the display stale until we re-read; cheap enough to always do it.
+      await refreshGameState();
+      return;
+    }
+
+    await refreshGameState();
+  }, [gameState, roomId, myPlayerIndex, refreshGameState]);
+
+  // Stop a Building Spree early. Moves place_tile -> buy_stock; the buy step
+  // then runs once, as it would after any single placement.
+  const handleEndPlacements = useCallback(async () => {
+    if (!gameState || !roomId) return;
+
+    const result = await executeGameAction('end_placements', roomId);
+
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      return;
+    }
+
+    await refreshGameState();
+  }, [gameState, roomId, refreshGameState]);
+
   // Epic 18. Announce that the game ends after this turn. The turn itself is
   // untouched — the player still places, resolves any merger and buys — so this
   // deliberately does not end the turn or change the phase.
@@ -766,6 +839,9 @@ export const useOnlineGame = () => {
     handleSellStocks,
     handleSkipBuyStock,
     handleDeclareGameEnd,
+    handlePlayPowerCard,
+    handlePowerTrade,
+    handleEndPlacements,
     handleNewGame,
     handleAutoEndTurn,
 

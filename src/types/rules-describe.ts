@@ -61,6 +61,7 @@ export function describeRules(rules: CustomRules): RuleSummaryItem[] {
       rules.stockSelling === 'off' ? 'Off' : `On — bank pays ${rules.stockSelling}%`,
     ),
     item('chainSafety', '🛡', 'Chain safety', CHAIN_SAFETY[rules.chainSafety]),
+    item('powerCards', '🃏', 'Power cards', rules.powerCards === 'on' ? 'On' : 'Off'),
     item(
       'turnTimer',
       '⏱',

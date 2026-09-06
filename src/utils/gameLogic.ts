@@ -13,6 +13,7 @@ import {
   END_GAME_CHAIN_SIZE,
   CustomRules,
   DEFAULT_RULES,
+  PowerCardId,
 } from '@/types/game';
 import {
   normalizeRules,
@@ -23,6 +24,13 @@ import {
   getBonusTier,
   getSellPriceFactor as getSellPriceFactorFromRules,
 } from '@/types/rules-normalize';
+import {
+  canPlayPowerCard,
+  canUseAnyPowerCard,
+  getStockAllowance,
+  isFreeStockActive,
+  powerCardHasUse,
+} from '@/types/power-cards';
 
 const ALL_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
@@ -203,6 +211,9 @@ export const initializeGame = (playerNames: string[], rawRules: CustomRules = DE
         imperial: 0,
       },
       isConnected: true,
+      // Local hot-seat play never deals power cards — the rule is online-only,
+      // so the field exists on the type but the local engine leaves it empty.
+      powerCards: [],
     };
   });
 
@@ -244,6 +255,8 @@ export const initializeGame = (playerNames: string[], rawRules: CustomRules = DE
     stocksPurchasedThisTurn: 0,
     stocksSoldThisTurn: 0,
     chainsBoughtThisTurn: [],
+    activePowerCard: null,
+    tilesPlacedThisTurn: 0,
     gameLog: [{
       timestamp: Date.now(),
       playerId: 'system',
@@ -481,8 +494,10 @@ export const growChain = (state: GameState, chainName: ChainName): GameState => 
 
 // Shares the current player may still buy this turn. Buying no longer ends the
 // turn, so this is what gates both the +/- controls and the automatic turn end.
+// The cap itself is no longer a constant: Extra Purchase (Epic 17) raises it to
+// 5 for the turn, and getStockAllowance is the same helper the server reads.
 export const getRemainingStockAllowance = (state: GameState): number =>
-  Math.max(0, MAX_STOCKS_PER_TURN - state.stocksPurchasedThisTurn);
+  Math.max(0, getStockAllowance(state.activePowerCard ?? null) - state.stocksPurchasedThisTurn);
 
 // True when the player could still buy at least one more share: allowance left,
 // and an active chain with stock in the bank priced within their cash. Once this
@@ -492,13 +507,88 @@ export const canBuyMoreStock = (
   playerIndex: number = state.currentPlayerIndex
 ): boolean => {
   if (getRemainingStockAllowance(state) === 0) return false;
+
+  // Free Shares makes price irrelevant, so the affordability half is skipped —
+  // otherwise a broke player's free-share turn would auto-end before they could
+  // take anything, which is the one turn the card exists for.
+  const free = isFreeStockActive(state.activePowerCard ?? null);
   const cash = state.players[playerIndex]?.cash ?? 0;
-  if (cash <= 0) return false;
+  if (!free && cash <= 0) return false;
 
   return (Object.keys(state.chains) as ChainName[]).some(chain =>
     state.chains[chain].isActive &&
     state.stockBank[chain] > 0 &&
-    getStockPrice(chain, state.chains[chain].tiles.length) <= cash
+    (free || getStockPrice(chain, state.chains[chain].tiles.length) <= cash)
+  );
+};
+
+/**
+ * The cards this player could still usefully play right now — both legal and
+ * with an actual use. Drives the End Turn warning, so ending a turn is never a
+ * silent forfeit of a one-shot card.
+ */
+export const usablePowerCards = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): PowerCardId[] => {
+  const player = state.players[playerIndex];
+  if (!player || state.rulesSnapshot?.powerCards !== 'on') return [];
+
+  const turn = {
+    enabled: true,
+    phase: state.phase,
+    held: player.powerCards ?? [],
+    active: state.activePowerCard ?? null,
+    stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
+    tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
+    tileBagCount: state.tileBag?.length ?? 0,
+  };
+  const use = {
+    chains: state.chains,
+    stockBank: state.stockBank,
+    stocks: player.stocks ?? {},
+    chainsBoughtThisTurn: state.chainsBoughtThisTurn ?? [],
+    cash: player.cash ?? 0,
+    handSize: player.tiles?.length ?? 0,
+  };
+
+  return (player.powerCards ?? []).filter(
+    (card) => canPlayPowerCard(card, turn).ok && powerCardHasUse(card, turn, use, getStockPrice),
+  );
+};
+
+/**
+ * Client mirror of the server's power-card term in the auto-end gate (Epic 17).
+ * True when the player still holds a card worth playing, or has an active card
+ * with an unspent use. Reads exactly the shared helpers game-action.ts reads, so
+ * the client never auto-ends a turn the server would have kept open.
+ */
+export const canUsePowerCard = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): boolean => {
+  const player = state.players[playerIndex];
+  if (!player) return false;
+
+  return canUseAnyPowerCard(
+    {
+      enabled: state.rulesSnapshot?.powerCards === 'on',
+      phase: state.phase,
+      held: player.powerCards ?? [],
+      active: state.activePowerCard ?? null,
+      stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
+      tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
+      tileBagCount: state.tileBag?.length ?? 0,
+    },
+    {
+      chains: state.chains,
+      stockBank: state.stockBank,
+      stocks: player.stocks ?? {},
+      chainsBoughtThisTurn: state.chainsBoughtThisTurn ?? [],
+      cash: player.cash ?? 0,
+      handSize: player.tiles?.length ?? 0,
+    },
+    getStockPrice,
   );
 };
 

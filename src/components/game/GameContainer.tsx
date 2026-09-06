@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
-import { GameState, ChainName, MergerStockDecision, TileId, DEFAULT_RULES } from '@/types/game';
+import { GameState, ChainName, MergerStockDecision, TileId, DEFAULT_RULES, PowerCardId, MULTI_TILE_LIMIT } from '@/types/game';
+import { isMultiTileActive, POWER_CARD_INFO } from '@/types/power-cards';
 import { getTurnTimerSeconds } from '@/types/rules-normalize';
 import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
@@ -14,6 +15,7 @@ import { MergerSurvivorChoice } from './MergerSurvivorChoice';
 import { MergerBonusDisplay } from './MergerBonusDisplay';
 import { MergerStockDecision as MergerStockDecisionComponent } from './MergerStockDecision';
 import { EndGameDeclaration } from './EndGameDeclaration';
+import { PowerCardBar } from './PowerCardBar';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { EndTurnConfirmModal } from './EndTurnConfirmModal';
@@ -22,7 +24,7 @@ import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, g
 import { analyzeMerger } from '@/utils/mergerLogic';
 import { Clock, WifiOff, ArrowRight, Trophy, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canBuyMoreStock, canSellStock, endConditionReason } from '@/utils/gameLogic';
+import { canBuyMoreStock, canSellStock, canUsePowerCard, usablePowerCards, endConditionReason } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
@@ -44,6 +46,15 @@ interface GameContainerProps {
    * old behaviour on that path.
    */
   onDeclareGameEnd?: () => Promise<boolean>;
+  /**
+   * Play a power card (Epic 17). Omitted in local hot-seat play, where the rule
+   * is never on — its absence is what hides the whole feature there.
+   */
+  onPlayPowerCard?: (card: PowerCardId) => void;
+  /** Trade 2 shares for 1 under an active Stock Trade. */
+  onPowerTrade?: (give: { chain: ChainName; quantity: number }[], receive: ChainName) => void;
+  /** Stop a Building Spree early and move to the buy phase. */
+  onEndPlacements?: () => void;
   onNewGame: () => void;
   /** Leave the room / go back to the lobby. Works for every player (online). */
   onReturnToLobby?: () => void;
@@ -66,6 +77,9 @@ export const GameContainer = ({
   onSellStocks,
   onEndTurn,
   onDeclareGameEnd,
+  onPlayPowerCard,
+  onPowerTrade,
+  onEndPlacements,
   onNewGame,
   onReturnToLobby,
   onDiscardTile,
@@ -125,7 +139,16 @@ export const GameContainer = ({
   // With stock selling on, the buy phase isn't finished just because nothing is
   // affordable — the player may still want to liquidate.
   const canSellAnything = buyPhaseActive && !!onSellStocks && canSellStock(gameState, myPlayerIndex);
-  const canTradeAnything = canBuyAnything || canSellAnything;
+  // Epic 17's third term, for the same reason Epic 14 added the second: the
+  // turn where nothing is affordable is precisely the turn Free Shares is for,
+  // and auto-ending there would take the card off the table at the only moment
+  // it matters. The per-card "has a use" half lives in canUsePowerCard, so a
+  // player holding only unusable cards still gets today's auto-end.
+  const canPlayAnyCard = buyPhaseActive && !!onPlayPowerCard && canUsePowerCard(gameState, myPlayerIndex);
+  const forfeitableCardNames = onPlayPowerCard
+    ? usablePowerCards(gameState, myPlayerIndex).map((card) => POWER_CARD_INFO[card].name)
+    : [];
+  const canTradeAnything = canBuyAnything || canSellAnything || canPlayAnyCard;
 
   // Epic 18. Which end-game condition is met, if any — a null reason means the
   // game cannot be ended yet. Local hot-seat play keeps the old automatic end,
@@ -135,6 +158,15 @@ export const GameContainer = ({
   const endDeclared = endDeclaredBy !== null;
   const iDeclared = endDeclared && endDeclaredBy === myPlayerIndex;
   const endGameSize = gameState.boardRows === 6 ? 30 : 41;
+
+  // Epic 17, Building Spree. The turn stays in place_tile after each placement
+  // until the budget runs out, the player has nothing legal left, or they say
+  // they are done — which is what this control is for.
+  const spreeActive = isMultiTileActive(gameState.activePowerCard ?? null);
+  const tilesPlacedThisTurn = gameState.tilesPlacedThisTurn ?? 0;
+  const canEndPlacements =
+    spreeActive && isMyTurn && gameState.phase === 'place_tile' &&
+    tilesPlacedThisTurn >= 1 && !!onEndPlacements;
 
   // The turn no longer ends itself once the game can be ended. A declaration is
   // worthless if the player is swept past the decision, so the buy phase stays
@@ -384,6 +416,7 @@ export const GameContainer = ({
             endCondition={endCondition}
             endGameSize={endGameSize}
             alreadyDeclared={iDeclared}
+            playableCardNames={forfeitableCardNames}
             onDeclareAndEnd={onDeclareGameEnd ? handleDeclareAndEndTurn : undefined}
             onConfirm={handleConfirmEndTurn}
             onCancel={() => setShowEndTurnConfirm(false)}
@@ -531,9 +564,15 @@ export const GameContainer = ({
                   isMyTurn ? (
                     <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
                       <div className="text-center">
-                        <p className="text-lg font-semibold mb-2">Place a Tile</p>
+                        <p className="text-lg font-semibold mb-2">
+                          {spreeActive
+                            ? `Place a Tile (${tilesPlacedThisTurn}/${MULTI_TILE_LIMIT})`
+                            : 'Place a Tile'}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Select a highlighted tile from your hand or the board
+                          {spreeActive
+                            ? `${POWER_CARD_INFO.multi_tile.name} — place up to ${MULTI_TILE_LIMIT} tiles, or use Done placing to stop.`
+                            : 'Select a highlighted tile from your hand or the board'}
                         </p>
                       </div>
                     </div>
@@ -603,6 +642,7 @@ export const GameContainer = ({
                       playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
                       onSell={onSellStocks}
+                      onPowerTrade={onPowerTrade}
                       onPendingChange={handlePendingChange}
                     />
                   ) : isOnlineMode ? (
@@ -621,6 +661,7 @@ export const GameContainer = ({
                       playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
                       onSell={onSellStocks}
+                      onPowerTrade={onPowerTrade}
                       onPendingChange={handlePendingChange}
                     />
                   )
@@ -683,6 +724,24 @@ export const GameContainer = ({
                 onTileClick={handleTileSelect}
                 selectedTile={selectedTile}
               />
+              {/* Power cards (Epic 17) — the last "what I have" in the rail,
+                  reachable in both place_tile and buy_stock. Renders nothing
+                  when the room rule is off. */}
+              <PowerCardBar
+                gameState={gameState}
+                myPlayerIndex={myPlayerIndex}
+                onPlayPowerCard={onPlayPowerCard}
+              />
+
+              {/* Done placing — only during a Building Spree that has already
+                  put at least one tile down. */}
+              {canEndPlacements && (
+                <Button variant="outline" size="lg" className="w-full" onClick={onEndPlacements}>
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  Done placing ({tilesPlacedThisTurn}/{MULTI_TILE_LIMIT})
+                </Button>
+              )}
+
               {/* End Turn — shown below tiles during the buy phase */}
               {buyPhaseActive && (
                 !turnMayAutoEnd ? (

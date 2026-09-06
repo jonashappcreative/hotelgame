@@ -39,6 +39,12 @@ export interface PlayerState {
   tiles: TileId[];
   stocks: Record<ChainName, number>;
   isConnected: boolean;
+  /**
+   * Power cards this player still holds (Epic 17). Public on purpose — knowing
+   * an opponent can still spend Building Spree changes how you leave the board,
+   * and every play is logged anyway. Empty when the room rule is off.
+   */
+  powerCards: PowerCardId[];
 }
 
 export interface ChainState {
@@ -84,6 +90,14 @@ export interface GameState {
   stocksSoldThisTurn: number;
   /** Chains bought this turn; they cannot be sold again in the same turn. */
   chainsBoughtThisTurn: ChainName[];
+  /** The power card in effect for the current turn, or null (Epic 17). */
+  activePowerCard: ActivePowerCard | null;
+  /**
+   * Tiles placed this turn. Maintained always, not just under Building Spree —
+   * it is what lets "only before you have placed" be checked without inspecting
+   * lastPlacedTile, which the starting tile also writes.
+   */
+  tilesPlacedThisTurn: number;
   gameLog: GameLogEntry[];
   winner: string | null;
   endGameVotes: string[];
@@ -149,6 +163,43 @@ export const END_GAME_CHAIN_SIZE = 41;
 export const MAJORITY_BONUS_MULTIPLIER = 10;
 export const MINORITY_BONUS_MULTIPLIER = 5;
 
+// -----------------------------------------------------------------------------
+// Power cards (Epic 17) — one identical set of five per player, each spent once
+// -----------------------------------------------------------------------------
+// Every player holds the same hand, so the cards add timing decisions rather
+// than luck: the question is never "who drew the good card", it is "is this the
+// turn worth spending it on". The rules that decide when a card may be played
+// live in ./power-cards.ts, which both engines read.
+export type PowerCardId =
+  | 'extra_buy'     // buy up to 5 shares this turn instead of 3
+  | 'extra_tiles'   // draw 5 tiles immediately
+  | 'free_stock'    // the 3 shares taken this turn cost nothing
+  | 'stock_trade'   // trade 2 shares you own for 1 from the market, up to 3x
+  | 'multi_tile';   // place up to 4 tiles this turn
+
+/** Fixed display and dealing order. Every seat is dealt exactly this set. */
+export const POWER_CARDS: PowerCardId[] = [
+  'extra_buy', 'extra_tiles', 'free_stock', 'stock_trade', 'multi_tile',
+];
+
+export const EXTRA_BUY_LIMIT = 5;      // shares, replaces MAX_STOCKS_PER_TURN for the turn
+export const EXTRA_TILES_DRAW = 5;     // tiles drawn immediately
+export const MULTI_TILE_LIMIT = 4;     // tiles placeable this turn
+export const MAX_POWER_TRADES = 3;     // trades per turn
+export const TRADE_GIVE = 2;           // shares given per trade
+export const TRADE_RECEIVE = 1;        // shares received per trade
+
+/**
+ * The card in effect for the current turn. One nullable record rather than four
+ * booleans because exactly one card can ever be active, and each carries
+ * different bookkeeping.
+ */
+export interface ActivePowerCard {
+  card: PowerCardId;
+  /** stock_trade only: trades completed this turn, 0–MAX_POWER_TRADES. */
+  tradesUsed: number;
+}
+
 // Eligible chain sets for Chain Founding Rules (Story 8)
 export const ELIGIBLE_CHAINS_5: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental'];
 export const ELIGIBLE_CHAINS_6: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
@@ -172,6 +223,8 @@ export interface CustomRules {
   stockSelling: 'off' | '100' | '90' | '75' | '50';
   /** Chain size at which a chain becomes safe; 'none' = Aggressive. */
   chainSafety: 'none' | '9' | '11' | '13' | '15';
+  /** Optional one-shot power cards, one identical set of 5 per player. */
+  powerCards: 'off' | 'on';
 
   // ---- Advanced ----
   /** Seconds per turn; 'off' disables the timer. */
@@ -192,6 +245,9 @@ export const DEFAULT_RULES: CustomRules = {
   boardSize: 'large',
   stockSelling: 'off',
   chainSafety: 'none',
+  // Off by default, deliberately: every room created before Epic 17 and every
+  // in-flight game normalises to 'off' and plays exactly as it does today.
+  powerCards: 'off',
   turnTimer: 'off',
   disableTimerFirstRounds: true,
   cashVisibility: 'visible',

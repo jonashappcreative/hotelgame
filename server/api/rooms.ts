@@ -368,7 +368,7 @@ export default async (req: Request): Promise<Response> => {
       case 'get_players': {
         if (!roomId) return jsonResponse({ error: 'roomId required' }, 400, cors);
         const { data: publicPlayers } = await db.from('game_players_public')
-          .select('id, room_id, player_name, player_index, cash, stocks, is_connected, is_ready, is_bot, bot_difficulty, created_at')
+          .select('id, room_id, player_name, player_index, cash, stocks, power_cards, is_connected, is_ready, is_bot, bot_difficulty, created_at')
           .eq('room_id', roomId).order('player_index');
 
         const { data: me } = await db.from('game_players')

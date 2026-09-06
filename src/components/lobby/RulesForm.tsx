@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Grid3X3, Loader2, Repeat2, Shield } from 'lucide-react';
+import { ChevronDown, Grid3X3, Loader2, Repeat2, Shield, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -100,6 +100,24 @@ export const RulesForm = ({ mode, initialRules, onConfirm, onCancel, isLoading }
                 { value: '13', label: 'Fortress — safe at 13+ tiles' },
                 { value: '15', label: 'Safe at 15+ tiles' },
               ]}
+            />
+
+            <Separator />
+
+            {/* Power cards is Basic, not Advanced: turning it on changes how the
+                game feels more than any Advanced toggle does, and a host should
+                not have to hunt for it. */}
+            <Row
+              icon={<Sparkles className="h-4 w-4 text-primary" />}
+              label="Power cards"
+              tooltip="Gives every player the same five one-shot cards — extra shares, free shares, extra tiles, a 2-for-1 trade, and a four-tile turn. One card per turn, each spent once per game. Because everyone holds the same hand, the cards add timing decisions rather than luck."
+              control={
+                <Switch
+                  aria-label="Power cards"
+                  checked={rules.powerCards === 'on'}
+                  onCheckedChange={(on) => patch({ powerCards: on ? 'on' : 'off' })}
+                />
+              }
             />
 
             <Separator className="my-2" />

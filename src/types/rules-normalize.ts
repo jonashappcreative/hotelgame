@@ -32,6 +32,7 @@ export const RULE_VALUES = {
   boardSize: ['large', 'small'],
   stockSelling: ['off', '100', '90', '75', '50'],
   chainSafety: ['none', '9', '11', '13', '15'],
+  powerCards: ['off', 'on'],
   turnTimer: ['off', '30', '60', '90'],
   cashVisibility: ['visible', 'hidden', 'aggregate'],
   bonusTier: ['standard', 'flat', 'aggressive'],
@@ -100,6 +101,8 @@ function fromV1(raw: Record<string, unknown>): CustomRules {
     chainSafety: on('chainSafetyEnabled')
       ? (pick('chainSafety', raw.chainSafetyThreshold) ?? 'none')
       : 'none',
+    // v1 predates power cards entirely, so every legacy blob plays without them.
+    powerCards: 'off',
     turnTimer: on('turnTimerEnabled') ? (pick('turnTimer', raw.turnTimer) ?? '60') : 'off',
     disableTimerFirstRounds:
       typeof raw.disableTimerFirstRounds === 'boolean' ? raw.disableTimerFirstRounds : true,

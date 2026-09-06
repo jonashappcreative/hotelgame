@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { decideBotMove, type BotDifficulty } from './bot';
-import { getStockPrice, settleSale, getSellPriceFactor, normalizeRules, type ChainName } from './rules';
+import {
+  getStockPrice, settleSale, getSellPriceFactor, normalizeRules,
+  canPlayPowerCard, POWER_CARDS, MAX_POWER_TRADES, TRADE_GIVE,
+  type ChainName, type PowerCardId,
+} from './rules';
 
 const DIFFS: BotDifficulty[] = ['easy', 'medium', 'hard'];
 const ALL: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
@@ -743,5 +747,258 @@ describe('decideBotMove — declaring the game over', () => {
     const gs = baseState({ phase: 'place_tile', chains });
     expect(decideBotMove('easy', 'place_tile', gs, players, actorOf(players)).action)
       .not.toBe('declare_game_end');
+  });
+});
+
+
+// =============================================================================
+// Epic 17 — power cards
+// =============================================================================
+// Hard bots play cards; easy and medium hold theirs for the whole game, and
+// that is a deliberate difficulty distinction rather than a gap. The engine's
+// own canPlayPowerCard is the gate a bot proposal has to survive, so these tests
+// assert against it rather than restating the rules.
+
+const CARDS_ON = { powerCards: 'on' };
+
+function cardPlayer(over: any = {}) {
+  return {
+    player_index: 0,
+    cash: 6000,
+    stocks: zeroStocks(),
+    tiles: ['1A', '3D', '5F', '7H', '9K', '2C'],
+    is_bot: true,
+    bot_difficulty: 'hard',
+    power_cards: [...POWER_CARDS],
+    ...over,
+  };
+}
+
+/** Runs one decision and reports the card it chose to play, if any. */
+function cardPlayed(diff: BotDifficulty, gs: any, players: any[]): PowerCardId | null {
+  const move = decideBotMove(diff, gs.phase, gs, players, actorOf(players));
+  return move.action === 'play_power_card' ? move.payload.card : null;
+}
+
+describe('bots and power cards', () => {
+  it('easy and medium finish a game holding all five', () => {
+    // A state deliberately rich in reasons a hard bot would spend something.
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    for (const diff of ['easy', 'medium'] as BotDifficulty[]) {
+      const players = [
+        cardPlayer({ bot_difficulty: diff, cash: 0, stocks: { ...zeroStocks(), tower: 6 } }),
+        { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+      ];
+      for (const phase of ['place_tile', 'buy_stock']) {
+        const gs = baseState({ phase, chains, rules_snapshot: CARDS_ON });
+        expect(cardPlayed(diff, gs, players)).toBeNull();
+      }
+    }
+  });
+
+  it('never plays a card when the room rule is off', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 0, stocks: { ...zeroStocks(), tower: 6 } }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({ phase: 'buy_stock', chains, rules_snapshot: {} });
+    expect(cardPlayed('hard', gs, players)).toBeNull();
+  });
+
+  it('never plays a card it no longer holds', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 0, stocks: { ...zeroStocks(), tower: 6 }, power_cards: [] }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({ phase: 'buy_stock', chains, rules_snapshot: CARDS_ON });
+    expect(cardPlayed('hard', gs, players)).toBeNull();
+  });
+
+  it('plays at most one card per turn — never a second while one is active', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 0, stocks: { ...zeroStocks(), tower: 6 } }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: CARDS_ON,
+      active_power_card: { card: 'extra_buy', tradesUsed: 0 },
+    });
+    expect(cardPlayed('hard', gs, players)).toBeNull();
+  });
+
+  // The important one: a rejected move stops the drive loop for the turn, so
+  // anything the bot proposes has to survive the engine's own gate.
+  it('every card a hard bot proposes passes canPlayPowerCard', () => {
+    const chains = makeChains({
+      tower: Array.from({ length: 8 }, (_, i) => `T${i}`),
+      continental: Array.from({ length: 4 }, (_, i) => `C${i}`),
+    });
+
+    for (const phase of ['place_tile', 'buy_stock']) {
+      for (const cash of [0, 900, 6000]) {
+        for (const bought of [0, 2]) {
+          for (const placed of [0, 1]) {
+            const players = [
+              cardPlayer({ cash, stocks: { ...zeroStocks(), tower: 4, continental: 1 } }),
+              { player_index: 1, cash: 6000, stocks: { ...zeroStocks(), tower: 1 }, tiles: [] },
+            ];
+            const gs = baseState({
+              phase,
+              chains,
+              rules_snapshot: CARDS_ON,
+              stocks_purchased_this_turn: bought,
+              tiles_placed_this_turn: placed,
+              tile_bag: ['x', 'y', 'z'],
+            });
+            const card = cardPlayed('hard', gs, players);
+            if (!card) continue;
+            const legality = canPlayPowerCard(card, {
+              enabled: true,
+              phase,
+              held: [...POWER_CARDS],
+              active: null,
+              stocksPurchasedThisTurn: bought,
+              tilesPlacedThisTurn: placed,
+              tileBagCount: 3,
+            });
+            expect(legality.ok, `${card} in ${phase}: ${legality.reason}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('reaches for Free Shares when it cannot afford the chain it leads', () => {
+    // Tower at 8 tiles costs $500; the bot holds the majority and has nothing.
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 0, stocks: { ...zeroStocks(), tower: 6 }, power_cards: ['free_stock'] }),
+      { player_index: 1, cash: 6000, stocks: { ...zeroStocks(), tower: 1 }, tiles: [] },
+    ];
+    const gs = baseState({ phase: 'buy_stock', chains, rules_snapshot: CARDS_ON });
+    expect(cardPlayed('hard', gs, players)).toBe('free_stock');
+  });
+
+  it('holds Free Shares when it can already afford what it wants', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 6000, stocks: { ...zeroStocks(), tower: 6 }, power_cards: ['free_stock'] }),
+      { player_index: 1, cash: 6000, stocks: { ...zeroStocks(), tower: 1 }, tiles: [] },
+    ];
+    const gs = baseState({ phase: 'buy_stock', chains, rules_snapshot: CARDS_ON });
+    expect(cardPlayed('hard', gs, players)).toBeNull();
+  });
+
+  it('reaches for Extra Tiles when its hand has nothing to do', () => {
+    // Every eligible chain active, so a tile touching a loose tile is dead.
+    const chains = makeChains(
+      Object.fromEntries(ALL.map((c) => [c, Array.from({ length: 3 }, (_, i) => `${c}${i}`)])) as any,
+    );
+    const board: Record<string, any> = { '4F': { id: '4F', placed: true, chain: null } };
+    const players = [
+      cardPlayer({ tiles: ['5F'], power_cards: ['extra_tiles'] }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'place_tile', chains, board, rules_snapshot: CARDS_ON, tile_bag: ['a', 'b', 'c'],
+    });
+    expect(cardPlayed('hard', gs, players)).toBe('extra_tiles');
+  });
+
+  it('does not reach for Extra Tiles on an empty bag', () => {
+    const chains = makeChains(
+      Object.fromEntries(ALL.map((c) => [c, Array.from({ length: 3 }, (_, i) => `${c}${i}`)])) as any,
+    );
+    const board: Record<string, any> = { '4F': { id: '4F', placed: true, chain: null } };
+    const players = [
+      cardPlayer({ tiles: ['5F'], power_cards: ['extra_tiles'] }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({ phase: 'place_tile', chains, board, rules_snapshot: CARDS_ON, tile_bag: [] });
+    expect(cardPlayed('hard', gs, players)).toBeNull();
+  });
+
+  it('spends an active Stock Trade on a legal 2-for-1', () => {
+    const chains = makeChains({
+      tower: Array.from({ length: 8 }, (_, i) => `T${i}`),
+      continental: Array.from({ length: 4 }, (_, i) => `C${i}`),
+    });
+    // Losing tower badly, so those shares are the ones it minds least.
+    const players = [
+      cardPlayer({ stocks: { ...zeroStocks(), tower: 3 }, power_cards: [] }),
+      { player_index: 1, cash: 6000, stocks: { ...zeroStocks(), tower: 9 }, tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: CARDS_ON,
+      active_power_card: { card: 'stock_trade', tradesUsed: 0 },
+      chains_bought_this_turn: [],
+    });
+    const move = decideBotMove('hard', 'buy_stock', gs, players, actorOf(players));
+    expect(move.action).toBe('power_trade');
+    const given = move.payload.give.reduce((n: number, g: any) => n + g.quantity, 0);
+    expect(given).toBe(TRADE_GIVE);
+    expect(chains[move.payload.receive].isActive).toBe(true);
+  });
+
+  it('stops trading once the allowance is spent, and ends its turn', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ stocks: { ...zeroStocks(), tower: 3 }, power_cards: [] }),
+      { player_index: 1, cash: 6000, stocks: { ...zeroStocks(), tower: 9 }, tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: CARDS_ON,
+      active_power_card: { card: 'stock_trade', tradesUsed: MAX_POWER_TRADES },
+      stocks_purchased_this_turn: 3,
+    });
+    const move = decideBotMove('hard', 'buy_stock', gs, players, actorOf(players));
+    expect(move.action).toBe('skip_buy');
+  });
+
+  it('buys up to five under an active Extra Purchase', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 6000, stocks: { ...zeroStocks(), tower: 6 }, power_cards: [] }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: CARDS_ON,
+      active_power_card: { card: 'extra_buy', tradesUsed: 0 },
+    });
+    const move = decideBotMove('hard', 'buy_stock', gs, players, actorOf(players));
+    expect(move.action).toBe('buy_stocks');
+    const total = move.payload.purchases.reduce((n: number, p: any) => n + p.quantity, 0);
+    expect(total).toBeGreaterThan(3);
+    expect(total).toBeLessThanOrEqual(5);
+  });
+
+  it('takes its free shares with no cash at all', () => {
+    const chains = makeChains({ tower: Array.from({ length: 8 }, (_, i) => `T${i}`) });
+    const players = [
+      cardPlayer({ cash: 0, stocks: { ...zeroStocks(), tower: 6 }, power_cards: [] }),
+      { player_index: 1, cash: 6000, stocks: zeroStocks(), tiles: [] },
+    ];
+    const gs = baseState({
+      phase: 'buy_stock',
+      chains,
+      rules_snapshot: CARDS_ON,
+      active_power_card: { card: 'free_stock', tradesUsed: 0 },
+    });
+    const move = decideBotMove('hard', 'buy_stock', gs, players, actorOf(players));
+    expect(move.action).toBe('buy_stocks');
+    const total = move.payload.purchases.reduce((n: number, p: any) => n + p.quantity, 0);
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThanOrEqual(3);
   });
 });

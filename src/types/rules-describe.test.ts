@@ -21,6 +21,13 @@ describe('describeRules', () => {
     expect(summary).not.toContain('11+');
   });
 
+  // Epic 17. Off by default, so a room that has not turned it on says so — and
+  // a room that has is unmissable in the lobby summary.
+  it('describes power cards on both sides of the switch', () => {
+    expect(valueFor(DEFAULT_RULES, 'powerCards')).toBe('Off');
+    expect(valueFor({ ...DEFAULT_RULES, powerCards: 'on' }, 'powerCards')).toBe('On');
+  });
+
   it('marks nothing as custom for a default room', () => {
     expect(describeRules(DEFAULT_RULES).every((item) => !item.isCustom)).toBe(true);
     expect(hasCustomRules(DEFAULT_RULES)).toBe(false);

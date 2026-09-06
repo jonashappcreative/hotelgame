@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS game_players (
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS bot_difficulty VARCHAR(10);
 
+-- Power Cards (Epic 17, added post-launch): the cards this player still holds.
+-- Public — every player sees what everyone else has left to spend.
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS power_cards TEXT[] NOT NULL DEFAULT '{}';
+
 -- Prevent the same user joining the same room twice (also guards race conditions)
 CREATE UNIQUE INDEX IF NOT EXISTS unique_user_per_room
   ON game_players (room_id, user_id);
@@ -181,6 +185,12 @@ ALTER TABLE game_states ADD COLUMN IF NOT EXISTS chains_bought_this_turn TEXT[] 
 -- first seen, which anchors the bots' declaration backstop.
 ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_declared_by INTEGER DEFAULT NULL;
 ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_condition_round INTEGER DEFAULT NULL;
+
+-- Power Cards (Epic 17, added post-launch). The card in effect this turn
+-- ({"card": ..., "tradesUsed": n}), cleared at every turn end, and the
+-- always-maintained count of tiles placed this turn.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS active_power_card JSONB DEFAULT NULL;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS tiles_placed_this_turn INTEGER NOT NULL DEFAULT 0;
 
 DROP TRIGGER IF EXISTS update_game_states_updated_at ON game_states;
 CREATE TRIGGER update_game_states_updated_at
@@ -287,6 +297,7 @@ CREATE VIEW game_players_public AS
     player_index,
     cash,
     stocks,
+    power_cards,
     is_connected,
     is_ready,
     is_bot,
@@ -316,6 +327,8 @@ CREATE VIEW game_states_public AS
     stocks_purchased_this_turn,
     stocks_sold_this_turn,
     chains_bought_this_turn,
+    active_power_card,
+    tiles_placed_this_turn,
     merger,
     winner,
     updated_at,

@@ -96,6 +96,7 @@ const RULE_WEIGHTS = {
   boardSize:               { large: 86, small: 14 },
   stockSelling:            { off: 61, '100': 6, '90': 18, '75': 11, '50': 4 },
   chainSafety:             { none: 54, '11': 27, '9': 7, '13': 9, '15': 3 },
+  powerCards:              { off: 70, on: 30 },
   turnTimer:               { off: 68, '30': 5, '60': 19, '90': 8 },
   disableTimerFirstRounds: { true: 81, false: 19 },
   cashVisibility:          { visible: 72, hidden: 21, aggregate: 7 },

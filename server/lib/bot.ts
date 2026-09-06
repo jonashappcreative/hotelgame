@@ -42,6 +42,18 @@ import {
   END_GAME_CHAIN_SIZE,
   SMALL_BOARD_END_GAME_SIZE,
   canDeclareGameEnd,
+  // Power cards (Epic 17)
+  type PowerCardId,
+  type ActivePowerCard,
+  type PowerCardTurnState,
+  POWER_CARDS,
+  TRADE_GIVE,
+  canPlayPowerCard,
+  getStockAllowance,
+  isFreeStockActive,
+  normalizeActivePowerCard,
+  normalizePowerCards,
+  remainingPowerTrades,
 } from './rules';
 import { STOCKS_PER_CHAIN } from '../../src/types/game';
 
@@ -143,6 +155,14 @@ interface Ctx {
   broke: boolean;
   /** True when no opponent can afford a share either. */
   rivalsBroke: boolean;
+  /** Power cards this bot still holds; empty when the room rule is off. */
+  cards: PowerCardId[];
+  /** The card it has already played this turn, or null. */
+  activeCard: ActivePowerCard | null;
+  /** Shares it may buy this turn — 5 under Extra Purchase, otherwise 3. */
+  buyAllowance: number;
+  /** True while shares taken this turn cost nothing. */
+  freeShares: boolean;
 }
 
 function buildCtx(diff: BotDifficulty, gameState: any, players: any[], actor: any): Ctx {
@@ -183,6 +203,10 @@ function buildCtx(diff: BotDifficulty, gameState: any, players: any[], actor: an
     mergeTargets: new Map(),
     broke: active.length > 0 && cash < cheapest,
     rivalsBroke: rivals.length > 0 && rivals.every((p) => p.cash < cheapest),
+    cards: r.powerCards === 'on' ? normalizePowerCards(actor.power_cards) : [],
+    activeCard: normalizeActivePowerCard(gameState.active_power_card),
+    buyAllowance: getStockAllowance(normalizeActivePowerCard(gameState.active_power_card)),
+    freeShares: isFreeStockActive(normalizeActivePowerCard(gameState.active_power_card)),
   };
 
   ctx.mergeTargets = findMergeTargets(ctx);
@@ -826,6 +850,14 @@ function mediumBuyTarget(ctx: Ctx): ChainName | null {
 function decideBuyPhase(ctx: Ctx): BotMove {
   const gs = ctx.gs;
 
+  // Epic 17: an active Stock Trade is spent one trade at a time, so it comes
+  // before every early exit below — including the "already bought" one, since
+  // trading and buying are independent budgets.
+  if (ctx.activeCard?.card === 'stock_trade') {
+    const trade = decidePowerTrade(ctx);
+    if (trade) return trade;
+  }
+
   // Buying is incremental for humans, but a bot commits its whole purchase in a
   // single action — once it has bought this turn, end the turn rather than
   // re-entering this decision on the next drive-loop tick.
@@ -840,26 +872,29 @@ function decideBuyPhase(ctx: Ctx): BotMove {
 
   const buyable = ctx.active.filter((c) => bankLeft(ctx, c) > 0);
   if (buyable.length === 0) return { action: 'skip_buy' };
-  if (!buyable.some((c) => priceOf(ctx, c) <= ctx.cash)) return { action: 'skip_buy' };
+  // Free Shares makes price irrelevant — the whole point of the card is the
+  // turn where nothing was affordable.
+  const affordable = (c: ChainName, cash: number) => ctx.freeShares || priceOf(ctx, c) <= cash;
+  if (!buyable.some((c) => affordable(c, ctx.cash))) return { action: 'skip_buy' };
 
   if (ctx.diff === 'easy') {
     // A random quantity of a random affordable chain, including none at all.
-    const affordable = buyable.filter((c) => priceOf(ctx, c) <= ctx.cash);
-    const wanted = rndInt(0, MAX_STOCKS_PER_TURN);
+    const affordableNow = buyable.filter((c) => affordable(c, ctx.cash));
+    const wanted = rndInt(0, ctx.buyAllowance);
     if (wanted === 0) return { action: 'skip_buy' };
 
     let cash = ctx.cash;
     const picked: Record<string, number> = {};
     const left: Record<string, number> = {};
-    for (const c of affordable) left[c] = bankLeft(ctx, c);
+    for (const c of affordableNow) left[c] = bankLeft(ctx, c);
 
     for (let i = 0; i < wanted; i++) {
-      const options = affordable.filter((c) => priceOf(ctx, c) <= cash && left[c] > 0);
+      const options = affordableNow.filter((c) => affordable(c, cash) && left[c] > 0);
       if (options.length === 0) break;
       const pick = rnd(options);
       picked[pick] = (picked[pick] ?? 0) + 1;
       left[pick]--;
-      cash -= priceOf(ctx, pick);
+      cash -= ctx.freeShares ? 0 : priceOf(ctx, pick);
     }
     const purchases = toPurchases(picked);
     return purchases.length > 0
@@ -867,15 +902,15 @@ function decideBuyPhase(ctx: Ctx): BotMove {
       : { action: 'skip_buy' };
   }
 
-  // Greedily buy up to 3 shares, re-scoring after each (price, bank and our own
-  // holdings all move as we go).
+  // Greedily buy up to the allowance, re-scoring after each (price, bank and our
+  // own holdings all move as we go).
   let cash = ctx.cash;
   const bought: Record<string, number> = {};
   const left: Record<string, number> = {};
   for (const c of buyable) left[c] = bankLeft(ctx, c);
 
-  for (let i = 0; i < MAX_STOCKS_PER_TURN; i++) {
-    const options = buyable.filter((c) => priceOf(ctx, c) <= cash && left[c] > 0);
+  for (let i = 0; i < ctx.buyAllowance; i++) {
+    const options = buyable.filter((c) => affordable(c, cash) && left[c] > 0);
     if (options.length === 0) break;
 
     const scored = options
@@ -888,14 +923,15 @@ function decideBuyPhase(ctx: Ctx): BotMove {
       .filter((x) => Number.isFinite(x.score))
       .sort((a, b) => b.score - a.score);
 
-    // Hard only spends when the share is actually worth something to it.
+    // Hard only spends when the share is actually worth something to it —
+    // unless the shares are free, in which case there is nothing to weigh.
     const pick = scored[0];
     if (!pick) break;
-    if (ctx.diff === 'hard' && pick.score <= 0) break;
+    if (ctx.diff === 'hard' && !ctx.freeShares && pick.score <= 0) break;
 
     bought[pick.chain] = (bought[pick.chain] ?? 0) + 1;
     left[pick.chain]--;
-    cash -= priceOf(ctx, pick.chain);
+    cash -= ctx.freeShares ? 0 : priceOf(ctx, pick.chain);
 
     // Medium stops early sometimes rather than always filling its allowance.
     if (ctx.diff === 'medium' && Math.random() < 0.25) break;
@@ -910,6 +946,147 @@ function toPurchases(bought: Record<string, number>): { chain: string; quantity:
   return Object.entries(bought)
     .filter(([, q]) => q > 0)
     .map(([chain, quantity]) => ({ chain, quantity }));
+}
+
+// --- power cards (Epic 17) ---------------------------------------------------
+
+// Hard bots only. Easy and medium finish a game holding all five, and that is
+// deliberate rather than unimplemented: the three difficulties were just
+// reworked to be genuinely distinct, and "knows when to spend a one-shot
+// resource" is exactly the kind of judgement that should separate hard from
+// medium. Unlike Epic 18's declaration — a liveness requirement every
+// difficulty needs — nothing breaks if a bot never plays a card.
+
+/** Chains where this bot holds strictly more shares than any single rival. */
+function chainsWeLead(ctx: Ctx): ChainName[] {
+  return ctx.active.filter((c) => {
+    const mine = myShares(ctx, c);
+    if (mine <= 0) return false;
+    const rivals = rivalShares(ctx, c);
+    return mine > (rivals.length > 0 ? Math.max(...rivals) : 0);
+  });
+}
+
+/** Chains it holds shares in but is not winning, and so has least use for. */
+function losingPositions(ctx: Ctx): ChainName[] {
+  return ctx.active.filter((c) => {
+    const mine = myShares(ctx, c);
+    if (mine <= 0) return false;
+    if (ctx.gs.chains_bought_this_turn?.includes(c)) return false;
+    const rivals = rivalShares(ctx, c);
+    return mine <= (rivals.length > 0 ? Math.max(...rivals) : 0);
+  });
+}
+
+/** Placements worth making on their own merit, by hard's own valuation. */
+function worthwhilePlacements(ctx: Ctx): number {
+  return ctx.hand
+    .map((t) => classifyPlacement(t, ctx.gs, ctx.r))
+    .filter((p) => p.legal && hardPlacementScore(ctx, p) > 0)
+    .length;
+}
+
+/**
+ * One heuristic per card, each a single guarded rule rather than a search — a
+ * bot that agonises over a one-shot card is not more fun to play against, and
+ * a rejected move stops the drive loop for the turn, so every rule below sits
+ * behind the engine's own canPlayPowerCard.
+ */
+function cardIsWorthPlaying(ctx: Ctx, card: PowerCardId): boolean {
+  switch (card) {
+    // Short of the priciest chain it leads: the turn the card exists for.
+    case 'free_stock': {
+      const led = chainsWeLead(ctx).filter((c) => bankLeft(ctx, c) > 0);
+      if (led.length === 0) return false;
+      return ctx.cash < Math.max(...led.map((c) => priceOf(ctx, c)));
+    }
+
+    // Only worth 5 shares when it can actually take 5 of something it leads.
+    case 'extra_buy': {
+      return chainsWeLead(ctx).some(
+        (c) => bankLeft(ctx, c) >= 5 && priceOf(ctx, c) * 5 <= ctx.cash,
+      );
+    }
+
+    // A hand with nothing to do is the one a refill fixes.
+    case 'extra_tiles': {
+      const playable = ctx.hand
+        .map((t) => classifyPlacement(t, ctx.gs, ctx.r))
+        .filter((p) => p.legal).length;
+      return playable <= 1;
+    }
+
+    // Two or more placements it wanted to make anyway; otherwise the extra
+    // tiles are just tiles it would rather have kept.
+    case 'multi_tile':
+      return worthwhilePlacements(ctx) >= 2;
+
+    // Enough dead weight in chains it cannot win to fund at least one trade.
+    case 'stock_trade': {
+      const spare = losingPositions(ctx).reduce((sum, c) => sum + myShares(ctx, c), 0);
+      return spare >= TRADE_GIVE && ctx.active.some((c) => bankLeft(ctx, c) > 0);
+    }
+  }
+}
+
+/** The card to play this turn, if any. At most one — the engine enforces it too. */
+function pickPowerCard(ctx: Ctx): PowerCardId | null {
+  if (ctx.diff !== 'hard') return null;
+  if (ctx.cards.length === 0 || ctx.activeCard) return null;
+  if (ctx.gs.current_player_index !== ctx.myIndex) return null;
+
+  const turn: PowerCardTurnState = {
+    enabled: ctx.r.powerCards === 'on',
+    phase: ctx.gs.phase,
+    held: ctx.cards,
+    active: ctx.activeCard,
+    stocksPurchasedThisTurn: ctx.gs.stocks_purchased_this_turn ?? 0,
+    tilesPlacedThisTurn: ctx.gs.tiles_placed_this_turn ?? 0,
+    tileBagCount: ctx.gs.tile_bag?.length ?? 0,
+  };
+
+  // POWER_CARDS order breaks ties, so the choice is deterministic given a state.
+  return POWER_CARDS.find(
+    (card) => ctx.cards.includes(card) &&
+      canPlayPowerCard(card, turn).ok &&
+      cardIsWorthPlaying(ctx, card),
+  ) ?? null;
+}
+
+/**
+ * One trade: give TRADE_GIVE shares from the positions it is losing, take one
+ * of the chain it values most. Returns null when no legal trade exists, which
+ * is what stops an active Stock Trade from spinning the drive loop.
+ */
+function decidePowerTrade(ctx: Ctx): BotMove | null {
+  if (remainingPowerTrades(ctx.activeCard) === 0) return null;
+
+  // Cheapest first: the shares it minds losing least.
+  const spare = losingPositions(ctx).sort((a, b) => priceOf(ctx, a) - priceOf(ctx, b));
+
+  const give: { chain: ChainName; quantity: number }[] = [];
+  let remaining = TRADE_GIVE;
+  for (const c of spare) {
+    if (remaining === 0) break;
+    const take = Math.min(myShares(ctx, c), remaining);
+    if (take <= 0) continue;
+    give.push({ chain: c, quantity: take });
+    remaining -= take;
+  }
+  if (remaining > 0) return null;
+
+  const givenChains = new Set(give.map((g) => g.chain));
+  const receivable = ctx.active.filter((c) => {
+    // The given shares go back to the bank first, so a chain we are handing
+    // back to always has room — but a chain we neither hold nor emptied might
+    // not, and the engine would reject the trade.
+    const bankAfter = bankLeft(ctx, c) + (givenChains.has(c) ? TRADE_GIVE : 0);
+    return bankAfter > 0;
+  });
+  if (receivable.length === 0) return null;
+
+  const receive = receivable.sort((a, b) => shareValue(ctx, b) - shareValue(ctx, a))[0];
+  return { action: 'power_trade', payload: { give, receive } };
 }
 
 // --- end-game declaration (Epic 18) ------------------------------------------
@@ -999,6 +1176,12 @@ export function decideBotMove(
   // so the bot announces first and then plays the turn out normally on the
   // drive loop's next pass, buying and placing exactly as it otherwise would.
   if (shouldDeclareGameEnd(ctx)) return { action: 'declare_game_end' };
+
+  // Epic 17: same shape. Playing a card changes the rest of the turn but not
+  // this decision, so it happens first and the turn is then played out on the
+  // next pass with the card's effect already in the state the bot reads.
+  const card = pickPowerCard(ctx);
+  if (card) return { action: 'play_power_card', payload: { card } };
 
   switch (phase) {
     case 'place_tile':

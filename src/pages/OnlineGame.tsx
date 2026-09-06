@@ -44,6 +44,9 @@ const OnlineGame = () => {
     handleSellStocks,
     handleSkipBuyStock,
     handleDeclareGameEnd,
+    handlePlayPowerCard,
+    handlePowerTrade,
+    handleEndPlacements,
     handleNewGame,
     handleAutoEndTurn,
   } = useOnlineGame();
@@ -102,6 +105,9 @@ const OnlineGame = () => {
       onSellStocks={handleSellStocks}
       onEndTurn={handleSkipBuyStock}
       onDeclareGameEnd={handleDeclareGameEnd}
+      onPlayPowerCard={(card) => { void handlePlayPowerCard(card); }}
+      onPowerTrade={handlePowerTrade}
+      onEndPlacements={handleEndPlacements}
       onNewGame={handleNewGame}
       onReturnToLobby={handleLeaveRoom}
       onAutoEndTurn={handleAutoEndTurn}

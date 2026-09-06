@@ -13,6 +13,7 @@ import {
   getMaxChains,
   getBonusTier,
 } from '@/types/rules-normalize';
+import { normalizeActivePowerCard, normalizePowerCards } from '@/types/power-cards';
 
 const ALL_BOARD_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
@@ -411,12 +412,6 @@ export const executeGameAction = async (
   return data || { success: true };
 };
 
-// Start the game via the serverless function
-export const startGame = async (roomId: string, gameState: GameState): Promise<boolean> => {
-  const result = await executeGameAction('start_game', roomId);
-  return result.success;
-};
-
 // Update game state via serverless function (for actions that need state update)
 export const updateGameState = async (roomId: string, gameState: GameState): Promise<boolean> => {
   // This is now handled by the serverless function for each specific action
@@ -453,6 +448,10 @@ export const dbToGameState = (
       festival: 0, continental: 0, imperial: 0
     },
     isConnected: p.is_connected,
+    // Epic 17. Public information: every player sees what everyone else has
+    // left to spend. Empty for a room with the rule off, and for a row from
+    // before the migration, which reads as undefined.
+    powerCards: normalizePowerCards(p.power_cards),
   }));
 
   return {
@@ -471,6 +470,10 @@ export const dbToGameState = (
     stocksPurchasedThisTurn: dbState.stocks_purchased_this_turn,
     stocksSoldThisTurn: dbState.stocks_sold_this_turn ?? 0,
     chainsBoughtThisTurn: (dbState.chains_bought_this_turn ?? []) as ChainName[],
+    // Normalised rather than cast: the column is JSONB, and an unmigrated row
+    // reads as undefined, which must mean "no card active" without a special case.
+    activePowerCard: normalizeActivePowerCard(dbState.active_power_card),
+    tilesPlacedThisTurn: dbState.tiles_placed_this_turn ?? 0,
     gameLog: dbState.game_log || [],
     winner: dbState.winner || null,
     endGameVotes: dbState.end_game_votes || [],
