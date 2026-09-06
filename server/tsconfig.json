@@ -15,14 +15,18 @@
     "declaration": false,
     "sourceMap": false
   },
-  // The rules model is shared with the browser engine: src/types/game.ts and
-  // src/types/rules-normalize.ts are compiled into dist/src/types/ alongside
-  // dist/server/, which is what server/lib/rules.ts's relative import resolves
-  // to at runtime. Nothing else under src/ is part of the backend build.
+  // The rules model is shared with the browser engine: src/types/game.ts,
+  // src/types/rules-normalize.ts and src/types/power-cards.ts are compiled into
+  // dist/src/types/ alongside dist/server/, which is what server/lib/rules.ts's
+  // relative imports resolve to at runtime. Listed explicitly rather than left
+  // to transitive resolution, so a missing runtime file is a build error here
+  // rather than a require() that throws in production. Nothing else under src/
+  // is part of the backend build.
   "include": [
     "../server/**/*",
     "../src/types/game.ts",
-    "../src/types/rules-normalize.ts"
+    "../src/types/rules-normalize.ts",
+    "../src/types/power-cards.ts"
   ],
   "exclude": [
     "../node_modules",
