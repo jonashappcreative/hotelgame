@@ -1,0 +1,374 @@
+{
+  "lambda": 0.9655333333333337,
+  "p10": -4.195,
+  "p90": 5.250000000000001,
+  "states": 60,
+  "byStratum": {
+    "mid/leading": 1.9208333333333332,
+    "mid/trailing": 1.7876842105263158,
+    "early/leading": -0.07881818181818173,
+    "early/trailing": 0.09905555555555542
+  },
+  "perState": [
+    {
+      "id": "g0s0",
+      "lambda": 1,
+      "round": 11,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g0s1",
+      "lambda": 1,
+      "round": 12,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g1s0",
+      "lambda": 2.45,
+      "round": 10,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g1s1",
+      "lambda": 2.45,
+      "round": 9,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g2s0",
+      "lambda": 6.666,
+      "round": 7,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g2s1",
+      "lambda": -11.4,
+      "round": 10,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g3s0",
+      "lambda": 1,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g3s1",
+      "lambda": 3.6,
+      "round": 9,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g4s0",
+      "lambda": 11.25,
+      "round": 0,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g4s1",
+      "lambda": 17.9,
+      "round": 10,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g5s0",
+      "lambda": 1,
+      "round": 11,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g5s1",
+      "lambda": 5.7,
+      "round": 13,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g6s0",
+      "lambda": -0.05,
+      "round": 3,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g6s1",
+      "lambda": 1.1,
+      "round": 6,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g7s0",
+      "lambda": 1,
+      "round": 12,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g7s1",
+      "lambda": 1,
+      "round": 1,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g8s0",
+      "lambda": 1,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g8s1",
+      "lambda": 1,
+      "round": 9,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g9s0",
+      "lambda": 1.3,
+      "round": 2,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g9s1",
+      "lambda": 1.3,
+      "round": 3,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g10s0",
+      "lambda": 8.9,
+      "round": 7,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g10s1",
+      "lambda": -2.4,
+      "round": 7,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g11s0",
+      "lambda": 5.2,
+      "round": 5,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g11s1",
+      "lambda": 1,
+      "round": 6,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g12s0",
+      "lambda": 1,
+      "round": 1,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g12s1",
+      "lambda": 1,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g13s0",
+      "lambda": 1,
+      "round": 9,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g13s1",
+      "lambda": -6.067,
+      "round": 3,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g14s0",
+      "lambda": 1,
+      "round": 10,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g14s1",
+      "lambda": 1,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g15s0",
+      "lambda": 8.35,
+      "round": 7,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g15s1",
+      "lambda": 1,
+      "round": 10,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g16s0",
+      "lambda": 4.1,
+      "round": 0,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g16s1",
+      "lambda": 4.1,
+      "round": 5,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g17s0",
+      "lambda": 1,
+      "round": 3,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g17s1",
+      "lambda": -8.65,
+      "round": 4,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g18s0",
+      "lambda": -0.35,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g18s1",
+      "lambda": 1.4,
+      "round": 1,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g19s0",
+      "lambda": -2.5,
+      "round": 2,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g19s1",
+      "lambda": -4.6,
+      "round": 0,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g20s0",
+      "lambda": 1,
+      "round": 0,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g20s1",
+      "lambda": 1,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g21s0",
+      "lambda": 3.7,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g21s1",
+      "lambda": 2.233,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g22s0",
+      "lambda": -4.15,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g22s1",
+      "lambda": 2.7,
+      "round": 1,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g23s0",
+      "lambda": 1,
+      "round": 13,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g23s1",
+      "lambda": 1,
+      "round": 10,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g24s0",
+      "lambda": 1,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g24s1",
+      "lambda": 1,
+      "round": 9,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g25s0",
+      "lambda": -1.3,
+      "round": 2,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g25s1",
+      "lambda": 1,
+      "round": 14,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g26s0",
+      "lambda": 1.5,
+      "round": 6,
+      "stratum": "early/trailing"
+    },
+    {
+      "id": "g26s1",
+      "lambda": 1,
+      "round": 4,
+      "stratum": "early/leading"
+    },
+    {
+      "id": "g27s0",
+      "lambda": 1,
+      "round": 8,
+      "stratum": "mid/leading"
+    },
+    {
+      "id": "g27s1",
+      "lambda": 1,
+      "round": 12,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g28s0",
+      "lambda": 0.4,
+      "round": 12,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g28s1",
+      "lambda": -0.95,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g29s0",
+      "lambda": -5.35,
+      "round": 8,
+      "stratum": "mid/trailing"
+    },
+    {
+      "id": "g29s1",
+      "lambda": -16.6,
+      "round": 6,
+      "stratum": "early/trailing"
+    }
+  ]
+}

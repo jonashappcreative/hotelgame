@@ -1,0 +1,26 @@
+{
+  // The simulator compiles against the backend's own settings so it sees the
+  // engine exactly as production does — same target, same strictness, same
+  // module system. Output lands in .sim-build/ (gitignored) and is run with
+  // plain node; runtime-package.json is copied in beside it to pin CommonJS,
+  // because the repo root declares "type": "module".
+  "extends": "../server/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../.sim-build",
+    "rootDir": "..",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "../sim/**/*.ts",
+    "../server/**/*.ts",
+    "../src/types/game.ts",
+    "../src/types/rules-normalize.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist",
+    "../server/node_modules",
+    "../server/**/*.test.ts",
+    "../sim/**/*.test.ts"
+  ]
+}

@@ -1,0 +1,373 @@
+{
+  "generatedAt": "2026-09-06T10:39:21.723Z",
+  "price": 200,
+  "priceNote": "no crossing inside the swept $200-$600 range (win rate is at or below 25% at every price down to $200); the control cells bracket it — interpolated between $100 (29.9%) and $200 (24.9%).",
+  "config": {
+    "seeds": 500,
+    "seedBase": 100000,
+    "seedsPerJob": 25,
+    "seats": [
+      "hard",
+      "hard",
+      "hard",
+      "hard"
+    ]
+  },
+  "wallClockSeconds": 216.236,
+  "games": 500,
+  "naturalEndRate": 1,
+  "baselineNaturalEndRate": 1,
+  "comparisons": [
+    {
+      "metric": "rounds per game",
+      "deck": 14.146,
+      "baseline": 13.832,
+      "paired": {
+        "mean": 0.314,
+        "sd": 1.681981606394223,
+        "n": 500,
+        "lo": 0.16657052088142824,
+        "hi": 0.4614294791185718,
+        "p": 0.000029896100168273574
+      },
+      "bootstrap": {
+        "point": 0.314,
+        "lo": 0.162,
+        "hi": 0.46204999999999974
+      }
+    },
+    {
+      "metric": "mergers per game",
+      "deck": 7.408,
+      "baseline": 6.538,
+      "paired": {
+        "mean": 0.87,
+        "sd": 1.7797288753457638,
+        "n": 500,
+        "lo": 0.714002752427835,
+        "hi": 1.025997247572165,
+        "p": 8.419637651350486e-28
+      },
+      "bootstrap": {
+        "point": 0.87,
+        "lo": 0.71395,
+        "hi": 1.03
+      }
+    },
+    {
+      "metric": "money in play at end",
+      "deck": 62982.176,
+      "baseline": 57679.322,
+      "paired": {
+        "mean": 5302.854,
+        "sd": 22230.331721627346,
+        "n": 500,
+        "lo": 3354.3153156926383,
+        "hi": 7251.392684307362,
+        "p": 9.630671198495833e-8
+      },
+      "bootstrap": {
+        "point": 5302.854,
+        "lo": 3312.3678,
+        "hi": 7222.8151
+      }
+    },
+    {
+      "metric": "winner net worth",
+      "deck": 43244.124,
+      "baseline": 41010.464,
+      "paired": {
+        "mean": 2233.66,
+        "sd": 6763.851427453553,
+        "n": 500,
+        "lo": 1640.793176133459,
+        "hi": 2826.526823866541,
+        "p": 1.544859668658186e-13
+      },
+      "bootstrap": {
+        "point": 2233.66,
+        "lo": 1637.71395,
+        "hi": 2831.102799999999
+      }
+    },
+    {
+      "metric": "net worth spread",
+      "deck": 19377.052,
+      "baseline": 17516.12,
+      "paired": {
+        "mean": 1860.932,
+        "sd": 9504.954342524901,
+        "n": 500,
+        "lo": 1027.801326967055,
+        "hi": 2694.062673032945,
+        "p": 0.000011992525767753378
+      },
+      "bootstrap": {
+        "point": 1860.932,
+        "lo": 1082.8615499999999,
+        "hi": 2639.68215
+      }
+    }
+  ],
+  "seatFairness": {
+    "seatWinRates": [
+      0.267,
+      0.266,
+      0.233,
+      0.234
+    ],
+    "spread": 0.034,
+    "intervals": [
+      {
+        "lo": 0.22916040181228814,
+        "hi": 0.3064077895253803
+      },
+      {
+        "lo": 0.22916040181228814,
+        "hi": 0.3064077895253803
+      },
+      {
+        "lo": 0.19712923844504343,
+        "hi": 0.270957408044252
+      },
+      {
+        "lo": 0.1990046985863301,
+        "hi": 0.2730514505411049
+      }
+    ]
+  },
+  "cardFrequencies": [
+    {
+      "cardId": "dividend-call",
+      "gamesPlayedIn": 493,
+      "plays": 705,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.9899598393574297,
+      "boughtNeverPlayed": 81,
+      "meanIdleRounds": 1.4893617021276595,
+      "meanEstValue": 909.1687943262411
+    },
+    {
+      "cardId": "tender-offer",
+      "gamesPlayedIn": 439,
+      "plays": 577,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.8815261044176707,
+      "boughtNeverPlayed": 224,
+      "meanIdleRounds": 2.4558058925476605,
+      "meanEstValue": 2950.842287694974
+    },
+    {
+      "cardId": "spin-off",
+      "gamesPlayedIn": 406,
+      "plays": 553,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0.8169014084507042,
+      "boughtNeverPlayed": 227,
+      "meanIdleRounds": 4.130198915009042,
+      "meanEstValue": 9068.141048824593
+    },
+    {
+      "cardId": "skyscraper",
+      "gamesPlayedIn": 425,
+      "plays": 517,
+      "gamesAvailableIn": 492,
+      "playRateWhenAvailable": 0.8638211382113821,
+      "boughtNeverPlayed": 263,
+      "meanIdleRounds": 1.9709864603481624,
+      "meanEstValue": 913.7330754352031
+    },
+    {
+      "cardId": "bridge-loan",
+      "gamesPlayedIn": 415,
+      "plays": 503,
+      "gamesAvailableIn": 496,
+      "playRateWhenAvailable": 0.8366935483870968,
+      "boughtNeverPlayed": 278,
+      "meanIdleRounds": 2.8827037773359843,
+      "meanEstValue": 1288.0934393638172
+    },
+    {
+      "cardId": "franchise-expansion",
+      "gamesPlayedIn": 403,
+      "plays": 454,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.8092369477911646,
+      "boughtNeverPlayed": 325,
+      "meanIdleRounds": 2.643171806167401,
+      "meanEstValue": 1193.1189427312775
+    },
+    {
+      "cardId": "charter-renewal",
+      "gamesPlayedIn": 297,
+      "plays": 314,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0.5975855130784709,
+      "boughtNeverPlayed": 473,
+      "meanIdleRounds": 3.248407643312102,
+      "meanEstValue": 5430.254777070064
+    },
+    {
+      "cardId": "ipo-discount",
+      "gamesPlayedIn": 141,
+      "plays": 192,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0.2837022132796781,
+      "boughtNeverPlayed": 580,
+      "meanIdleRounds": 7.9375,
+      "meanEstValue": 298.4375
+    },
+    {
+      "cardId": "five-star-upgrade",
+      "gamesPlayedIn": 73,
+      "plays": 79,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.1465863453815261,
+      "boughtNeverPlayed": 714,
+      "meanIdleRounds": 10.822784810126583,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "ground-lease",
+      "gamesPlayedIn": 63,
+      "plays": 73,
+      "gamesAvailableIn": 499,
+      "playRateWhenAvailable": 0.12625250501002003,
+      "boughtNeverPlayed": 715,
+      "meanIdleRounds": 9.780821917808218,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "golden-parachute",
+      "gamesPlayedIn": 65,
+      "plays": 70,
+      "gamesAvailableIn": 499,
+      "playRateWhenAvailable": 0.13026052104208416,
+      "boughtNeverPlayed": 720,
+      "meanIdleRounds": 10.814285714285715,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "hostile-takeover",
+      "gamesPlayedIn": 64,
+      "plays": 69,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.1285140562248996,
+      "boughtNeverPlayed": 710,
+      "meanIdleRounds": 10.246376811594203,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "antitrust-filing",
+      "gamesPlayedIn": 63,
+      "plays": 68,
+      "gamesAvailableIn": 499,
+      "playRateWhenAvailable": 0.12625250501002003,
+      "boughtNeverPlayed": 732,
+      "meanIdleRounds": 11.029411764705882,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "proxy-fight",
+      "gamesPlayedIn": 61,
+      "plays": 66,
+      "gamesAvailableIn": 499,
+      "playRateWhenAvailable": 0.12224448897795591,
+      "boughtNeverPlayed": 727,
+      "meanIdleRounds": 10.484848484848484,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "short-sell",
+      "gamesPlayedIn": 61,
+      "plays": 62,
+      "gamesAvailableIn": 498,
+      "playRateWhenAvailable": 0.12248995983935743,
+      "boughtNeverPlayed": 719,
+      "meanIdleRounds": 10.46774193548387,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "zoning-veto",
+      "gamesPlayedIn": 58,
+      "plays": 61,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0.11670020120724346,
+      "boughtNeverPlayed": 743,
+      "meanIdleRounds": 10.80327868852459,
+      "meanEstValue": 200
+    },
+    {
+      "cardId": "buyback",
+      "gamesPlayedIn": 39,
+      "plays": 43,
+      "gamesAvailableIn": 499,
+      "playRateWhenAvailable": 0.0781563126252505,
+      "boughtNeverPlayed": 748,
+      "meanIdleRounds": 7.72093023255814,
+      "meanEstValue": 230.2325581395349
+    },
+    {
+      "cardId": "market-scan",
+      "gamesPlayedIn": 0,
+      "plays": 0,
+      "gamesAvailableIn": 496,
+      "playRateWhenAvailable": 0,
+      "boughtNeverPlayed": 787,
+      "meanIdleRounds": 0,
+      "meanEstValue": 0
+    },
+    {
+      "cardId": "surveyor",
+      "gamesPlayedIn": 0,
+      "plays": 0,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0,
+      "boughtNeverPlayed": 788,
+      "meanIdleRounds": 0,
+      "meanEstValue": 0
+    },
+    {
+      "cardId": "land-bank",
+      "gamesPlayedIn": 0,
+      "plays": 0,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0,
+      "boughtNeverPlayed": 790,
+      "meanIdleRounds": 0,
+      "meanEstValue": 0
+    },
+    {
+      "cardId": "demolition-permit",
+      "gamesPlayedIn": 0,
+      "plays": 0,
+      "gamesAvailableIn": 497,
+      "playRateWhenAvailable": 0,
+      "boughtNeverPlayed": 771,
+      "meanIdleRounds": 0,
+      "meanEstValue": 0
+    }
+  ],
+  "frustration": {
+    "cardsBought": 16521,
+    "cardsPlayed": 4406,
+    "neverPlayedShare": 0.7333091217238666,
+    "meanIdleRounds": 3.8763050385837494,
+    "idleP90": 11,
+    "declineRate": 0.05775086271060288
+  },
+  "kingmaking": {
+    "games": 200,
+    "qualifyingPlays": 1308,
+    "decisivePlays": 363,
+    "decisiveRate": 0.2775229357798165,
+    "kingmakingPlays": 268,
+    "kingmakingRate": 0.20489296636085627,
+    "selfServingPlays": 95,
+    "placeboChangedWinner": 0,
+    "placeboChangeRate": 0,
+    "placeboThirdPartyRate": 0,
+    "decisiveExcessOverPlacebo": 0.2775229357798165,
+    "seconds": 200.179
+  }
+}

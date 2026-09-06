@@ -1,0 +1,172 @@
+Game Valuation & Fairness Model
+Context
+The immediate question was whether Hotel Game is fair — seat order, chain-tier choice, and what sell-back percentage (100/90/75/50) is actually balanced.
+
+The real goal, now specified in docs/event_cards/cards-overview.md, is a 24-card event-card pool (Market Scan, Insider Tip, Bridge Loan, Five Star Upgrade, Franchise Expansion, etc.) plus a pricing model (single price vs. three tiers) that decides how price and power relate across the whole pool. The design doc is already excellent: it names six recurring levers (magnitude, scope, duration, frequency/access, compensation, cost shape), flags its own risk cards, and proposes a provisional tier assignment. What it cannot do on paper is tell you whether a card's value actually lands in its intended band — that needs simulation.
+
+Both problems — base-game fairness and card pricing — reduce to the same question: what is this effect worth, in dollars of final score, in the states where a player would actually use it? This plan builds one valuation model that answers both, then a visual workbench for dropping cards in one at a time, tuning their levers against that model, and marking each accepted, sent back, or cut.
+
+Deliverables:
+
+A simulation harness and valuation core in sim/.
+A written report in docs/analysis/ (existing pattern: docs/analysis/bot-strategy-evaluation.md) covering base-game fairness.
+An interactive balancing workbench, fed by the simulator's output, for the card-by-card pass.
+Findings from exploration
+1. The authoritative engine can run headless for one line of production change
+handleGameAction (game-action.ts:118) is the real engine — the one that decides legality in live play. It reaches the database only through the six-method shim in db.ts (from().select()/insert()/update()/delete()/eq()/order()/single(), awaitable, resolving {data, error}). Everything else is pure computation.
+
+notifyWsServer already no-ops without a socket server (ws.ts).
+driveBots (3s pacing, 60-move cap, 5-minute deadline) is wired only into the HTTP default export (game-action.ts:108), not into handleGameAction — calling the handler directly gives a clean synchronous engine.
+turn_order_mode: 'manual' skips the start-time seat shuffle, giving deterministic seat control.
+decideBotMove(difficulty, phase, gameState, players, actor) is already pure (bot.ts:912).
+An in-memory fake of the shim therefore runs the real engine at full speed. A reimplemented engine would drift, and every conclusion would describe a game nobody plays. One production change is needed: add export to handleGameAction so the harness can act as any seat without a JWT.
+
+2. Game start must go through toggle_ready, not start_game
+start_game is legacy — hardcodes a 9×12 board, $6000, 6 tiles, never writes rules_snapshot. The live path is toggle_ready (game-action.ts:187), which applies CustomRules. The harness must bootstrap through it.
+
+3. Most cards are priceable today, with no engine changes
+Per-turn budgets live in mutable state (stocks_purchased_this_turn, stocks_sold_this_turn, chains_bought_this_turn) rather than in code, so most effects — Bridge Loan, Dividend Call, Surveyor, Tender Offer, Proxy Fight — are expressible as a state patch applied between engine calls. No reimplementation of the engine's decision logic is needed to price them.
+
+Board-connectivity primitives already exist for the geometry-heavy cards: getAdjacentTiles and generateAllTiles (rules.ts) give the neighbour and full-board queries that Demolition Permit's "chain must stay connected" and Spin Off's split-geometry check both need.
+
+Two cards are genuinely new subsystems rather than patches, and the plan treats them as such (see §5.3 of the card doc):
+
+Five Star Upgrade — the pool's only recurring-income source. Base Acquire has exactly two money faucets (merger bonuses, share sales), both event-driven and self-limiting; a permanent per-turn dividend is a different kind of economy. Approximable for pricing by patching cash each turn; shipping it is real engine work.
+Spin Off — chain-splitting has no engine concept. Same for Demolition Permit if it's allowed to disconnect a chain. Pricing these first is what surfaces the design question before it becomes a bug.
+What "fair" means, precisely
+Five questions, each needing a different measurement:
+
+Structural fairness (base game) — does seat order matter? Null hypothesis: uniform 1/N win rate with identical agents.
+Strategy fairness (base game) — is any line dominant (chain tier, selling vs. holding)? Measured by round-robin between archetype policies.
+Parameter calibration (base game) — is 90/75/50 sell-back fair? A parameter is fair when it creates a genuine choice: neither wins nor loses significantly on average.
+Card value — what is a card worth, in the states a player would use it?
+Card band fit — does that value sit where its price/tier says it should?
+(1)–(3) double as the validation suite for (4): if the model can't reproduce a known-uniform seat distribution, it can't be trusted to price a card. (5) is new and is the heart of the card doc's ask — see below.
+
+The valuation core
+The primitive: equity by rollout
+equity(state, seat, n) → { expectedNetWorth, winProbability }
+Clone the state, play to completion n times with a standard policy population, average the outcome. Flat Monte-Carlo rollout — classical search, no learning. Cheap because a snapshot is a structuredClone of a few small tables.
+
+The measurement: paired counterfactual
+value(effect, state, seat) = equity(apply(effect, state), seat) − equity(state, seat)
+Both arms run on identical seed sequences (common random numbers, CRN). If final net worth has σ ≈ $15k and a card is worth ~$500, an unpaired estimate needs ~14,000 rollouts per state; paired, maybe 250 — the difference between infeasible and cheap. Same trick applies to seat fairness: rotate seats across identical tile-bag seeds so bag luck cancels (duplicate-bridge design).
+
+The keystone: λ, the marginal value of a dollar
+Cash compounds through shares and bonuses, so it isn't worth $1 per $1 of final score. Measure λ = d(final net worth)/d(cash) by patching +$1000 into a player across sampled states and running the same counterfactual. λ is the exchange rate that makes price and value commensurable: a card worth λ × price in expectation is priced at par. The sell-back-factor question and the card-pricing question become the same question, answered by the same tool.
+
+Value is a distribution — and bands are how the card doc's ask gets answered
+Per card doc §1: "a card is balanced when its expected value, averaged across the states where a player would actually buy it, sits inside the target band for its price class." That target-band test needs three numbers per card, not one — this is the Catan/Settlers insight the doc's own risk notes keep circling without naming:
+
+Mean — E[value | legal, in corpus] vs. λ × price. The obvious check.
+Ceiling — P95(value). This is what actually catches a "build 5 roads" card: a card can have a fair mean and still have a broken tail (a jackpot outcome in the right game state). Cap this against the tier's ceiling bound.
+Floor — P(value ≈ 0 | legal), the dead-draw rate. Catches "steal a stock" when no one holds any, or Short Sell's already-flagged self-fulfilling case. Cards above a floor threshold are situational-good; above a much higher threshold they're often just dead text.
+Build process, mirroring the card doc's own structure:
+
+State corpus — snapshot every decision point across K baseline games, stratified by phase (early/mid/late) and standing (leading/trailing) — this directly answers the doc's open question #2, "does price need to scale with game phase?", since the phase-conditional profile is already reported per card.
+Paired value at every legal state.
+Naive vs. optimal-play value. Naive = mean over all legal states (what a random player gets). Optimal = mean over the best-timed window (what a skilled player gets). Skill premium = the gap. Large ⇒ rewards expertise (Proxy Fight, timed well). Near-zero ⇒ a lottery (Market Scan). This is a genuinely new, useful axis the card doc doesn't have yet.
+Externality effects need a second currency
+Two shapes the card doc calls out explicitly need dollars-to-the-buyer plus a second number:
+
+Negative externality (denial) — Zoning Veto, Tender Offer's refusal fee, Antitrust Filing, "steal a stock". Hurts one opponent, helps everyone else by arithmetic; in dollars that can look like a wash while being decisive in placement, and it's the doc's own flagged kingmaking risk.
+Positive externality (shared benefit) — Skyscraper, Five Star Upgrade. Benefits every holder of the target chain, not just the buyer — doc §7 Q6 asks directly whether this flavour is wanted.
+Both need: value to buyer (dollars, the pricing number) and value to the field (Δ win-probability for every other seat, reported per seat so kingmaking shows up as a skewed rather than uniform distribution). One column isn't enough for either shape.
+
+Money source and the inflation check (doc §7 Q5)
+Tag every effect source: 'bank' | 'player' in its definition. Bank-sourced effects (Dividend Call... no, Dividend Call is player-sourced; Market Scan, Bridge Loan-style effects are bank-neutral; things like a flat cash grant are bank-sourced) inflate the money supply; player-sourced effects (Dividend Call, Tender Offer) only move it. Track total money in play per round across simulated games as a metric — this turns "is the ratio deliberate" from a design question into a number you can watch drift as cards are added.
+
+Card economy model: a downstream scoring pass, not a separate simulation
+Doc §7 Q1 — random deck vs. selectable, single price vs. three tiers — is framed as needing to be settled before any math. It doesn't. The simulator computes one thing per card: its value distribution across the state corpus. Single-price, three-tier, and open-market are three different ways of scoring the same distributions:
+
+A-random (single price, shuffled draw): score = how close the deck-average value sits to λ × price. Individual-card variance is fine by design.
+A-open (single price, chosen freely): score = band width across all 24 cards — the tightest constraint, since players always take the best option on the table.
+Three tiers: score = band width within each tier, plus a cross-tier separation check (worst tier-2 card must beat the best tier-1 card, or the boundary is fiction — doc §5.2's own stated failure mode).
+So the workbench (below) can show all three scores side by side from one simulation run, and the economy-model decision becomes something the data informs rather than a prerequisite. The plan defaults to building against the doc's own leaning (three tiers, §5–6) since it's already the best-argued option, but nothing in the sim is tier-model-specific.
+
+Starting defaults for the access rules (to calibrate, not to lock in)
+Independent of price-per-card, three access rules shape every card's value and need a starting number before simulation can run at all. Proposed defaults:
+
+1 purchasable per round. This is the doc's "frequency/access" lever set globally rather than per-card — it forecloses the stacking risk the doc flags (two Franchise Expansions in one turn) by construction, and gives every card the same access rate so its price is comparable to every other card's.
+Playable the round after the round it was bought, never the same round. This is a "duration" lever applied globally: a 1-round dead window between buy and play. It matters for pricing, not just feel — it guarantees a card is always evaluated in a state the buyer couldn't fully predict when they bought it, which is what makes "value at buy-time" a meaningful, non-degenerate number instead of "value of the move I was already about to make anyway."
+$200 flat starting price, applied uniformly as the baseline for the A-random and A-open single-price models. This is deliberately the cheapest number in the game (the base Sackson/Tier price) — a low anchor forces every card's simulated value to be judged against it, rather than picking a number that happens to already fit a few cards and hiding the ones that don't.
+These three are simulation inputs, not conclusions — Phase 5a runs card values under exactly this config first (it's the cheapest config to compute, being the same for every card), and Phase 6 is where the model says whether $200 / 1-per-round / 1-round delay actually produces a band-fitting pool or needs to move. Nothing above should be read as a design decision; it's the seed value the workbench needs to render its first pass.
+
+A plausible Phase 6 outcome, explicitly anticipated rather than ruled out: the $200 flat anchor splits into two (or more) price points — e.g. a $200 tier and a $500 tier — under the A-open model, where the player picks freely from whichever cards are on offer rather than drawing at random. That's a shift from "one price, scored by deck-average" to "two prices, each scored by its own band width," which sim/economy.ts already supports (it scores A-random, A-open, and three-tier from the same underlying value distributions, per "Card economy model" above) — discovering that two clusters fit the data better than one is exactly the kind of revision Phase 6 exists to make.
+
+Architecture
+New code lives in sim/. Production code changes by one export.
+
+File	Responsibility
+sim/memory-db.ts	In-memory fake of the db.from(...) shim. Snapshot/restore via structuredClone.
+sim/rng.ts	Seeded PRNG (mulberry32), installed over Math.random for the sim process — seeds shuffle() (rules.ts) and rnd() (bot.ts) in one move.
+sim/harness.ts	Build room + seats (turn_order_mode: 'manual'), start via toggle_ready, loop decideBotMove → handleGameAction to game_over. Mirrors driveBotsLoop minus pacing/caps/retries.
+sim/policies.ts	Wraps decideBotMove for easy/medium/hard, plus sim-only archetypes (budget-focused, premium-focused, merger-hunter, cash-hoarder, aggressive-seller). server/lib/bot.ts is never modified.
+sim/effects.ts	Card registry. Each effect: pure (tables, seat, leverValues) => tables patch, a legality predicate, its lever set (named per the doc's glossary — magnitude/scope/duration/frequency/compensation/cost-shape), and a source: 'bank' | 'player' tag. A global allowSafeChainTargeting flag threads through every card that references chain safety (Demolition Permit, Hostile Takeover, Spin Off, Antitrust Filing) — doc §7 Q4 as one config switch instead of four separate ones.
+sim/equity.ts	equity(), paired counterfactual, CRN seed management, λ estimation.
+sim/corpus.ts	State-corpus sampling, stratified by phase and standing.
+sim/economy.ts	Scores a set of card values against A-random / A-open / three-tier, per §"Card economy model" above.
+sim/metrics.ts	Per-game record, reusing calculateFinalScores (rules.ts) — identical scoring to production. Also tracks total money in play per round.
+sim/stats.ts	Wilson intervals, bootstrap CIs, paired tests, Benjamini–Hochberg FDR.
+sim/run.ts	CLI: config matrix × seeds, parallel via worker_threads, JSONL out, plus a --card <name> mode that runs one card's full lever grid and writes its workbench JSON.
+DB injection seam. db is a module singleton; add a small setDbBackend() in db.ts (~10 lines, no behaviour change). Running under vitest with vi.mock was considered and rejected — 10⁴+ games under a test runner is awkward and slow.
+
+Performance. A game is ~100–300 engine actions over small plain objects — expect single-digit ms/game, so base-game sweeps (10⁴ games) finish in well under a minute single-threaded. Per-card lever grids are the real cost: a card with 3 levers × 3 options each is 27 cells, each needing hundreds of paired rollouts across a stratified corpus. Budget for worker_threads parallelism from Phase 5 onward; expect the full 24-card pass, singletons only, to be the single largest compute cost in the plan.
+
+The visual balancing workbench
+Matches the requested workflow: drop a card in, tune its levers, see whether it lands in its band, accept / send back / cut, move to the next card.
+
+Static Artifact, precomputed data. sim/run.ts --card <name> writes one JSON file per card: for every point in its lever grid, the mean/ceiling/floor values (naive and optimal-play), the phase-conditional profile, the externality columns (buyer value + per-seat field impact), and the band verdict against its assigned tier. The workbench is a pure read/filter/decide UI over that precomputed grid — no live backend, no simulation-on-demand, which keeps it a straightforward Artifact rather than a capability-heavy one.
+
+Screens:
+
+Pool overview — all 24 cards as a grid/table: name, group (A–D per the doc), assigned tier, current status (draft / simulated / accepted / sent back / cut), and a pass/fail chip per band test. Sortable by "worst violation" so the cards needing attention surface first.
+Card detail — lever pickers (dropdowns matching the doc's stated option sets, e.g. Demolition Permit's "1 tile or 2" × "returns to bag or leaves game"), live-updating mean/ceiling/floor bars against the tier band, the phase-conditional chart, and the externality readout for denial/shared-benefit cards. A "why this fails" note auto-generated from which of the three tests is out of band.
+Tier/economy comparator — the three economy-model scores from sim/economy.ts side by side, so a tier-boundary violation (doc §5.2's failure mode) is visible across the whole pool at once, not just per-card.
+Decisions — accept / send back with a note / cut, persisted to docs/event_cards/card-balance.json (source of truth for decisions, separate from the design doc's prose) so the workbench and the markdown doc never fight over what's current.
+Where it lives. Published as an Artifact first — fast to iterate against JSON the simulator produces, no build step, and this is a design tool for you rather than a player-facing feature. If it earns a permanent place later, port it to an in-app route once the design has settled (the existing src/components/dashboard/ primitives — PanelCard, StatTile, BarRow — already fit this shape). Not building both up front avoids designing the UI twice before knowing what's worth keeping on screen.
+
+Phases
+Phase 0 — Closed-form economics. No code. Price/bonus curves per chain tier; the asymmetry that merger liquidation pays full book price while voluntary sell_stocks always takes a haircut (flagged in docs/analysis/bot-strategy-evaluation.md §2.1). Predicts what the sim should find — a cheap sanity check before building it.
+
+Phase 1 — Harness. memory-db.ts, rng.ts, harness.ts, metrics.ts. Exit: 1,000 all-bot games complete, zero rejected moves, fully reproducible from a seed.
+
+Phase 2 — Valuation core. equity.ts + corpus.ts. Deliverable: λ with a confidence interval, and the paired-counterfactual machinery passing its unit test (below).
+
+Phase 3 — Validation. Seat fairness with identical agents (CRN rotation), skill-gradient monotonicity, and comparison against real game_results aggregates already computed by stats.ts. Decides whether anything downstream is believable.
+
+Phase 4 — Base-game rule sweeps. Sell factor, chain safety threshold, bonus tier, player count. Answers the original fairness questions and is the dress rehearsal for card pricing — a rule parameter is a permanent, always-on card.
+
+Phase 5 — Card pricing.
+
+5a: effects.ts with all 24 cards from the doc, each with its lever set and legality predicate. Singleton lever-grid runs per card, sim/economy.ts scoring.
+5b: stacking checks on the doc's own flagged combinations (two Franchise Expansions in one turn; Franchise Expansion with both merger/founding scope restrictions lifted) — only after singleton prices stabilize.
+5c: the workbench, fed by 5a/5b output.
+Phase 6 — Balancing pass. Work through the pool in the workbench: tune levers against the band tests, resolve the doc's own cut-list candidates (Ground Lease, Short Sell, Zoning Veto, Antitrust Filing, Board Seat, and the Market Scan/Surveyor and Proxy Fight/Golden Parachute redundancy pairs) with data instead of intuition, and record decisions in card-balance.json.
+
+Phases 0–3 are the foundation and should land before any card is priced.
+
+Your original questions, answered
+Synthetic games or real data? Synthetic, primarily — 10³–10⁴ games per configuration cell are needed, and Phase 4 alone is dozens of cells; real history has far fewer total games and no counterfactual control. Real data's job is external validity: compare simulated vs. observed rounds/game, mergers/game, score spread, and winning total via /api/stats (stats.ts). If simulated and real distributions diverge, the bots aren't playing your game and every downstream conclusion is about the bots, not the game.
+
+Do you need AI? No. A fast deterministic engine, scripted policies, and statistics are what this needs; an LLM is wrong on every axis here — too slow for the game volumes involved, non-deterministic, and unattributable (you couldn't tell whether a result came from the rule or the model's mood). The existing bot.ts heuristics are the right agents because they're legible: you can read exactly why "hard" buys what it buys, and that legibility is what makes a resulting price explainable to a player, the same way a Catan card's fairness is explainable from its deck count. Caveat: results are valid relative to the agent population, so report every metric per skill tier and require conclusions to be stable across tiers.
+
+Are the maths real? Yes, standard: Wilson intervals for rates, bootstrap CIs for continuous metrics, paired tests wherever CRN is used, Benjamini–Hochberg FDR across the config × metric grid. Pre-register the effect size that matters before running (e.g. "a seat advantage below 1.5pp isn't worth acting on") — sweeping hundreds of cells without that threshold is how twenty exciting results turn out to all be noise.
+
+Verification
+Unit test for the valuation model: price "gain $1000 cash" — must return ≈ λ × $1000. Cheapest, highest-value check in the whole design.
+Determinism: identical seed ⇒ byte-identical game log.
+Engine fidelity: every harness move goes through handleGameAction, so a bug shows up as a rejected move, not corrupt state. Assert zero rejections across a 1,000-game run.
+Seat fairness with identical agents: win rate per seat within its Wilson interval of 1/N.
+Skill gradient: hard > medium > easy, monotone, non-overlapping intervals.
+Reality check: simulated vs. observed rounds/mergers/spread/winning-total distributions overlap.
+Band sanity: a hand-picked "obviously fine" card (Market Scan at its placeholder values) and a hand-picked "obviously broken" one (Franchise Expansion with both scope restrictions removed, per the doc's own worst-case note) land on opposite sides of the band test — confirms the test itself discriminates before trusting it on the ambiguous cards.
+Existing suite: npm run test:run stays green — the only production changes are one added export and the setDbBackend seam.
+Risks
+Risk	Mitigation
+Conclusions are artefacts of bot weakness, not the game	Per-tier reporting; require stability across skill tiers
+Per-card lever grid × corpus size is expensive	CRN keeps rollouts per state in the hundreds; stratified corpus, not exhaustive; worker_threads from Phase 5
+Multiple-comparisons false positives across ~24 cards × grid	Pre-registered effect sizes + BH-FDR
+Demolish/Spin-Off break engine connectivity invariants	Surfaced during pricing, before implementation — the intended benefit of pricing first
+Recurring-income card (Five Star Upgrade) changes game length/pacing	Simulate its own arm separately; compare round-count distribution against baseline before pricing it
+Workbench and design doc drift apart	card-balance.json is the single decision record; doc stays prose, workbench stays data

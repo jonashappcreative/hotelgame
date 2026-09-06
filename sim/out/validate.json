@@ -1,0 +1,316 @@
+{
+  "seat": [
+    {
+      "players": 3,
+      "games": 2400,
+      "share": 0.3326388888888889,
+      "perSeat": [
+        {
+          "seat": 0,
+          "rate": 0.33541666666666664,
+          "successes": 805,
+          "n": 2400,
+          "lo": 0.31680392167815524,
+          "hi": 0.35455543644400006,
+          "deviationPP": 0.002777777777777768,
+          "withinInterval": true
+        },
+        {
+          "seat": 1,
+          "rate": 0.33375,
+          "successes": 801,
+          "n": 2400,
+          "lo": 0.31516323623718323,
+          "hi": 0.3528681153849432,
+          "deviationPP": 0.0011111111111111183,
+          "withinInterval": true
+        },
+        {
+          "seat": 2,
+          "rate": 0.32875,
+          "successes": 789,
+          "n": 2400,
+          "lo": 0.3102427694369834,
+          "hi": 0.3478045626850566,
+          "deviationPP": -0.003888888888888886,
+          "withinInterval": true
+        }
+      ],
+      "worstDeviationPP": 0.003888888888888886,
+      "fair": true,
+      "medianRounds": 18,
+      "finishedRate": 1
+    },
+    {
+      "players": 4,
+      "games": 2400,
+      "share": 0.24947916666666667,
+      "perSeat": [
+        {
+          "seat": 0,
+          "rate": 0.24583333333333332,
+          "successes": 590,
+          "n": 2400,
+          "lo": 0.22902200357988572,
+          "hi": 0.2634570051657212,
+          "deviationPP": -0.003645833333333348,
+          "withinInterval": true
+        },
+        {
+          "seat": 1,
+          "rate": 0.25333333333333335,
+          "successes": 608,
+          "n": 2400,
+          "lo": 0.23633684861806464,
+          "hi": 0.271118189377672,
+          "deviationPP": 0.0038541666666666863,
+          "withinInterval": true
+        },
+        {
+          "seat": 2,
+          "rate": 0.2575,
+          "successes": 618,
+          "n": 2400,
+          "lo": 0.24040361029039298,
+          "hi": 0.27537144395541563,
+          "deviationPP": 0.008020833333333338,
+          "withinInterval": true
+        },
+        {
+          "seat": 3,
+          "rate": 0.24125,
+          "successes": 579,
+          "n": 2400,
+          "lo": 0.22455526547305157,
+          "hi": 0.25877172539747617,
+          "deviationPP": -0.008229166666666676,
+          "withinInterval": true
+        }
+      ],
+      "worstDeviationPP": 0.008229166666666676,
+      "fair": true,
+      "medianRounds": 14,
+      "finishedRate": 1
+    },
+    {
+      "players": 5,
+      "games": 2400,
+      "share": 0.199,
+      "perSeat": [
+        {
+          "seat": 0,
+          "rate": 0.19958333333333333,
+          "successes": 479,
+          "n": 2400,
+          "lo": 0.18407846231434014,
+          "hi": 0.21604836605546743,
+          "deviationPP": 0.0005833333333333246,
+          "withinInterval": true
+        },
+        {
+          "seat": 1,
+          "rate": 0.21541666666666667,
+          "successes": 517,
+          "n": 2400,
+          "lo": 0.1994307343055682,
+          "hi": 0.232312155814513,
+          "deviationPP": 0.016416666666666663,
+          "withinInterval": false
+        },
+        {
+          "seat": 2,
+          "rate": 0.22,
+          "successes": 528,
+          "n": 2400,
+          "lo": 0.20388165810372202,
+          "hi": 0.23701324989143838,
+          "deviationPP": 0.02099999999999999,
+          "withinInterval": false
+        },
+        {
+          "seat": 3,
+          "rate": 0.18458333333333332,
+          "successes": 443,
+          "n": 2400,
+          "lo": 0.16957028823784212,
+          "hi": 0.2006044816317061,
+          "deviationPP": -0.014416666666666689,
+          "withinInterval": true
+        },
+        {
+          "seat": 4,
+          "rate": 0.17541666666666667,
+          "successes": 421,
+          "n": 2400,
+          "lo": 0.16072287070417246,
+          "hi": 0.1911478634152174,
+          "deviationPP": -0.023583333333333345,
+          "withinInterval": false
+        }
+      ],
+      "worstDeviationPP": 0.023583333333333345,
+      "fair": false,
+      "medianRounds": 11,
+      "finishedRate": 1
+    }
+  ],
+  "gradient": {
+    "standings": [
+      {
+        "policy": "easy",
+        "seatsPlayed": 600,
+        "wins": 2,
+        "winRate": {
+          "rate": 0.0033333333333333335,
+          "successes": 2,
+          "n": 600,
+          "lo": 0.0009145966865601023,
+          "hi": 0.01207135965666297
+        },
+        "meanNetWorth": 25601.5
+      },
+      {
+        "policy": "medium",
+        "seatsPlayed": 600,
+        "wins": 28,
+        "winRate": {
+          "rate": 0.04666666666666667,
+          "successes": 28,
+          "n": 600,
+          "lo": 0.03248188566820505,
+          "hi": 0.06661938992024018
+        },
+        "meanNetWorth": 33620.083333333336
+      },
+      {
+        "policy": "hard",
+        "seatsPlayed": 600,
+        "wins": 570,
+        "winRate": {
+          "rate": 0.95,
+          "successes": 570,
+          "n": 600,
+          "lo": 0.9295197368667125,
+          "hi": 0.9647547322182868
+        },
+        "meanNetWorth": 54419.25
+      }
+    ],
+    "monotone": true,
+    "separated": true
+  },
+  "strategy": [
+    {
+      "policy": "budget-focused",
+      "seatsPlayed": 800,
+      "wins": 62,
+      "winRate": {
+        "rate": 0.0775,
+        "successes": 62,
+        "n": 800,
+        "lo": 0.060925085697368854,
+        "hi": 0.09811306469831363
+      },
+      "meanNetWorth": 33319.6875
+    },
+    {
+      "policy": "premium-focused",
+      "seatsPlayed": 800,
+      "wins": 79,
+      "winRate": {
+        "rate": 0.09875,
+        "successes": 79,
+        "n": 800,
+        "lo": 0.07995546444879942,
+        "hi": 0.12137958370804697
+      },
+      "meanNetWorth": 32552.54125
+    },
+    {
+      "policy": "merger-hunter",
+      "seatsPlayed": 800,
+      "wins": 659,
+      "winRate": {
+        "rate": 0.82375,
+        "successes": 659,
+        "n": 800,
+        "lo": 0.7958168703949279,
+        "hi": 0.8485888072604516
+      },
+      "meanNetWorth": 46984.22875
+    },
+    {
+      "policy": "cash-hoarder",
+      "seatsPlayed": 800,
+      "wins": 0,
+      "winRate": {
+        "rate": 0,
+        "successes": 0,
+        "n": 800,
+        "lo": 0,
+        "hi": 0.004778876207908237
+      },
+      "meanNetWorth": 10093.79125
+    }
+  ],
+  "sellStrategy": [
+    {
+      "policy": "aggressive-seller",
+      "seatsPlayed": 800,
+      "wins": 0,
+      "winRate": {
+        "rate": 0,
+        "successes": 0,
+        "n": 800,
+        "lo": 0,
+        "hi": 0.004778876207908237
+      },
+      "meanNetWorth": 9895.63875
+    },
+    {
+      "policy": "hard",
+      "seatsPlayed": 2400,
+      "wins": 800,
+      "winRate": {
+        "rate": 0.3333333333333333,
+        "successes": 800,
+        "n": 2400,
+        "lo": 0.3147531061282216,
+        "hi": 0.35244624386889767
+      },
+      "meanNetWorth": 36312.13625
+    },
+    {
+      "policy": "hard",
+      "seatsPlayed": 2400,
+      "wins": 800,
+      "winRate": {
+        "rate": 0.3333333333333333,
+        "successes": 800,
+        "n": 2400,
+        "lo": 0.3147531061282216,
+        "hi": 0.35244624386889767
+      },
+      "meanNetWorth": 36312.13625
+    },
+    {
+      "policy": "hard",
+      "seatsPlayed": 2400,
+      "wins": 800,
+      "winRate": {
+        "rate": 0.3333333333333333,
+        "successes": 800,
+        "n": 2400,
+        "lo": 0.3147531061282216,
+        "hi": 0.35244624386889767
+      },
+      "meanNetWorth": 36312.13625
+    }
+  ],
+  "thresholds": {
+    "seatWinRatePP": 0.015,
+    "strategyWinRatePP": 0.03,
+    "netWorthDollars": 300,
+    "fdrQ": 0.05
+  }
+}

@@ -115,7 +115,7 @@ export default async (req: Request): Promise<Response> => {
 // Core action handler. Resolves the acting player either from the JWT
 // (`actorUserId`, the human path) or by seat (`actAsPlayerIndex`, the bot
 // path), then runs the same engine logic and returns a Response.
-async function handleGameAction(opts: {
+export async function handleGameAction(opts: {
   corsHeaders: Record<string, string>;
   body: { action: string; roomId: string; payload?: any };
   actorUserId?: string;

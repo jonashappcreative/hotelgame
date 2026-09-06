@@ -1,0 +1,775 @@
+{
+  "generatedAt": "2026-09-06T10:29:37.060Z",
+  "config": {
+    "seeds": 500,
+    "seedBase": 100000,
+    "seedsPerJob": 25,
+    "prices": [
+      200,
+      300,
+      400,
+      500,
+      600
+    ],
+    "controlPrices": [
+      0,
+      100
+    ],
+    "policies": [
+      "always-buy-greedy",
+      "ev-threshold"
+    ],
+    "seats": [
+      "hard",
+      "hard",
+      "hard",
+      "hard"
+    ],
+    "rotations": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "access": {
+    "buysPerRound": 1,
+    "playsPerRound": 1,
+    "playDelayRounds": 1,
+    "deckSize": 21,
+    "deckCardIds": [
+      "market-scan",
+      "land-bank",
+      "surveyor",
+      "zoning-veto",
+      "bridge-loan",
+      "ipo-discount",
+      "short-sell",
+      "dividend-call",
+      "buyback",
+      "tender-offer",
+      "proxy-fight",
+      "golden-parachute",
+      "hostile-takeover",
+      "antitrust-filing",
+      "spin-off",
+      "demolition-permit",
+      "franchise-expansion",
+      "charter-renewal",
+      "skyscraper",
+      "ground-lease",
+      "five-star-upgrade"
+    ]
+  },
+  "estimator": {
+    "holdMultiple": {
+      "early": 3,
+      "mid": 2,
+      "late": 1
+    },
+    "phaseBounds": {
+      "earlyMax": 6,
+      "midMax": 14
+    }
+  },
+  "wallClockSeconds": 170.058,
+  "games": 28500,
+  "baselineHealth": {
+    "games": 500,
+    "seatWinRates": [
+      0.284,
+      0.285,
+      0.231,
+      0.2
+    ],
+    "seatSpread": 0.08499999999999996,
+    "naturalEndRate": 1,
+    "meanRounds": 13.832,
+    "meanMergers": 6.538,
+    "meanTotalMoneyEnd": 57679.322,
+    "rejections": 0,
+    "tieRate": 0.004
+  },
+  "cells": [
+    {
+      "cell": "A/always-buy-greedy/200",
+      "policy": "always-buy-greedy",
+      "price": 200,
+      "games": 2000,
+      "winRate": 0.26425,
+      "soleWins": 528,
+      "winLo": 0.2451471222848513,
+      "winHi": 0.2837577240323241,
+      "tieRate": 0.001,
+      "cashMarginDiff": {
+        "mean": -806.4255000000004,
+        "sd": 11710.916047209203,
+        "n": 2000,
+        "lo": -1319.669594429387,
+        "hi": -293.1814055706137,
+        "p": 0.0020732173033569906
+      },
+      "cashMarginBootstrap": {
+        "point": -806.4255000000004,
+        "lo": -1309.141529166667,
+        "hi": -250.6581333333333
+      },
+      "netMarginDiff": {
+        "mean": -524.0518333333332,
+        "sd": 13137.319117547459,
+        "n": 2000,
+        "lo": -1099.8096499323462,
+        "hi": 51.70598326567983,
+        "p": 0.07443181246639494
+      },
+      "netMarginBootstrap": {
+        "point": -524.0518333333332,
+        "lo": -1080.8257833333328,
+        "hi": 67.98487083333308
+      },
+      "cardsBought": 12.7655,
+      "cardsPlayed": 11.1845,
+      "cardsUnplayed": 1.581,
+      "affordabilityDeclines": 1.8375,
+      "declineRate": 0.1258303088406492,
+      "meanIdleRounds": 1.5665429835933657,
+      "naturalEndRate": 1,
+      "meanRounds": 13.992,
+      "meanMergers": 6.9405,
+      "rejections": 0
+    },
+    {
+      "cell": "A/always-buy-greedy/300",
+      "policy": "always-buy-greedy",
+      "price": 300,
+      "games": 2000,
+      "winRate": 0.17625,
+      "soleWins": 352,
+      "winLo": 0.15993569077409212,
+      "winHi": 0.19330655586474174,
+      "tieRate": 0.002,
+      "cashMarginDiff": {
+        "mean": -3030.516333333338,
+        "sd": 11383.82462247425,
+        "n": 2000,
+        "lo": -3529.425277428886,
+        "hi": -2531.60738923779,
+        "p": 1.143295585810787e-32
+      },
+      "cashMarginBootstrap": {
+        "point": -3030.516333333338,
+        "lo": -3533.352199999992,
+        "hi": -2536.3697583333274
+      },
+      "netMarginDiff": {
+        "mean": -4620.509833333336,
+        "sd": 13457.82256306205,
+        "n": 2000,
+        "lo": -5210.314074651946,
+        "hi": -4030.705592014727,
+        "p": 3.485452166032452e-53
+      },
+      "netMarginBootstrap": {
+        "point": -4620.509833333336,
+        "lo": -5244.805733333338,
+        "hi": -4026.783129166666
+      },
+      "cardsBought": 11.721,
+      "cardsPlayed": 10.3475,
+      "cardsUnplayed": 1.3735,
+      "affordabilityDeclines": 2.8635,
+      "declineRate": 0.19633857862799547,
+      "meanIdleRounds": 1.5582991060642668,
+      "naturalEndRate": 1,
+      "meanRounds": 13.9825,
+      "meanMergers": 6.821,
+      "rejections": 0
+    },
+    {
+      "cell": "A/always-buy-greedy/400",
+      "policy": "always-buy-greedy",
+      "price": 400,
+      "games": 2000,
+      "winRate": 0.1225,
+      "soleWins": 245,
+      "winLo": 0.10885029598637073,
+      "winHi": 0.13759707471165328,
+      "tieRate": 0.001,
+      "cashMarginDiff": {
+        "mean": -4775.4593333333305,
+        "sd": 11329.945593064685,
+        "n": 2000,
+        "lo": -5272.00696824123,
+        "hi": -4278.911698425431,
+        "p": 3.176315682308208e-79
+      },
+      "cashMarginBootstrap": {
+        "point": -4775.4593333333305,
+        "lo": -5264.98532916666,
+        "hi": -4275.413183333339
+      },
+      "netMarginDiff": {
+        "mean": -7691.576499999993,
+        "sd": 13413.309586504058,
+        "n": 2000,
+        "lo": -8279.429909953082,
+        "hi": -7103.723090046903,
+        "p": 5.406762866730313e-145
+      },
+      "netMarginBootstrap": {
+        "point": -7691.576499999993,
+        "lo": -8294.107525000005,
+        "hi": -7110.350749999979
+      },
+      "cardsBought": 10.9545,
+      "cardsPlayed": 9.6905,
+      "cardsUnplayed": 1.264,
+      "affordabilityDeclines": 3.6525,
+      "declineRate": 0.25005134524543027,
+      "meanIdleRounds": 1.5407873690728033,
+      "naturalEndRate": 1,
+      "meanRounds": 14.0135,
+      "meanMergers": 6.8115,
+      "rejections": 0
+    },
+    {
+      "cell": "A/always-buy-greedy/500",
+      "policy": "always-buy-greedy",
+      "price": 500,
+      "games": 2000,
+      "winRate": 0.066,
+      "soleWins": 132,
+      "winLo": 0.055929398637904845,
+      "winHi": 0.07773459840300222,
+      "tieRate": 0.0015,
+      "cashMarginDiff": {
+        "mean": -6613.292999999994,
+        "sd": 10921.624791474453,
+        "n": 2000,
+        "lo": -7091.945515584688,
+        "hi": -6134.6404844153,
+        "p": 1.9034426716610706e-161
+      },
+      "cashMarginBootstrap": {
+        "point": -6613.292999999994,
+        "lo": -7108.062949999994,
+        "hi": -6126.919229166686
+      },
+      "netMarginDiff": {
+        "mean": -11509.582666666645,
+        "sd": 13227.99842341069,
+        "n": 2000,
+        "lo": -12089.31460604424,
+        "hi": -10929.850727289051,
+        "p": 0
+      },
+      "netMarginBootstrap": {
+        "point": -11509.582666666645,
+        "lo": -12108.433695833313,
+        "hi": -10958.33622500002
+      },
+      "cardsBought": 10.028,
+      "cardsPlayed": 8.899,
+      "cardsUnplayed": 1.129,
+      "affordabilityDeclines": 4.5565,
+      "declineRate": 0.31242072062806403,
+      "meanIdleRounds": 1.536296213057647,
+      "naturalEndRate": 1,
+      "meanRounds": 13.971,
+      "meanMergers": 6.7435,
+      "rejections": 0
+    },
+    {
+      "cell": "A/always-buy-greedy/600",
+      "policy": "always-buy-greedy",
+      "price": 600,
+      "games": 2000,
+      "winRate": 0.049,
+      "soleWins": 98,
+      "winLo": 0.04037353994847084,
+      "winHi": 0.05935563670002935,
+      "tieRate": 0.001,
+      "cashMarginDiff": {
+        "mean": -7854.0139999999965,
+        "sd": 10925.469126447328,
+        "n": 2000,
+        "lo": -8332.834997897593,
+        "hi": -7375.193002102401,
+        "p": 1.0424749832699075e-226
+      },
+      "cashMarginBootstrap": {
+        "point": -7854.0139999999965,
+        "lo": -8318.385633333348,
+        "hi": -7365.523212500008
+      },
+      "netMarginDiff": {
+        "mean": -14051.086833333347,
+        "sd": 13022.73164405767,
+        "n": 2000,
+        "lo": -14621.822724762105,
+        "hi": -13480.35094190459,
+        "p": 0
+      },
+      "netMarginBootstrap": {
+        "point": -14051.086833333347,
+        "lo": -14630.89879583333,
+        "hi": -13466.36680833335
+      },
+      "cardsBought": 9.2035,
+      "cardsPlayed": 8.188,
+      "cardsUnplayed": 1.0155,
+      "affordabilityDeclines": 5.4005,
+      "declineRate": 0.36979594631607776,
+      "meanIdleRounds": 1.5405471421592574,
+      "naturalEndRate": 1,
+      "meanRounds": 13.9955,
+      "meanMergers": 6.7875,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/200",
+      "policy": "ev-threshold",
+      "price": 200,
+      "games": 2000,
+      "winRate": 0.249,
+      "soleWins": 497,
+      "winLo": 0.23005499489583975,
+      "winHi": 0.26790927988708224,
+      "tieRate": 0.004,
+      "cashMarginDiff": {
+        "mean": -1203.4069999999988,
+        "sd": 8846.67823602178,
+        "n": 2000,
+        "lo": -1591.1226442460522,
+        "hi": -815.6913557539453,
+        "p": 1.1809679752133614e-9
+      },
+      "cashMarginBootstrap": {
+        "point": -1203.4069999999988,
+        "lo": -1569.1024041666676,
+        "hi": -830.985895833333
+      },
+      "netMarginDiff": {
+        "mean": -1214.701666666666,
+        "sd": 9963.528767926971,
+        "n": 2000,
+        "lo": -1651.3645442076981,
+        "hi": -778.0387891256337,
+        "p": 4.9869630008244804e-8
+      },
+      "netMarginBootstrap": {
+        "point": -1214.701666666666,
+        "lo": -1642.7067375000015,
+        "hi": -798.7874208333345
+      },
+      "cardsBought": 8.1545,
+      "cardsPlayed": 2.109,
+      "cardsUnplayed": 6.0455,
+      "affordabilityDeclines": 1.1305,
+      "declineRate": 0.07763623253098925,
+      "meanIdleRounds": 3.5879563774300616,
+      "naturalEndRate": 1,
+      "meanRounds": 13.9275,
+      "meanMergers": 6.7755,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/300",
+      "policy": "ev-threshold",
+      "price": 300,
+      "games": 2000,
+      "winRate": 0.18775,
+      "soleWins": 375,
+      "winLo": 0.1709991046010621,
+      "winHi": 0.20519904995028232,
+      "tieRate": 0.0025,
+      "cashMarginDiff": {
+        "mean": -2210.616166666666,
+        "sd": 8315.53207808126,
+        "n": 2000,
+        "lo": -2575.053731918481,
+        "hi": -1846.1786014148506,
+        "p": 1.394329535916277e-32
+      },
+      "cashMarginBootstrap": {
+        "point": -2210.616166666666,
+        "lo": -2568.761608333332,
+        "hi": -1840.9821416666646
+      },
+      "netMarginDiff": {
+        "mean": -2606.6611666666677,
+        "sd": 9138.593978438605,
+        "n": 2000,
+        "lo": -3007.170347324598,
+        "hi": -2206.1519860087374,
+        "p": 2.9826553652230397e-37
+      },
+      "netMarginBootstrap": {
+        "point": -2606.6611666666677,
+        "lo": -3012.782850000002,
+        "hi": -2189.088533333333
+      },
+      "cardsBought": 5.843,
+      "cardsPlayed": 1.4465,
+      "cardsUnplayed": 4.3965,
+      "affordabilityDeclines": 1.1615,
+      "declineRate": 0.08012831568417784,
+      "meanIdleRounds": 3.9605945385413066,
+      "naturalEndRate": 1,
+      "meanRounds": 13.867,
+      "meanMergers": 6.698,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/400",
+      "policy": "ev-threshold",
+      "price": 400,
+      "games": 2000,
+      "winRate": 0.19075,
+      "soleWins": 380,
+      "winLo": 0.1734074655516191,
+      "winHi": 0.20778110376331457,
+      "tieRate": 0.0045,
+      "cashMarginDiff": {
+        "mean": -2401.4978333333343,
+        "sd": 7767.5420358746205,
+        "n": 2000,
+        "lo": -2741.919117379232,
+        "hi": -2061.0765492874366,
+        "p": 1.8371317685760953e-43
+      },
+      "cashMarginBootstrap": {
+        "point": -2401.4978333333343,
+        "lo": -2745.402166666662,
+        "hi": -2067.1903958333314
+      },
+      "netMarginDiff": {
+        "mean": -3090.942499999996,
+        "sd": 8685.838522173675,
+        "n": 2000,
+        "lo": -3471.609162514008,
+        "hi": -2710.275837485984,
+        "p": 5.299736384751338e-57
+      },
+      "netMarginBootstrap": {
+        "point": -3090.942499999996,
+        "lo": -3462.420162499996,
+        "hi": -2706.659408333331
+      },
+      "cardsBought": 4.7335,
+      "cardsPlayed": 1.082,
+      "cardsUnplayed": 3.6515,
+      "affordabilityDeclines": 0.994,
+      "declineRate": 0.06853518116316751,
+      "meanIdleRounds": 4.189001848428836,
+      "naturalEndRate": 1,
+      "meanRounds": 13.8765,
+      "meanMergers": 6.6325,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/500",
+      "policy": "ev-threshold",
+      "price": 500,
+      "games": 2000,
+      "winRate": 0.16925,
+      "soleWins": 338,
+      "winLo": 0.15321410271617691,
+      "winHi": 0.18605498258460706,
+      "tieRate": 0.003,
+      "cashMarginDiff": {
+        "mean": -2557.3016666666626,
+        "sd": 7390.729589194475,
+        "n": 2000,
+        "lo": -2881.2087205544367,
+        "hi": -2233.3946127788886,
+        "p": 5.448021148122121e-54
+      },
+      "cashMarginBootstrap": {
+        "point": -2557.3016666666626,
+        "lo": -2888.7922583333375,
+        "hi": -2236.753420833333
+      },
+      "netMarginDiff": {
+        "mean": -3330.8761666666674,
+        "sd": 8012.814362559291,
+        "n": 2000,
+        "lo": -3682.0467868610262,
+        "hi": -2979.7055464723085,
+        "p": 4.1185904957144465e-77
+      },
+      "netMarginBootstrap": {
+        "point": -3330.8761666666674,
+        "lo": -3694.5340583333314,
+        "hi": -2974.3992666666704
+      },
+      "cardsBought": 3.8285,
+      "cardsPlayed": 0.7755,
+      "cardsUnplayed": 3.053,
+      "affordabilityDeclines": 0.7895,
+      "declineRate": 0.05445390902507156,
+      "meanIdleRounds": 4.313346228239845,
+      "naturalEndRate": 1,
+      "meanRounds": 13.8785,
+      "meanMergers": 6.628,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/600",
+      "policy": "ev-threshold",
+      "price": 600,
+      "games": 2000,
+      "winRate": 0.17725,
+      "soleWins": 354,
+      "winLo": 0.1608967180886836,
+      "winHi": 0.1943416944555859,
+      "tieRate": 0.0035,
+      "cashMarginDiff": {
+        "mean": -2375.170499999999,
+        "sd": 6523.339793644839,
+        "n": 2000,
+        "lo": -2661.0632185155837,
+        "hi": -2089.277781484414,
+        "p": 1.3733914869998404e-59
+      },
+      "cashMarginBootstrap": {
+        "point": -2375.170499999999,
+        "lo": -2661.7346541666675,
+        "hi": -2092.429691666667
+      },
+      "netMarginDiff": {
+        "mean": -3191.3329999999996,
+        "sd": 7072.158306635419,
+        "n": 2000,
+        "lo": -3501.2783083873273,
+        "hi": -2881.387691612672,
+        "p": 1.5653783629122547e-90
+      },
+      "netMarginBootstrap": {
+        "point": -3191.3329999999996,
+        "lo": -3508.5182208333326,
+        "hi": -2895.351658333327
+      },
+      "cardsBought": 3.088,
+      "cardsPlayed": 0.5745,
+      "cardsUnplayed": 2.5135,
+      "affordabilityDeclines": 0.6385,
+      "declineRate": 0.044026891915187036,
+      "meanIdleRounds": 4.065274151436031,
+      "naturalEndRate": 1,
+      "meanRounds": 13.8855,
+      "meanMergers": 6.6305,
+      "rejections": 0
+    }
+  ],
+  "controls": [
+    {
+      "cell": "A/always-buy-greedy/0",
+      "policy": "always-buy-greedy",
+      "price": 0,
+      "games": 2000,
+      "winRate": 0.5155,
+      "soleWins": 1031,
+      "winLo": 0.4935887379959145,
+      "winHi": 0.5373518335383387,
+      "tieRate": 0,
+      "cashMarginDiff": {
+        "mean": 4381.003833333339,
+        "sd": 11571.932427313692,
+        "n": 2000,
+        "lo": 3873.8508526858486,
+        "hi": 4888.156813980829,
+        "p": 2.821025051192684e-64
+      },
+      "cashMarginBootstrap": {
+        "point": 4381.003833333339,
+        "lo": 3861.9869499999913,
+        "hi": 4887.43879166666
+      },
+      "netMarginDiff": {
+        "mean": 7587.526833333332,
+        "sd": 12575.18381349759,
+        "n": 2000,
+        "lo": 7036.40522998278,
+        "hi": 8138.648436683885,
+        "p": 2.5678497910516244e-160
+      },
+      "netMarginBootstrap": {
+        "point": 7587.526833333332,
+        "lo": 7028.409091666678,
+        "hi": 8120.172145833321
+      },
+      "cardsBought": 14.6995,
+      "cardsPlayed": 12.612,
+      "cardsUnplayed": 2.0875,
+      "affordabilityDeclines": 0,
+      "declineRate": 0,
+      "meanIdleRounds": 1.6621471614335555,
+      "naturalEndRate": 1,
+      "meanRounds": 14.0745,
+      "meanMergers": 6.988,
+      "rejections": 0
+    },
+    {
+      "cell": "A/always-buy-greedy/100",
+      "policy": "always-buy-greedy",
+      "price": 100,
+      "games": 2000,
+      "winRate": 0.399,
+      "soleWins": 798,
+      "winLo": 0.37775199145958,
+      "winHi": 0.42063525209141467,
+      "tieRate": 0,
+      "cashMarginDiff": {
+        "mean": 1727.4029999999984,
+        "sd": 11784.329957144802,
+        "n": 2000,
+        "lo": 1210.9414582273362,
+        "hi": 2243.8645417726607,
+        "p": 5.5749641043282595e-11
+      },
+      "cashMarginBootstrap": {
+        "point": 1727.4029999999984,
+        "lo": 1206.7887333333347,
+        "hi": 2226.429941666665
+      },
+      "netMarginDiff": {
+        "mean": 3652.4486666666703,
+        "sd": 12940.848260334049,
+        "n": 2000,
+        "lo": 3085.3014068153757,
+        "hi": 4219.5959265179645,
+        "p": 1.647607072084391e-36
+      },
+      "netMarginBootstrap": {
+        "point": 3652.4486666666703,
+        "lo": 3095.2127750000004,
+        "hi": 4217.269879166666
+      },
+      "cardsBought": 13.7955,
+      "cardsPlayed": 11.987,
+      "cardsUnplayed": 1.8085,
+      "affordabilityDeclines": 0.905,
+      "declineRate": 0.06156253188667052,
+      "meanIdleRounds": 1.585133895052974,
+      "naturalEndRate": 1,
+      "meanRounds": 14.0745,
+      "meanMergers": 6.968,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/0",
+      "policy": "ev-threshold",
+      "price": 0,
+      "games": 2000,
+      "winRate": 0.514,
+      "soleWins": 1028,
+      "winLo": 0.49208967899212946,
+      "winHi": 0.5358566436839705,
+      "tieRate": 0,
+      "cashMarginDiff": {
+        "mean": 4390.835333333328,
+        "sd": 11254.13676274047,
+        "n": 2000,
+        "lo": 3897.6101058539034,
+        "hi": 4884.060560812753,
+        "p": 3.783442277373763e-68
+      },
+      "cashMarginBootstrap": {
+        "point": 4390.835333333328,
+        "lo": 3905.924308333332,
+        "hi": 4898.928654166658
+      },
+      "netMarginDiff": {
+        "mean": 7186.424666666665,
+        "sd": 12106.740203468487,
+        "n": 2000,
+        "lo": 6655.833132479909,
+        "hi": 7717.016200853421,
+        "p": 3.1770620092163525e-155
+      },
+      "netMarginBootstrap": {
+        "point": 7186.424666666665,
+        "lo": 6655.439291666682,
+        "hi": 7699.27034166668
+      },
+      "cardsBought": 14.1585,
+      "cardsPlayed": 11.816,
+      "cardsUnplayed": 2.3425,
+      "affordabilityDeclines": 0,
+      "declineRate": 0,
+      "meanIdleRounds": 1.7924001354096142,
+      "naturalEndRate": 1,
+      "meanRounds": 14.012,
+      "meanMergers": 6.9025,
+      "rejections": 0
+    },
+    {
+      "cell": "A/ev-threshold/100",
+      "policy": "ev-threshold",
+      "price": 100,
+      "games": 2000,
+      "winRate": 0.29925,
+      "soleWins": 598,
+      "winLo": 0.2793363946168007,
+      "winHi": 0.319434258390624,
+      "tieRate": 0.0025,
+      "cashMarginDiff": {
+        "mean": 426.4963333333329,
+        "sd": 9276.758575388365,
+        "n": 2000,
+        "lo": 19.931933497174327,
+        "hi": 833.0607331694915,
+        "p": 0.03977739212031953
+      },
+      "cashMarginBootstrap": {
+        "point": 426.4963333333329,
+        "lo": 41.053804166666616,
+        "hi": 813.7784
+      },
+      "netMarginDiff": {
+        "mean": 1270.747499999998,
+        "sd": 9733.97669857924,
+        "n": 2000,
+        "lo": 844.1450006122909,
+        "hi": 1697.3499993877049,
+        "p": 5.2915127354310926e-9
+      },
+      "netMarginBootstrap": {
+        "point": 1270.747499999998,
+        "lo": 833.6672625000002,
+        "hi": 1692.2748416666652
+      },
+      "cardsBought": 11.5265,
+      "cardsPlayed": 3.54,
+      "cardsUnplayed": 7.9865,
+      "affordabilityDeclines": 0.9185,
+      "declineRate": 0.06308595762217109,
+      "meanIdleRounds": 3.11454802259887,
+      "naturalEndRate": 1,
+      "meanRounds": 13.9375,
+      "meanMergers": 6.834,
+      "rejections": 0
+    }
+  ],
+  "crossings": {
+    "always-buy-greedy": {
+      "price": 216.1931818181818,
+      "reason": "interpolated between $200 (26.4%) and $300 (17.6%)"
+    },
+    "ev-threshold": {
+      "price": null,
+      "reason": "win rate is at or below 25% at every price down to $200"
+    }
+  },
+  "extendedCrossings": {
+    "always-buy-greedy": {
+      "price": 216.1931818181818,
+      "reason": "interpolated between $200 (26.4%) and $300 (17.6%)"
+    },
+    "ev-threshold": {
+      "price": 198.0099502487562,
+      "reason": "interpolated between $100 (29.9%) and $200 (24.9%)"
+    }
+  }
+}

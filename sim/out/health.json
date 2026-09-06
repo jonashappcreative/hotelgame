@@ -1,0 +1,12 @@
+{
+  "games": 300,
+  "rejections": 0,
+  "outcomes": {
+    "finished": 300
+  },
+  "stallReasons": {},
+  "medianRounds": 14,
+  "medianMergers": 6,
+  "medianMoves": 151.5,
+  "deterministic": true
+}

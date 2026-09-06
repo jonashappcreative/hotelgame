@@ -1,0 +1,455 @@
+[
+  {
+    "rule": "stockSelling",
+    "value": "off",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.4425,
+    "meanWinningTotal": 40341.93125,
+    "meanSpread": 16863.30875,
+    "seatFairness": {
+      "worstDeviationPP": 0.01874999999999999,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 34193.78625
+  },
+  {
+    "rule": "stockSelling",
+    "value": "100",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.55125,
+    "meanWinningTotal": 40459.36875,
+    "meanSpread": 16378.63875,
+    "seatFairness": {
+      "worstDeviationPP": 0.03125,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 35154.78875
+  },
+  {
+    "rule": "stockSelling",
+    "value": "90",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.58125,
+    "meanWinningTotal": 40429.23875,
+    "meanSpread": 16501.37625,
+    "seatFairness": {
+      "worstDeviationPP": 0.0325,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 36187.2075
+  },
+  {
+    "rule": "stockSelling",
+    "value": "75",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.4625,
+    "meanWinningTotal": 40254.14,
+    "meanSpread": 16798.19,
+    "seatFairness": {
+      "worstDeviationPP": 0.03,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 34059.6225
+  },
+  {
+    "rule": "stockSelling",
+    "value": "50",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.48,
+    "meanWinningTotal": 40316.5,
+    "meanSpread": 17979.36625,
+    "seatFairness": {
+      "worstDeviationPP": 0.03999999999999998,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 33977.85375
+  },
+  {
+    "rule": "chainSafety",
+    "value": "none",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.43625,
+    "meanWinningTotal": 40388.01625,
+    "meanSpread": 16955.53125,
+    "seatFairness": {
+      "worstDeviationPP": 0.010000000000000009,
+      "fair": true
+    },
+    "meanEndMoneyInPlay": 35006.77875
+  },
+  {
+    "rule": "chainSafety",
+    "value": "9",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 0.8325,
+    "stallReasons": {
+      "empty_bag_deadlock": 129,
+      "dead_hand_deadlock": 5
+    },
+    "medianRounds": 17,
+    "meanMergers": 6.945,
+    "meanWinningTotal": 42841.345,
+    "meanSpread": 18351.035,
+    "seatFairness": {
+      "worstDeviationPP": 0.027500000000000024,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 40210.48125
+  },
+  {
+    "rule": "chainSafety",
+    "value": "11",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 0.8775,
+    "stallReasons": {
+      "empty_bag_deadlock": 90,
+      "dead_hand_deadlock": 8
+    },
+    "medianRounds": 16,
+    "meanMergers": 6.885,
+    "meanWinningTotal": 42478.40625,
+    "meanSpread": 18669.6975,
+    "seatFairness": {
+      "worstDeviationPP": 0.03999999999999998,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 39377.5225
+  },
+  {
+    "rule": "chainSafety",
+    "value": "13",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 0.975,
+    "stallReasons": {
+      "empty_bag_deadlock": 20
+    },
+    "medianRounds": 15,
+    "meanMergers": 6.9025,
+    "meanWinningTotal": 42290.94875,
+    "meanSpread": 18171.0225,
+    "seatFairness": {
+      "worstDeviationPP": 0.02124999999999999,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 40849.14375
+  },
+  {
+    "rule": "chainSafety",
+    "value": "15",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 0.985,
+    "stallReasons": {
+      "empty_bag_deadlock": 11,
+      "dead_hand_deadlock": 1
+    },
+    "medianRounds": 15,
+    "meanMergers": 6.81,
+    "meanWinningTotal": 41586.59125,
+    "meanSpread": 17505.8875,
+    "seatFairness": {
+      "worstDeviationPP": 0.008750000000000008,
+      "fair": true
+    },
+    "meanEndMoneyInPlay": 39935.0425
+  },
+  {
+    "rule": "bonusTier",
+    "value": "standard",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.3675,
+    "meanWinningTotal": 40386.71,
+    "meanSpread": 16756.66125,
+    "seatFairness": {
+      "worstDeviationPP": 0.03375,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 33449.30125
+  },
+  {
+    "rule": "bonusTier",
+    "value": "flat",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 13,
+    "meanMergers": 6.7575,
+    "meanWinningTotal": 31782.6875,
+    "meanSpread": 2924.125,
+    "seatFairness": {
+      "worstDeviationPP": 0.04125000000000001,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 41395.375
+  },
+  {
+    "rule": "bonusTier",
+    "value": "aggressive",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.36375,
+    "meanWinningTotal": 50096.765,
+    "meanSpread": 22785.535,
+    "seatFairness": {
+      "worstDeviationPP": 0.02124999999999999,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 42752.375
+  },
+  {
+    "rule": "startingCash",
+    "value": "4000",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.325,
+    "meanWinningTotal": 39488.83,
+    "meanSpread": 20471.7075,
+    "seatFairness": {
+      "worstDeviationPP": 0.01874999999999999,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 28079.3025
+  },
+  {
+    "rule": "startingCash",
+    "value": "6000",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.465,
+    "meanWinningTotal": 40429.915,
+    "meanSpread": 17199.2625,
+    "seatFairness": {
+      "worstDeviationPP": 0.020000000000000018,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 35144.9425
+  },
+  {
+    "rule": "startingCash",
+    "value": "8000",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.46375,
+    "meanWinningTotal": 42089.9875,
+    "meanSpread": 15156.205,
+    "seatFairness": {
+      "worstDeviationPP": 0.023749999999999993,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 41957.89875
+  },
+  {
+    "rule": "startingTiles",
+    "value": "5",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.4225,
+    "meanWinningTotal": 41562.9375,
+    "meanSpread": 18002.78625,
+    "seatFairness": {
+      "worstDeviationPP": 0.011249999999999982,
+      "fair": true
+    },
+    "meanEndMoneyInPlay": 34157.8175
+  },
+  {
+    "rule": "startingTiles",
+    "value": "6",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.425,
+    "meanWinningTotal": 40586.63875,
+    "meanSpread": 16997.4275,
+    "seatFairness": {
+      "worstDeviationPP": 0.015000000000000013,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 34578.9225
+  },
+  {
+    "rule": "startingTiles",
+    "value": "7",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 13,
+    "meanMergers": 6.3075,
+    "meanWinningTotal": 39435.07,
+    "meanSpread": 16579.57375,
+    "seatFairness": {
+      "worstDeviationPP": 0.036250000000000004,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 35136.67875
+  },
+  {
+    "rule": "boardSize",
+    "value": "large",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.4775,
+    "meanWinningTotal": 40464.4425,
+    "meanSpread": 16824.37125,
+    "seatFairness": {
+      "worstDeviationPP": 0.0062500000000000056,
+      "fair": true
+    },
+    "meanEndMoneyInPlay": 35171.045
+  },
+  {
+    "rule": "boardSize",
+    "value": "small",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 8,
+    "meanMergers": 4.555,
+    "meanWinningTotal": 26832.3425,
+    "meanSpread": 10066.59625,
+    "seatFairness": {
+      "worstDeviationPP": 0.04375000000000001,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 28701.06875
+  },
+  {
+    "rule": "playerCount",
+    "value": "2",
+    "players": 2,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 28,
+    "meanMergers": 6.29875,
+    "meanWinningTotal": 60103.8125,
+    "meanSpread": 11896.875,
+    "seatFairness": {
+      "worstDeviationPP": 0.016249999999999987,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 27942.25
+  },
+  {
+    "rule": "playerCount",
+    "value": "3",
+    "players": 3,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 18,
+    "meanMergers": 6.24125,
+    "meanWinningTotal": 48035.4375,
+    "meanSpread": 17900.8125,
+    "seatFairness": {
+      "worstDeviationPP": 0.011666666666666659,
+      "fair": true
+    },
+    "meanEndMoneyInPlay": 31797.25
+  },
+  {
+    "rule": "playerCount",
+    "value": "4",
+    "players": 4,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 14,
+    "meanMergers": 6.385,
+    "meanWinningTotal": 40217.36125,
+    "meanSpread": 16815.24375,
+    "seatFairness": {
+      "worstDeviationPP": 0.037500000000000006,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 34507.435
+  },
+  {
+    "rule": "playerCount",
+    "value": "5",
+    "players": 5,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 11,
+    "meanMergers": 6.5075,
+    "meanWinningTotal": 35726.51,
+    "meanSpread": 16303.68,
+    "seatFairness": {
+      "worstDeviationPP": 0.025000000000000022,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 36159.85625
+  },
+  {
+    "rule": "playerCount",
+    "value": "6",
+    "players": 6,
+    "games": 800,
+    "finishedRate": 1,
+    "stallReasons": {},
+    "medianRounds": 10,
+    "meanMergers": 6.25625,
+    "meanWinningTotal": 31858.5775,
+    "meanSpread": 15430.83375,
+    "seatFairness": {
+      "worstDeviationPP": 0.03666666666666665,
+      "fair": false
+    },
+    "meanEndMoneyInPlay": 37947.36375
+  }
+]

@@ -11,7 +11,10 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "sim:build": "tsc -p sim/tsconfig.json && cp sim/runtime-package.json .sim-build/package.json",
+    "sim": "npm run sim:build && node .sim-build/sim/run.js",
+    "sim:deck": "npm run sim:build && node .sim-build/sim/deck-run.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

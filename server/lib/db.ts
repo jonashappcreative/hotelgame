@@ -144,38 +144,74 @@ class QueryBuilder implements PromiseLike<Result> {
   }
 }
 
-export const db = {
+// -----------------------------------------------------------------------------
+// Backend seam
+// -----------------------------------------------------------------------------
+// Everything below routes through a swappable backend. In production that is
+// `pgBackend` (the Pool above) and nothing about the behaviour changes. The
+// offline simulator (sim/) installs an in-memory backend instead, which is what
+// lets it run the real engine at full speed without a database. Nothing in the
+// request path may ever call setDbBackend.
+
+export type Exec = (text: string, params?: any[]) => Promise<Row[]>;
+
+export interface DbBackend {
+  from(table: string): any;
+  query<T = Row>(text: string, params?: any[]): Promise<T[]>;
+  withTransaction<T>(fn: (exec: Exec) => Promise<T>): Promise<T>;
+}
+
+const pgBackend: DbBackend = {
   from(table: string) {
     return new QueryBuilder(table);
+  },
+
+  // Raw parameterized query — used by the auth endpoints which need RETURNING
+  // and other shapes the shim doesn't cover.
+  async query<T = Row>(text: string, params: any[] = []): Promise<T[]> {
+    const res = await pool.query(text, params);
+    return res.rows as T[];
+  },
+
+  // Run several statements on one connection inside a single transaction.
+  // Needed wherever a multi-statement write must be atomic — reindexing seats
+  // temporarily violates unique_player_per_room unless the whole two-phase
+  // update commits or rolls back together.
+  async withTransaction<T>(fn: (exec: Exec) => Promise<T>): Promise<T> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(async (text, params = []) => (await client.query(text, params)).rows as Row[]);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+};
+
+let backend: DbBackend = pgBackend;
+
+/** Swap the storage backend. Offline tooling only — never call from a handler. */
+export function setDbBackend(next: DbBackend | null): void {
+  backend = next ?? pgBackend;
+}
+
+export const db = {
+  from(table: string) {
+    return backend.from(table);
   },
 };
 
 export type Db = typeof db;
 
-// Raw parameterized query — used by the auth endpoints which need RETURNING
-// and other shapes the shim doesn't cover.
-export async function query<T = Row>(text: string, params: any[] = []): Promise<T[]> {
-  const res = await pool.query(text, params);
-  return res.rows as T[];
+export function query<T = Row>(text: string, params: any[] = []): Promise<T[]> {
+  return backend.query<T>(text, params);
 }
 
-// Run several statements on one connection inside a single transaction.
-// Needed wherever a multi-statement write must be atomic — reindexing seats
-// temporarily violates unique_player_per_room unless the whole two-phase
-// update commits or rolls back together.
-export async function withTransaction<T>(
-  fn: (exec: (text: string, params?: any[]) => Promise<Row[]>) => Promise<T>,
-): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(async (text, params = []) => (await client.query(text, params)).rows as Row[]);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
+export function withTransaction<T>(fn: (exec: Exec) => Promise<T>): Promise<T> {
+  return backend.withTransaction(fn);
 }
