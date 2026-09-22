@@ -1,12 +1,15 @@
 -- =============================================================================
 -- Epic 15 — host identity and turn order
 -- =============================================================================
--- Apply by hand, once, per environment:
+-- Nothing applies db/schema.sql or this directory to production — not a
+-- deploy, not a restart — so this must be run by hand against the live
+-- database, before the code that needs it reaches main (see
+-- docs/infrastructure/DEPLOYMENT.md → "Database changes"):
 --
---   psql "$DATABASE_URL" -f db/migrations/2026-08-30-epic15-host-and-turn-order.sql
+--   ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" \
+--     < db/migrations/2026-08-30-epic15-host-and-turn-order.sql
 --
--- deploy.sh never runs schema.sql or this directory, so nothing applies this
--- for you. Every statement is idempotent and additive, so it is safe to run
+-- Every statement is idempotent and additive, so it is safe to run
 -- against a live database and safe to run twice.
 --
 -- Why:

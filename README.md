@@ -152,16 +152,18 @@ Full process, including how to cut a release: **[docs/CI_CD.md](docs/CI_CD.md)**
 
 ## Deployment
 
-Merging to `main` triggers GitHub Actions → Coolify webhook → rebuild → health
-check → tag. Manual deploys run on the server:
+Production runs on Coolify on one Hetzner server. Merging to `main` triggers
+GitHub Actions → build check → Coolify deploy webhook → rebuild from
+`server/Dockerfile` → health check → tag. There is no other deploy path; to
+rebuild the current `main`, use **Redeploy** in the Coolify UI.
 
 ```sh
-ssh hetzner "cd ~/aquire02 && ./deploy.sh"
 curl -fsS https://hotelgame.jonashapp.com/health
 ```
 
-`deploy.sh` is the single source of truth for deploy steps. Real secrets live in
-`~/aquire02/.env` on the host (gitignored — never commit or overwrite it).
+Database migrations under `db/migrations/` are **not** applied by a deploy — run
+them by hand before the PR into `main` is merged. Secrets are environment
+variables on the Coolify app, never in git.
 
 See [docs/infrastructure/DEPLOYMENT.md](docs/infrastructure/DEPLOYMENT.md) for
 provisioning, backups, and troubleshooting.

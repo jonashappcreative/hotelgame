@@ -1,7 +1,13 @@
 -- =============================================================================
 -- Epic 16 — durable game results (statistics dashboard)
 -- =============================================================================
--- Apply with:  psql "$DATABASE_URL" -f db/migrations/2026-08-31-epic16-game-results.sql
+-- Nothing applies db/schema.sql or this directory to production — not a
+-- deploy, not a restart — so this must be run by hand against the live
+-- database, before the code that needs it reaches main (see
+-- docs/infrastructure/DEPLOYMENT.md → "Database changes"):
+--
+--   ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" \
+--     < db/migrations/2026-08-31-epic16-game-results.sql
 --
 -- Why new tables instead of using game_history:
 --   game_history has never had a single writer (only db/schema.sql declares it

@@ -1,11 +1,12 @@
 -- =============================================================================
 -- Epic 14 — Stock Selling ("Broker's Cut")
 -- =============================================================================
--- db/schema.sql only runs when the Postgres volume is first created, so this
--- must be applied by hand to the live database (see docs/infrastructure/
--- DEPLOYMENT.md → "Database changes"):
+-- Nothing applies db/schema.sql or this directory to production — not a
+-- deploy, not a restart — so this must be run by hand against the live
+-- database, before the code that needs it reaches main (see
+-- docs/infrastructure/DEPLOYMENT.md → "Database changes"):
 --
---   ssh hetzner "docker exec -i acquire-db psql -U acquire -d acquire" \
+--   ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" \
 --     < db/migrations/2026-08-30-epic14-stock-selling.sql
 --
 -- Idempotent: safe to re-run. The same statements live in db/schema.sql so a

@@ -1,12 +1,16 @@
 -- =============================================================================
 -- Epic 18 — End-Game Declaration
 -- =============================================================================
--- db/schema.sql only runs when the Postgres volume is first created, and
--- deploy.sh never applies either file, so this must be run by hand against the
--- live database (see docs/infrastructure/DEPLOYMENT.md → "Database changes"):
+-- Nothing applies db/schema.sql or this directory to production — not a
+-- deploy, not a restart — so this must be run by hand against the live
+-- database, before the code that needs it reaches main (see
+-- docs/infrastructure/DEPLOYMENT.md → "Database changes"):
 --
---   ssh hetzner "docker exec -i acquire-db psql -U acquire -d acquire" \
+--   ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" \
 --     < db/migrations/2026-09-06-epic18-end-declaration.sql
+--
+-- Run BEFORE 2026-09-06-epic17-power-cards.sql. Running this one after it
+-- recreates game_states_public without Epic 17's power-card columns.
 --
 -- Idempotent: safe to re-run. The same statements live in db/schema.sql so a
 -- freshly provisioned database gets them without this file.
