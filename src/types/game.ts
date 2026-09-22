@@ -81,6 +81,12 @@ export interface GameState {
   chains: Record<ChainName, ChainState>;
   stockBank: Record<ChainName, number>;
   tileBag: TileId[];
+  /**
+   * Tiles left in the bag. A field of its own, not `tileBag.length`, because
+   * online play never sends the bag's contents to the browser (it would let a
+   * player see what's coming) — only the server-computed count.
+   */
+  tileBagCount: number;
   lastPlacedTile: TileId | null;
   pendingChainFoundation: TileId[] | null;
   merger: MergerState | null;

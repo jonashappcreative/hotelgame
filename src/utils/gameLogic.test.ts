@@ -238,6 +238,7 @@ describe('gameLogic', () => {
         ...stocks,
       },
       isConnected: true,
+      powerCards: [],
     });
 
     it('should return empty arrays when no one holds stock', () => {

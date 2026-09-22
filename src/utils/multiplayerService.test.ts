@@ -487,6 +487,23 @@ describe('multiplayerService', () => {
       expect(result.gameLog).toHaveLength(1);
     });
 
+    // Epic 17 fix: game_states_public strips tile_bag's contents (so a player
+    // can't see what's coming) but still exposes its length, since extra_tiles
+    // is refused on an empty bag. tileBagCount must come from that count, not
+    // from tile_bag.length — which is always 0 on the wire.
+    it('reads tileBagCount from tile_bag_count, independent of the stripped tile_bag', () => {
+      const dbState = {
+        board: {}, chains: {}, stock_bank: {},
+        tile_bag: [],
+        tile_bag_count: 87,
+      };
+
+      const result = dbToGameState(dbState, [], 'XYZ123');
+
+      expect(result.tileBag).toEqual([]);
+      expect(result.tileBagCount).toBe(87);
+    });
+
     // Epic 14: the sell counters and the three rule-derived fields that used to
     // arrive undefined and survive only on `??` fallbacks downstream.
     it('maps the sell counters, defaulting them for rows written before Epic 14', () => {

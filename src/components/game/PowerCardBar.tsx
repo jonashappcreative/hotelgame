@@ -56,7 +56,7 @@ export const PowerCardBar = ({
       active,
       stocksPurchasedThisTurn: gameState.stocksPurchasedThisTurn ?? 0,
       tilesPlacedThisTurn: gameState.tilesPlacedThisTurn ?? 0,
-      tileBagCount: gameState.tileBag?.length ?? 0,
+      tileBagCount: gameState.tileBagCount,
     });
 
   const statusOf = (card: PowerCardId): { status: PowerCardStatus; reason: string } => {

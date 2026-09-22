@@ -248,6 +248,7 @@ export const initializeGame = (playerNames: string[], rawRules: CustomRules = DE
     chains,
     stockBank,
     tileBag,
+    tileBagCount: tileBag.length,
     lastPlacedTile: startingTile,
     pendingChainFoundation: null,
     merger: null,
@@ -541,7 +542,7 @@ export const usablePowerCards = (
     active: state.activePowerCard ?? null,
     stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
     tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
-    tileBagCount: state.tileBag?.length ?? 0,
+    tileBagCount: state.tileBagCount,
   };
   const use = {
     chains: state.chains,
@@ -578,7 +579,7 @@ export const canUsePowerCard = (
       active: state.activePowerCard ?? null,
       stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
       tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
-      tileBagCount: state.tileBag?.length ?? 0,
+      tileBagCount: state.tileBagCount,
     },
     {
       chains: state.chains,
@@ -684,6 +685,7 @@ export const drawTile = (state: GameState): GameState => {
   newState.players = [...newState.players];
   newState.players[newState.currentPlayerIndex] = currentPlayer;
   newState.tileBag = newTileBag;
+  newState.tileBagCount = newTileBag.length;
 
   return newState;
 };
@@ -709,7 +711,7 @@ export const discardTile = (state: GameState, tileId: TileId): GameState => {
   // Draw new tile from bag
   if (newTileBag.length === 0) {
     // Edge case: bag is empty (shouldn't happen in normal game)
-    return { ...state, players: [...state.players], tileBag: newTileBag };
+    return { ...state, players: [...state.players], tileBag: newTileBag, tileBagCount: 0 };
   }
 
   const drawnTile = newTileBag.pop()!;
@@ -726,6 +728,7 @@ export const discardTile = (state: GameState, tileId: TileId): GameState => {
     ...state,
     players: newPlayers,
     tileBag: newTileBag,
+    tileBagCount: newTileBag.length,
   };
 };
 

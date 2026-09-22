@@ -42,6 +42,7 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     chains,
     stockBank: Object.fromEntries(ALL_CHAINS.map((c) => [c, 25])) as Record<ChainName, number>,
     tileBag: ['3C'] as TileId[],
+    tileBagCount: 1,
     lastPlacedTile: null,
     pendingChainFoundation: null,
     merger: null,

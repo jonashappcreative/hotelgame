@@ -23,6 +23,7 @@ const makePlayer = (stocks: Partial<Record<ChainName, number>> = {}): PlayerStat
   tiles: [] as TileId[],
   stocks: { ...zeroStocks(), ...stocks },
   isConnected: true,
+  powerCards: [],
 });
 
 // Sackson (budget) and Continental (premium) are live at 7 tiles:
@@ -43,6 +44,7 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     chains,
     stockBank: Object.fromEntries(ALL_CHAINS.map((c) => [c, 25])) as Record<ChainName, number>,
     tileBag: [],
+    tileBagCount: 0,
     lastPlacedTile: null,
     pendingChainFoundation: null,
     merger: null,
@@ -53,7 +55,9 @@ const makeGameState = (overrides: Partial<GameState> = {}): GameState => {
     gameLog: [],
     winner: null,
     endGameVotes: [],
-  endDeclaredBy: null,
+    endDeclaredBy: null,
+    activePowerCard: null,
+    tilesPlacedThisTurn: 0,
     roundNumber: 1,
     rulesSnapshot: { ...DEFAULT_RULES, stockSelling: '75' },
     turnDeadlineEpoch: null,

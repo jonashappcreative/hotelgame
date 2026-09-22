@@ -463,6 +463,9 @@ export const dbToGameState = (
     chains: dbState.chains as Record<ChainName, ChainState>,
     stockBank: dbState.stock_bank as Record<ChainName, number>,
     tileBag: dbState.tile_bag || [],
+    // dbState.tile_bag is always [] here (stripped by game_states_public) —
+    // the real count travels separately as tile_bag_count.
+    tileBagCount: dbState.tile_bag_count ?? 0,
     lastPlacedTile: dbState.last_placed_tile || null,
     pendingChainFoundation: dbState.pending_chain_foundation || null,
     merger: dbState.merger || null,

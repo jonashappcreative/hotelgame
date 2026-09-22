@@ -307,7 +307,9 @@ CREATE VIEW game_players_public AS
     created_at
   FROM game_players;
 
--- game_states_public: excludes tile_bag
+-- game_states_public: excludes tile_bag, but exposes its length as
+-- tile_bag_count — extra_tiles is refused on an empty bag, so the client
+-- needs that number without seeing which tiles are left to draw.
 DROP VIEW IF EXISTS game_states_public;
 CREATE VIEW game_states_public AS
   SELECT
@@ -334,7 +336,8 @@ CREATE VIEW game_states_public AS
     updated_at,
     rules_snapshot,
     turn_deadline_epoch,
-    round_number
+    round_number,
+    COALESCE(array_length(tile_bag, 1), 0) AS tile_bag_count
   FROM game_states;
 
 -- =============================================================================

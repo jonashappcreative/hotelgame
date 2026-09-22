@@ -1,12 +1,17 @@
 -- =============================================================================
 -- Epic 17 — Power Cards
 -- =============================================================================
--- db/schema.sql only runs when the Postgres volume is first created, and
--- deploy.sh never applies either file, so this must be run by hand against the
--- live database (see docs/infrastructure/DEPLOYMENT.md → "Database changes"):
+-- Nothing applies db/schema.sql or this directory to production — not a
+-- deploy, not a restart — so this must be run by hand against the live
+-- database, before the code that needs it reaches main (see
+-- docs/infrastructure/DEPLOYMENT.md → "Database changes"):
 --
---   ssh hetzner "docker exec -i acquire-db psql -U acquire -d acquire" \
+--   ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" \
 --     < db/migrations/2026-09-06-epic17-power-cards.sql
+--
+-- Run AFTER 2026-09-06-epic18-end-declaration.sql (same date, so date order
+-- does not settle it): the game_states_public view below selects Epic 18's
+-- end_declared_by / end_condition_round and fails without them.
 --
 -- Idempotent: safe to re-run. The same statements live in db/schema.sql so a
 -- freshly provisioned database gets them without this file.
@@ -62,6 +67,9 @@ CREATE VIEW game_players_public AS
     created_at
   FROM game_players;
 
+-- The count, not the contents: extra_tiles is refused on an empty bag (see
+-- canPlayPowerCard in src/types/power-cards.ts), and the client needs that
+-- number without seeing which tiles are left to draw.
 DROP VIEW IF EXISTS game_states_public;
 CREATE VIEW game_states_public AS
   SELECT
@@ -88,7 +96,8 @@ CREATE VIEW game_states_public AS
     updated_at,
     rules_snapshot,
     turn_deadline_epoch,
-    round_number
+    round_number,
+    COALESCE(array_length(tile_bag, 1), 0) AS tile_bag_count
   FROM game_states;
 
 COMMIT;
