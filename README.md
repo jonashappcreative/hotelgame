@@ -4,7 +4,7 @@ An online multiplayer hotel-chain board game — place tiles, found chains, trad
 stocks, trigger mergers, and finish with the greatest fortune. Inspired by the
 board game classic *Acquire*.
 
-**Live:** [hotelgame.jonashapp.com](https://hotelgame.jonashapp.com) · **Version:** 1.4.2
+**Live:** [hotelgame.jonashapp.com](https://hotelgame.jonashapp.com) · **Version:** 2.0.0
 
 Play solo against AI bots, hot-seat on one device, or online with friends in
 real time. A [story page](https://hotelgame.jonashapp.com/case-study) walks
@@ -54,7 +54,7 @@ game action emits to subscribed clients directly with no internal network hop.
 | Database | PostgreSQL 16 |
 | Proxy / TLS | Caddy 2 |
 | Hosting | Hetzner VPS, Docker Compose, deployed via Coolify |
-| Tests | Vitest + Testing Library (202 tests) |
+| Tests | Vitest + Testing Library (618 tests) |
 
 ## Repository layout
 
