@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { decideBotMove, type BotDifficulty } from './bot';
+import { RELEASED } from '../../src/types/rules-normalize';
 import {
   getStockPrice, settleSale, getSellPriceFactor, normalizeRules,
   canPlayPowerCard, POWER_CARDS, MAX_POWER_TRADES, TRADE_GIVE,
@@ -436,6 +437,10 @@ describe('merger stock decision', () => {
 });
 
 describe('selling (Mode B)', () => {
+  // Stock Selling is unreleased; these tests cover the feature itself.
+  beforeAll(() => { RELEASED.stockSelling = true; });
+  afterAll(() => { RELEASED.stockSelling = false; });
+
   // Tower is cheap and mergeable from hand; Continental is a dead position the
   // bot is hopelessly behind on, so it is the natural thing to liquidate.
   function blockedState(over: any = {}) {
@@ -538,6 +543,10 @@ describe('selling (Mode B)', () => {
 // Every sell the bot emits must survive the engine's own validator — a rejected
 // move stops the drive loop for that turn, so this path has to be airtight.
 describe('sell payloads round-trip through settleSale', () => {
+  // Stock Selling is unreleased; these tests cover the feature itself.
+  beforeAll(() => { RELEASED.stockSelling = true; });
+  afterAll(() => { RELEASED.stockSelling = false; });
+
   const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
   const int = (n: number) => Math.floor(Math.random() * (n + 1));
 

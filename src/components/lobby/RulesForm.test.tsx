@@ -2,6 +2,18 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { RulesForm } from './RulesForm';
 import { DEFAULT_RULES, type CustomRules } from '@/types/game';
+import { RELEASED } from '@/types/rules-normalize';
+
+// Stock Selling is built but unreleased (RELEASED.stockSelling). The tests that
+// cover the feature itself switch it on for their duration.
+const withSellingReleased = (fn: () => void) => {
+  RELEASED.stockSelling = true;
+  try {
+    fn();
+  } finally {
+    RELEASED.stockSelling = false;
+  }
+};
 
 const renderForm = (overrides: Partial<CustomRules> = {}) => {
   const onConfirm = vi.fn();
@@ -26,7 +38,17 @@ const submitted = (onConfirm: ReturnType<typeof vi.fn>): CustomRules => {
 };
 
 describe('RulesForm — Basic', () => {
-  it('shows exactly Board Size, Allow Selling, Chain Safety and Power Cards', () => {
+  it('shows exactly Board Size, Chain Safety and Power Cards', () => {
+    renderForm();
+
+    expect(screen.getByText('Small board')).toBeInTheDocument();
+    expect(screen.getByText('Chain safety')).toBeInTheDocument();
+    expect(screen.getByText('Power cards')).toBeInTheDocument();
+    // Stock Selling is built but unreleased, so its switch is not offered.
+    expect(screen.queryByText('Allow selling')).not.toBeInTheDocument();
+  });
+
+  it('adds Allow Selling once the feature is released', () => withSellingReleased(() => {
     renderForm();
 
     expect(screen.getByText('Small board')).toBeInTheDocument();
@@ -43,7 +65,7 @@ describe('RulesForm — Basic', () => {
     ]) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
-  });
+  }));
 
   it('defaults chain safety to Aggressive, and says so', () => {
     renderForm();
@@ -62,17 +84,17 @@ describe('RulesForm — Basic', () => {
     expect(submitted(onConfirm).powerCards).toBe('on');
   });
 
-  it("writes 'off' ⇄ '75' from the Allow selling switch", () => {
+  it("writes 'off' ⇄ '75' from the Allow selling switch", () => withSellingReleased(() => {
     const { onConfirm } = renderForm();
     fireEvent.click(screen.getByLabelText('Allow selling'));
     expect(submitted(onConfirm).stockSelling).toBe('75');
-  });
+  }));
 
-  it('turns the selling switch off again', () => {
+  it('turns the selling switch off again', () => withSellingReleased(() => {
     const { onConfirm } = renderForm({ stockSelling: '50' });
     fireEvent.click(screen.getByLabelText('Allow selling'));
     expect(submitted(onConfirm).stockSelling).toBe('off');
-  });
+  }));
 });
 
 describe('RulesForm — Advanced disclosure', () => {
@@ -96,14 +118,14 @@ describe('RulesForm — Advanced disclosure', () => {
     expect(screen.getByLabelText('Place starting tile')).toBeInTheDocument();
   });
 
-  it('hides Sell price while selling is off and shows it once on', () => {
+  it('hides Sell price while selling is off and shows it once on', () => withSellingReleased(() => {
     renderForm();
     openAdvanced();
     expect(screen.queryByText('Sell price')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText('Allow selling'));
     expect(screen.getByText('Sell price')).toBeInTheDocument();
-  });
+  }));
 
   it('hides the first-rounds exemption while the timer is off', () => {
     renderForm();

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_RULES, type CustomRules } from './game';
 import {
+  RELEASED,
   normalizeRules,
   validateRules,
   isLegacyRules,
@@ -36,6 +37,17 @@ const v1Defaults = () => ({
   sellPriceFactor: '75',
 });
 
+// Stock Selling is built but unreleased (RELEASED.stockSelling). The tests that
+// cover the feature itself switch it on for their duration.
+const withSellingReleased = (fn: () => void) => {
+  RELEASED.stockSelling = true;
+  try {
+    fn();
+  } finally {
+    RELEASED.stockSelling = false;
+  }
+};
+
 describe('isLegacyRules', () => {
   it('recognises a v1 blob by its *Enabled flags', () => {
     expect(isLegacyRules(v1Defaults())).toBe(true);
@@ -50,7 +62,7 @@ describe('isLegacyRules', () => {
 });
 
 describe('normalizeRules — v2 blobs', () => {
-  it('passes a valid v2 blob through unchanged', () => {
+  it('passes a valid v2 blob through unchanged', () => withSellingReleased(() => {
     const rules: CustomRules = {
       ...DEFAULT_RULES,
       boardSize: 'small',
@@ -62,6 +74,10 @@ describe('normalizeRules — v2 blobs', () => {
       maxChains: '5',
     };
     expect(normalizeRules(rules)).toEqual(rules);
+  }));
+
+  it('forces stock selling off while the feature is unreleased', () => {
+    expect(normalizeRules({ ...DEFAULT_RULES, stockSelling: '50' }).stockSelling).toBe('off');
   });
 
   it('falls back to the default for any unrecognised value', () => {
@@ -100,7 +116,7 @@ describe('normalizeRules — legacy v1 blobs map by behaviour, not by new defaul
     expect(normalizeRules(raw).cashVisibility).toBe('aggregate');
   });
 
-  it('collapses the stock-selling pair into one value', () => {
+  it('collapses the stock-selling pair into one value', () => withSellingReleased(() => {
     expect(normalizeRules(v1Defaults()).stockSelling).toBe('off');
     expect(normalizeRules({
       ...v1Defaults(), stockSellingEnabled: true, sellPriceFactor: '50',
@@ -108,6 +124,12 @@ describe('normalizeRules — legacy v1 blobs map by behaviour, not by new defaul
     // The factor is ignored entirely while the rule is off.
     expect(normalizeRules({
       ...v1Defaults(), stockSellingEnabled: false, sellPriceFactor: '100',
+    }).stockSelling).toBe('off');
+  }));
+
+  it('forces a legacy selling blob off while the feature is unreleased', () => {
+    expect(normalizeRules({
+      ...v1Defaults(), stockSellingEnabled: true, sellPriceFactor: '50',
     }).stockSelling).toBe('off');
   });
 
@@ -198,6 +220,12 @@ describe('validateRules', () => {
     const result = validateRules({ chainSafety: '12', bonusTier: 'brutal', turnTimer: '45' });
     expect(result.ok).toBe(false);
     expect(result.errors).toHaveLength(3);
+  });
+
+  it('accepts a selling value but stores it as off while unreleased', () => {
+    const result = validateRules({ ...DEFAULT_RULES, stockSelling: '75' });
+    expect(result.ok).toBe(true);
+    expect(result.rules.stockSelling).toBe('off');
   });
 
   it('ignores unknown keys instead of failing on them', () => {

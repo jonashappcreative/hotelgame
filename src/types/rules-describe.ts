@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { CustomRules, DEFAULT_RULES } from './game';
+import { RELEASED } from './rules-normalize';
 
 export interface RuleSummaryItem {
   /** Stable key for React lists. */
@@ -88,7 +89,7 @@ export function describeRules(rules: CustomRules): RuleSummaryItem[] {
     ),
   ];
 
-  return items;
+  return RELEASED.stockSelling ? items : items.filter((i) => i.key !== 'stockSelling');
 }
 
 /** True when anything differs from the shipped defaults. */

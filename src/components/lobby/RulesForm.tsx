@@ -6,7 +6,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CustomRules } from '@/types/game';
-import { coerceBoardSizeCoupling } from '@/types/rules-normalize';
+import { RELEASED, coerceBoardSizeCoupling } from '@/types/rules-normalize';
 import { AdvancedRules } from './AdvancedRules';
 import { Row, SelectRow } from './rule-controls';
 
@@ -71,21 +71,26 @@ export const RulesForm = ({ mode, initialRules, onConfirm, onCancel, isLoading }
             <Separator />
 
             {/* One field, two levels of detail: this switch flips between 'off'
-                and the standard 75%; Advanced exposes the full rate. */}
-            <Row
-              icon={<Repeat2 className="h-4 w-4 text-primary" />}
-              label="Allow selling"
-              tooltip="Lets players sell shares back to the bank during their buy phase, up to 3 per turn on top of what they buy. The bank pays less than it charges — that spread is the price of getting out early. Set the exact rate under Advanced."
-              control={
-                <Switch
-                  aria-label="Allow selling"
-                  checked={rules.stockSelling !== 'off'}
-                  onCheckedChange={(on) => patch({ stockSelling: on ? '75' : 'off' })}
+                and the standard 75%; Advanced exposes the full rate. Hidden
+                until Stock Selling is released. */}
+            {RELEASED.stockSelling && (
+              <>
+                <Row
+                  icon={<Repeat2 className="h-4 w-4 text-primary" />}
+                  label="Allow selling"
+                  tooltip="Lets players sell shares back to the bank during their buy phase, up to 3 per turn on top of what they buy. The bank pays less than it charges — that spread is the price of getting out early. Set the exact rate under Advanced."
+                  control={
+                    <Switch
+                      aria-label="Allow selling"
+                      checked={rules.stockSelling !== 'off'}
+                      onCheckedChange={(on) => patch({ stockSelling: on ? '75' : 'off' })}
+                    />
+                  }
                 />
-              }
-            />
 
-            <Separator />
+                <Separator />
+              </>
+            )}
 
             <SelectRow
               icon={<Shield className="h-4 w-4 text-primary" />}

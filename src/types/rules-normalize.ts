@@ -43,6 +43,21 @@ export const RULE_VALUES = {
 
 export const BOOLEAN_RULES = ['disableTimerFirstRounds', 'startWithTileOnBoard'] as const;
 
+// -----------------------------------------------------------------------------
+// Feature gate — Stock Selling (Epic 14) is built but not shipped in v2.0.0
+// -----------------------------------------------------------------------------
+// The engine, bot and UI code stay in place, but every rules blob is forced to
+// stockSelling: 'off' on the way in, so no room can turn it on and no stored
+// blob can smuggle it back. Set to true to release the feature. It is an object
+// rather than a const so the feature's own tests can switch it on.
+export const RELEASED = { stockSelling: false };
+
+function gateUnreleased(rules: CustomRules): CustomRules {
+  return RELEASED.stockSelling || rules.stockSelling === 'off'
+    ? rules
+    : { ...rules, stockSelling: 'off' };
+}
+
 type EnumRuleKey = keyof typeof RULE_VALUES;
 
 /** v1 blobs are identified by the boolean layer v2 deleted. */
@@ -71,7 +86,7 @@ export function isLegacyRules(raw: unknown): boolean {
 // -----------------------------------------------------------------------------
 export function normalizeRules(raw: unknown): CustomRules {
   if (!isRecord(raw)) return { ...DEFAULT_RULES };
-  return isLegacyRules(raw) ? fromV1(raw) : fromV2(raw);
+  return gateUnreleased(isLegacyRules(raw) ? fromV1(raw) : fromV2(raw));
 }
 
 function fromV2(raw: Record<string, unknown>): CustomRules {
@@ -169,7 +184,7 @@ export function validateRules(raw: unknown): ValidationResult {
     rules[key] = raw[key] as boolean;
   }
 
-  return { ok: errors.length === 0, rules, errors };
+  return { ok: errors.length === 0, rules: gateUnreleased(rules), errors };
 }
 
 // -----------------------------------------------------------------------------

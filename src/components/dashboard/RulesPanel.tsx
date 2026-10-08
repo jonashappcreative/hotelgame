@@ -1,5 +1,6 @@
 import type { RuleDistribution } from '@/types/stats';
 import { DEFAULT_RULES } from '@/types/game';
+import { RELEASED } from '@/types/rules-normalize';
 import { BarRow } from './BarRow';
 import { RULE_LABELS, RULE_ORDER, formatNumber, formatPercent, formatRuleValue } from './format';
 
@@ -22,7 +23,7 @@ export const RulesPanel = ({ rules, totalGames }: RulesPanelProps) => {
   const orderedKeys = [
     ...RULE_ORDER.filter((key) => rules[key]),
     ...Object.keys(rules).filter((key) => !RULE_ORDER.includes(key)),
-  ];
+  ].filter((key) => RELEASED.stockSelling || key !== 'stockSelling');
 
   return (
     <div className="space-y-5">

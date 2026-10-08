@@ -4,7 +4,7 @@
 **Feature:** Custom Room Rules — Stock Selling
 **Priority:** Medium
 **Created:** 2026-08-30
-**Status:** Mode B implemented (stories 14.1–14.9). Modes A and C remain design-only; Mode A ships as the `100` sell factor.
+**Status:** Mode B implemented (stories 14.1–14.9) but **not released in v2.0.0**: switched off by `RELEASED.stockSelling` in `src/types/rules-normalize.ts`. Modes A and C remain design-only; Mode A ships as the `100` sell factor.
 
 ---
 

@@ -1,16 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_RULES, type CustomRules } from './game';
 import { describeRules, hasCustomRules } from './rules-describe';
+import { RELEASED } from './rules-normalize';
+
+// Stock Selling is built but unreleased (RELEASED.stockSelling). The tests that
+// cover the feature itself switch it on for their duration.
+const withSellingReleased = (fn: () => void) => {
+  RELEASED.stockSelling = true;
+  try {
+    fn();
+  } finally {
+    RELEASED.stockSelling = false;
+  }
+};
 
 const valueFor = (rules: CustomRules, key: keyof CustomRules) =>
   describeRules(rules).find((item) => item.key === key)?.value;
 
 describe('describeRules', () => {
-  it('describes every rule exactly once', () => {
+  it('describes every rule exactly once', () => withSellingReleased(() => {
     const items = describeRules(DEFAULT_RULES);
     const keys = items.map((item) => item.key);
     expect(keys).toHaveLength(Object.keys(DEFAULT_RULES).length - 1); // timer detail folds in
     expect(new Set(keys).size).toBe(keys.length);
+  }));
+
+  it('leaves selling out of the summary while the feature is unreleased', () => {
+    expect(describeRules(DEFAULT_RULES).map((item) => item.key)).not.toContain('stockSelling');
   });
 
   // The bug this renderer exists to kill: three hardcoded copies all printed
@@ -40,11 +56,11 @@ describe('describeRules', () => {
     expect(hasCustomRules(rules)).toBe(true);
   });
 
-  it('reads selling as a single value', () => {
+  it('reads selling as a single value', () => withSellingReleased(() => {
     expect(valueFor({ ...DEFAULT_RULES, stockSelling: 'off' }, 'stockSelling')).toBe('Off');
     expect(valueFor({ ...DEFAULT_RULES, stockSelling: '75' }, 'stockSelling'))
       .toBe('On — bank pays 75%');
-  });
+  }));
 
   it('folds the first-rounds exemption into the timer line', () => {
     expect(valueFor({ ...DEFAULT_RULES, turnTimer: 'off' }, 'turnTimer')).toBe('Off');
