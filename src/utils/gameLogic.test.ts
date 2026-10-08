@@ -14,17 +14,24 @@ import {
   growChain,
   buyStocks,
   canBuyMoreStock,
+  canSellStock,
   getRemainingStockAllowance,
+  getRemainingSellAllowance,
+  getSellPrice,
+  getSellPriceFactor,
   drawTile,
   discardTile,
   endTurn,
   checkGameEnd,
+  canDeclareGameEnd,
+  endConditionReason,
   calculateFinalScores,
   getPlayerNetWorth,
   getAvailableChainsForFoundation,
   hasPlayableTiles,
 } from './gameLogic';
-import type { GameState, PlayerState, ChainName, TileId } from '@/types/game';
+import type { GameState, PlayerState, ChainName, TileId, CustomRules } from '@/types/game';
+import { END_CONDITION_CASES, chainsForCase } from '@/test/endConditionCases';
 import { DEFAULT_RULES, ELIGIBLE_CHAINS_5, ELIGIBLE_CHAINS_6 } from '@/types/game';
 
 describe('gameLogic', () => {
@@ -231,6 +238,7 @@ describe('gameLogic', () => {
         ...stocks,
       },
       isConnected: true,
+      powerCards: [],
     });
 
     it('should return empty arrays when no one holds stock', () => {
@@ -712,22 +720,37 @@ describe('gameLogic', () => {
       expect(newState.phase).toBe('buy_stock');
     });
 
-    it('should mark chain as safe when reaching 11 tiles', () => {
-      // Add more tiles to the chain
+    // Grow the chain from its 2 starting tiles to 10, so the next placement
+    // takes it to 11.
+    const growToTen = () => {
       const additionalTiles: TileId[] = ['5C', '5B', '5A', '4A', '4B', '4C', '4D', '4E'].map(t => t as TileId);
       additionalTiles.forEach(id => {
         gameState.board.set(id, { id, placed: true, chain: 'sackson' });
       });
       gameState.chains.sackson.tiles = [...gameState.chains.sackson.tiles, ...additionalTiles];
-
-      // Now chain has 10 tiles, adding one more should make it safe
       gameState.board.set('5F' as TileId, { id: '5F' as TileId, placed: true, chain: null });
       gameState.lastPlacedTile = '5F' as TileId;
+    };
+
+    it('should mark chain as safe when reaching 11 tiles with safeChainSize = 11', () => {
+      growToTen();
+      gameState.safeChainSize = 11;
 
       const newState = growChain(gameState, 'sackson');
 
       expect(newState.chains.sackson.tiles).toHaveLength(11);
       expect(newState.chains.sackson.isSafe).toBe(true);
+    });
+
+    // The shipped default is Aggressive — no chain is ever safe. Before Epic 15
+    // this was the real behaviour too, but the lobby advertised "Safe at 11+".
+    it('should never mark a chain safe under the default rules', () => {
+      growToTen();
+
+      const newState = growChain(gameState, 'sackson');
+
+      expect(newState.chains.sackson.tiles).toHaveLength(11);
+      expect(newState.chains.sackson.isSafe).toBe(false);
     });
 
     it('should mark chain safe at custom threshold (safeChainSize = 9)', () => {
@@ -940,6 +963,173 @@ describe('gameLogic', () => {
 
       expect(canBuyMoreStock(gameState, 1)).toBe(false);
       expect(canBuyMoreStock(gameState, 0)).toBe(true);
+    });
+  });
+
+  // Stock Selling (Epic 14): selling has its own per-turn budget and its own
+  // gate on the automatic turn end.
+  describe('getSellPriceFactor / getSellPrice', () => {
+    it('is 0 with no rules snapshot, or with the rule off', () => {
+      expect(getSellPriceFactor(null)).toBe(0);
+      expect(getSellPriceFactor({ ...DEFAULT_RULES, stockSelling: 'off' })).toBe(0);
+    });
+
+    it('reads the configured factor when the rule is on', () => {
+      expect(getSellPriceFactor({ ...DEFAULT_RULES, stockSelling: '75' })).toBe(0.75);
+      expect(getSellPriceFactor({ ...DEFAULT_RULES, stockSelling: '50' })).toBe(0.5);
+    });
+
+    it('rounds the sale price down to the nearest 10', () => {
+      expect(getStockPrice('continental', 7)).toBe(700);
+      expect(getSellPrice('continental', 7, 0.75)).toBe(520);
+    });
+
+    it('matches the market price exactly at 100%', () => {
+      for (const size of [2, 5, 11, 25, 41]) {
+        expect(getSellPrice('tower', size, 1)).toBe(getStockPrice('tower', size));
+      }
+    });
+  });
+
+  describe('getRemainingSellAllowance', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+    });
+
+    it('is the full allowance at the start of a turn', () => {
+      expect(getRemainingSellAllowance(gameState)).toBe(3);
+    });
+
+    it('drops to 1 after two shares sold', () => {
+      gameState.stocksSoldThisTurn = 2;
+
+      expect(getRemainingSellAllowance(gameState)).toBe(1);
+    });
+
+    it('is 0 at three, and never goes negative', () => {
+      gameState.stocksSoldThisTurn = 3;
+      expect(getRemainingSellAllowance(gameState)).toBe(0);
+
+      gameState.stocksSoldThisTurn = 5;
+      expect(getRemainingSellAllowance(gameState)).toBe(0);
+    });
+
+    it('is independent of the buy allowance', () => {
+      gameState.stocksPurchasedThisTurn = 3;
+
+      expect(getRemainingSellAllowance(gameState)).toBe(3);
+      expect(getRemainingStockAllowance(gameState)).toBe(0);
+    });
+  });
+
+  describe('canSellStock', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSelling: '75' };
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+      gameState.players[0].stocks.sackson = 2;
+    });
+
+    it('is true with the rule on, allowance left and holdings in an active chain', () => {
+      expect(canSellStock(gameState)).toBe(true);
+    });
+
+    it('is false when the rule is disabled', () => {
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSelling: 'off' };
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false with no rules snapshot at all (local play)', () => {
+      gameState.rulesSnapshot = null;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false when the player holds no shares', () => {
+      gameState.players[0].stocks.sackson = 0;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false once the sell allowance is exhausted', () => {
+      gameState.stocksSoldThisTurn = 3;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is false when the only holdings are chains bought this turn', () => {
+      gameState.chainsBoughtThisTurn = ['sackson'];
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('is true when another held chain was not bought this turn', () => {
+      gameState.chains.tower = {
+        name: 'tower',
+        tiles: ['1A' as TileId, '1B' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+      gameState.players[0].stocks.tower = 1;
+      gameState.chainsBoughtThisTurn = ['sackson'];
+
+      expect(canSellStock(gameState)).toBe(true);
+    });
+
+    it('is false for holdings in a chain that has gone defunct', () => {
+      gameState.chains.sackson.isActive = false;
+
+      expect(canSellStock(gameState)).toBe(false);
+    });
+
+    it('evaluates the player index it is given', () => {
+      gameState.players[1].stocks.sackson = 0;
+
+      expect(canSellStock(gameState, 1)).toBe(false);
+      expect(canSellStock(gameState, 0)).toBe(true);
+    });
+  });
+
+  // Story 14.7: the 800ms auto-end fires only when the player can neither buy
+  // nor sell. These two assertions are what GameContainer's condition reads.
+  describe('auto-end-turn condition with selling enabled', () => {
+    let gameState: GameState;
+
+    beforeEach(() => {
+      gameState = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana']);
+      gameState.phase = 'buy_stock';
+      gameState.rulesSnapshot = { ...DEFAULT_RULES, stockSelling: '75' };
+      gameState.chains.sackson = {
+        name: 'sackson',
+        tiles: ['5D' as TileId, '5E' as TileId],
+        isActive: true,
+        isSafe: false,
+      };
+    });
+
+    it('does not trip for a broke player who still has shares to sell', () => {
+      gameState.players[0].cash = 0;
+      gameState.players[0].stocks.sackson = 2;
+
+      expect(canBuyMoreStock(gameState)).toBe(false);
+      expect(canSellStock(gameState)).toBe(true);
+      expect(canBuyMoreStock(gameState) || canSellStock(gameState)).toBe(true);
+    });
+
+    it('trips for a broke player holding nothing', () => {
+      gameState.players[0].cash = 0;
+
+      expect(canBuyMoreStock(gameState) || canSellStock(gameState)).toBe(false);
     });
   });
 
@@ -1341,24 +1531,33 @@ describe('gameLogic', () => {
   });
 
   describe('DEFAULT_RULES', () => {
-    it('should contain all required CustomRules fields with correct default values', () => {
-      expect(DEFAULT_RULES.startWithTileOnBoard).toBe(true);
-      expect(DEFAULT_RULES.turnTimerEnabled).toBe(false);
-      expect(DEFAULT_RULES.turnTimer).toBe('60');
-      expect(DEFAULT_RULES.disableTimerFirstRounds).toBe(true);
-      expect(DEFAULT_RULES.chainSafetyEnabled).toBe(false);
-      expect(DEFAULT_RULES.chainSafetyThreshold).toBe('none');
-      expect(DEFAULT_RULES.cashVisibilityEnabled).toBe(false);
-      expect(DEFAULT_RULES.cashVisibility).toBe('hidden');
-      expect(DEFAULT_RULES.bonusTierEnabled).toBe(false);
-      expect(DEFAULT_RULES.bonusTier).toBe('standard');
-      expect(DEFAULT_RULES.boardSizeEnabled).toBe(false);
-      expect(DEFAULT_RULES.boardSize).toBe('9x12');
-      expect(DEFAULT_RULES.chainFoundingEnabled).toBe(false);
-      expect(DEFAULT_RULES.maxChains).toBe('7');
-      expect(DEFAULT_RULES.startingConditionsEnabled).toBe(false);
-      expect(DEFAULT_RULES.startingCash).toBe('6000');
-      expect(DEFAULT_RULES.startingTiles).toBe('6');
+    it('should contain all twelve v2 fields with their shipped defaults', () => {
+      expect(DEFAULT_RULES).toEqual({
+        boardSize: 'large',
+        stockSelling: 'off',
+        chainSafety: 'none',
+        powerCards: 'off',
+        turnTimer: 'off',
+        disableTimerFirstRounds: true,
+        cashVisibility: 'visible',
+        bonusTier: 'standard',
+        maxChains: '7',
+        startingCash: '6000',
+        startingTiles: '6',
+        startWithTileOnBoard: true,
+      });
+    });
+
+    // Epic 15 deleted the *Enabled boolean layer: "disabled" used to mean
+    // something different for each rule, and for chain safety it meant the
+    // opposite of what the lobby printed.
+    it('should not contain any of the v1 *Enabled flags', () => {
+      for (const flag of [
+        'turnTimerEnabled', 'chainSafetyEnabled', 'cashVisibilityEnabled', 'bonusTierEnabled',
+        'boardSizeEnabled', 'chainFoundingEnabled', 'startingConditionsEnabled', 'stockSellingEnabled',
+      ]) {
+        expect(flag in DEFAULT_RULES).toBe(false);
+      }
     });
 
     it('should not contain a founderFreeStock field', () => {
@@ -1538,13 +1737,13 @@ describe('gameLogic', () => {
 
   describe('initializeGame — board size', () => {
     it('with boardSize = "6x10" produces a board of 60 tiles', () => {
-      const rules = { ...DEFAULT_RULES, boardSizeEnabled: true, boardSize: '6x10' };
+      const rules: CustomRules = { ...DEFAULT_RULES, boardSize: 'small' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       expect(state.board.size).toBe(60);
     });
 
     it('with boardSize = "6x10" sets boardRows=6 and boardCols of length 10', () => {
-      const rules = { ...DEFAULT_RULES, boardSizeEnabled: true, boardSize: '6x10' };
+      const rules: CustomRules = { ...DEFAULT_RULES, boardSize: 'small' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       expect(state.boardRows).toBe(6);
       expect(state.boardCols).toHaveLength(10);
@@ -1650,7 +1849,7 @@ describe('gameLogic', () => {
 
   describe('initializeGame — chain founding rules', () => {
     it('with chainFoundingEnabled and maxChains="5" sets eligibleChains to 5 chains', () => {
-      const rules = { ...DEFAULT_RULES, chainFoundingEnabled: true, maxChains: '5' };
+      const rules: CustomRules = { ...DEFAULT_RULES, maxChains: '5' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       expect(state.maxChains).toBe(5);
       expect(state.eligibleChains).toHaveLength(5);
@@ -1659,7 +1858,7 @@ describe('gameLogic', () => {
     });
 
     it('with chainFoundingEnabled and maxChains="6" excludes festival', () => {
-      const rules = { ...DEFAULT_RULES, chainFoundingEnabled: true, maxChains: '6' };
+      const rules: CustomRules = { ...DEFAULT_RULES, maxChains: '6' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       expect(state.maxChains).toBe(6);
       expect(state.eligibleChains).toHaveLength(6);
@@ -1675,7 +1874,7 @@ describe('gameLogic', () => {
 
   describe('initializeGame — bonus tier', () => {
     it('with bonusTierEnabled and bonusTier="aggressive" sets bonusTier on state', () => {
-      const rules = { ...DEFAULT_RULES, bonusTierEnabled: true, bonusTier: 'aggressive' };
+      const rules: CustomRules = { ...DEFAULT_RULES, bonusTier: 'aggressive' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       expect(state.bonusTier).toBe('aggressive');
     });
@@ -1688,38 +1887,38 @@ describe('gameLogic', () => {
 
   describe('initializeGame — starting conditions', () => {
     it('with startingCash="4000" gives each player $4,000', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '4000' };
+      const rules: CustomRules = { ...DEFAULT_RULES, startingCash: '4000' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       state.players.forEach(p => expect(p.cash).toBe(4000));
     });
 
     it('with startingCash="8000" gives each player $8,000', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingCash: '8000' };
+      const rules: CustomRules = { ...DEFAULT_RULES, startingCash: '8000' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       state.players.forEach(p => expect(p.cash).toBe(8000));
     });
 
     it('with startingTiles="5" gives each player exactly 5 tiles', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '5' };
+      const rules: CustomRules = { ...DEFAULT_RULES, startingTiles: '5' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       state.players.forEach(p => expect(p.tiles).toHaveLength(5));
     });
 
     it('with startingTiles="7" gives each player exactly 7 tiles', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startingTiles: '7' };
+      const rules: CustomRules = { ...DEFAULT_RULES, startingTiles: '7' };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       state.players.forEach(p => expect(p.tiles).toHaveLength(7));
     });
 
     it('with startWithTileOnBoard=false results in zero tiles with placed: true', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: false };
+      const rules: CustomRules = { ...DEFAULT_RULES, startWithTileOnBoard: false };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       const placedTiles = [...state.board.values()].filter(t => t.placed);
       expect(placedTiles).toHaveLength(0);
     });
 
     it('with startWithTileOnBoard=true results in exactly 1 tile with placed: true', () => {
-      const rules = { ...DEFAULT_RULES, startingConditionsEnabled: true, startWithTileOnBoard: true };
+      const rules: CustomRules = { ...DEFAULT_RULES, startWithTileOnBoard: true };
       const state = initializeGame(['Alice', 'Bob', 'Charlie', 'Diana'], rules);
       const placedTiles = [...state.board.values()].filter(t => t.placed);
       expect(placedTiles).toHaveLength(1);
@@ -1735,4 +1934,23 @@ describe('gameLogic', () => {
       expect(placedTiles).toHaveLength(1);
     });
   });
+});
+
+// Epic 18. The browser mirror of server/lib/rules.ts canDeclareGameEnd, run
+// against the same shared truth table the server suite uses
+// (src/test/endConditionCases.ts) — the client decides whether to offer the
+// button, the server decides whether to accept it, and they must agree.
+describe('canDeclareGameEnd (client mirror)', () => {
+  for (const c of END_CONDITION_CASES) {
+    it(c.name, () => {
+      const state = {
+        chains: chainsForCase(c),
+        boardRows: c.boardRows,
+        safeChainSize: c.safeChainSize,
+      } as unknown as GameState;
+
+      expect(canDeclareGameEnd(state)).toBe(c.canDeclare);
+      expect(endConditionReason(state)).toBe(c.reason);
+    });
+  }
 });

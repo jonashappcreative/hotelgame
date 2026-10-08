@@ -340,36 +340,6 @@ export const useGameState = () => {
     });
   }, [gameState]);
 
-  const handleEndGameVote = useCallback((vote: boolean) => {
-    if (!gameState) return;
-
-    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    const newState = { ...gameState };
-    
-    if (vote && !newState.endGameVotes.includes(currentPlayer.id)) {
-      newState.endGameVotes = [...newState.endGameVotes, currentPlayer.id];
-      
-      // Check if majority voted
-      const votesNeeded = Math.ceil(gameState.players.length / 2);
-      if (newState.endGameVotes.length >= votesNeeded) {
-        newState.phase = 'game_over';
-        newState.winner = calculateFinalScores(newState)[0].name;
-        
-        toast({
-          title: "Game Ended",
-          description: "Players voted to end the game",
-        });
-      } else {
-        toast({
-          title: "Vote Recorded",
-          description: `${newState.endGameVotes.length}/${votesNeeded} votes to end`,
-        });
-      }
-    }
-
-    setGameState(newState);
-  }, [gameState]);
-
   const resetGame = useCallback(() => {
     setGameState(null);
     setCurrentPlayerIndex(0);
@@ -387,7 +357,6 @@ export const useGameState = () => {
     handleMergerStockChoice,
     handleBuyStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
     resetGame,
     getAvailableChains: gameState ? () => getAvailableChainsForFoundation(gameState) : () => [],
   };

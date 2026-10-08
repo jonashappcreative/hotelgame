@@ -1,10 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
-import { GameState, ChainName, MergerStockDecision, TileId } from '@/types/game';
+import { GameState, ChainName, MergerStockDecision, TileId, DEFAULT_RULES, PowerCardId, MULTI_TILE_LIMIT } from '@/types/game';
+import { isMultiTileActive, POWER_CARD_INFO } from '@/types/power-cards';
+import { getTurnTimerSeconds } from '@/types/rules-normalize';
 import { useAudio } from '@/contexts/AudioContext';
 import { GameBoard } from './GameBoard';
 import { PlayerHand } from './PlayerHand';
 import { PlayerCard } from './PlayerCard';
-import { StockPurchase } from './StockPurchase';
+import { StockPurchase, type PendingTrade } from './StockPurchase';
 import { ChainFounder } from './ChainFounder';
 import { InfoCard } from './InfoCard';
 import { GameLog } from './GameLog';
@@ -12,16 +14,17 @@ import { GameOver } from './GameOver';
 import { MergerSurvivorChoice } from './MergerSurvivorChoice';
 import { MergerBonusDisplay } from './MergerBonusDisplay';
 import { MergerStockDecision as MergerStockDecisionComponent } from './MergerStockDecision';
-import { EndGameVote } from './EndGameVote';
+import { EndGameDeclaration } from './EndGameDeclaration';
+import { PowerCardBar } from './PowerCardBar';
 import { TileConfirmationModal } from './TileConfirmationModal';
 import { UnplayableTilesModal } from './UnplayableTilesModal';
 import { EndTurnConfirmModal } from './EndTurnConfirmModal';
 import { TurnTimer } from './TurnTimer';
 import { getPlayerNetWorth, getAvailableChainsForFoundation, hasPlayableTiles, getAdjacentTiles } from '@/utils/gameLogic';
 import { analyzeMerger } from '@/utils/mergerLogic';
-import { Clock, WifiOff, ArrowRight, Trophy } from 'lucide-react';
+import { Clock, WifiOff, ArrowRight, Trophy, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canBuyMoreStock } from '@/utils/gameLogic';
+import { canBuyMoreStock, canSellStock, canUsePowerCard, usablePowerCards, endConditionReason } from '@/utils/gameLogic';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 
 interface GameContainerProps {
@@ -33,8 +36,25 @@ interface GameContainerProps {
   onPayMergerBonuses: () => void;
   onMergerStockChoice: (decision: MergerStockDecision) => void;
   onBuyStocks: (purchases: { chain: string; quantity: number }[]) => void;
+  /** Sell shares back to the bank. Omitted where the mode isn't wired up. */
+  onSellStocks?: (sales: { chain: ChainName; quantity: number }[]) => void;
   onEndTurn: () => void;
-  onEndGameVote: (vote: boolean) => void;
+  /**
+   * Announce that the game ends after this turn (Epic 18). Resolves true when
+   * the declaration was accepted. Omitted in local hot-seat play, where the
+   * engine still ends the game automatically — its absence is what keeps the
+   * old behaviour on that path.
+   */
+  onDeclareGameEnd?: () => Promise<boolean>;
+  /**
+   * Play a power card (Epic 17). Omitted in local hot-seat play, where the rule
+   * is never on — its absence is what hides the whole feature there.
+   */
+  onPlayPowerCard?: (card: PowerCardId) => void;
+  /** Trade 2 shares for 1 under an active Stock Trade. */
+  onPowerTrade?: (give: { chain: ChainName; quantity: number }[], receive: ChainName) => void;
+  /** Stop a Building Spree early and move to the buy phase. */
+  onEndPlacements?: () => void;
   onNewGame: () => void;
   /** Leave the room / go back to the lobby. Works for every player (online). */
   onReturnToLobby?: () => void;
@@ -54,8 +74,12 @@ export const GameContainer = ({
   onPayMergerBonuses,
   onMergerStockChoice,
   onBuyStocks,
+  onSellStocks,
   onEndTurn,
-  onEndGameVote,
+  onDeclareGameEnd,
+  onPlayPowerCard,
+  onPowerTrade,
+  onEndPlacements,
   onNewGame,
   onReturnToLobby,
   onDiscardTile,
@@ -72,7 +96,9 @@ export const GameContainer = ({
   // End Turn confirmation, plus the shares picked but never confirmed in the
   // buy panel so the warning can name what's about to be discarded.
   const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
-  const [pendingPurchase, setPendingPurchase] = useState({ shares: 0, cost: 0 });
+  const [pendingPurchase, setPendingPurchase] = useState<PendingTrade>({
+    shares: 0, cost: 0, sellShares: 0, proceeds: 0,
+  });
 
   // Merger animation: tiles still showing their OLD chain color (pre-merger),
   // removed one-by-one on a stagger to trigger a real CSS color transition.
@@ -94,12 +120,11 @@ export const GameContainer = ({
   const isMyMergerTurn = gameState.phase === 'merger_handle_stock' &&
     gameState.merger?.currentPlayerIndex === myPlayerIndex;
 
-  // Derive cash visibility: local games always show all cash; online games follow rules
+  // Derive cash visibility: local games always show all cash; online games
+  // follow the room's rules, which default to 'visible' since Epic 15.
   const cashVisibility: 'hidden' | 'visible' | 'aggregate' = (() => {
     if (!isOnlineMode) return 'visible';
-    const rules = gameState.rulesSnapshot;
-    if (!rules?.cashVisibilityEnabled) return 'hidden';
-    return (rules.cashVisibility || 'hidden') as 'hidden' | 'visible' | 'aggregate';
+    return gameState.rulesSnapshot?.cashVisibility ?? DEFAULT_RULES.cashVisibility;
   })();
 
   // Check if player has unplayable tiles
@@ -111,34 +136,87 @@ export const GameContainer = ({
   // allowance or can't afford any available stock.
   const buyPhaseActive = gameState.phase === 'buy_stock' && isMyTurn;
   const canBuyAnything = buyPhaseActive && canBuyMoreStock(gameState, myPlayerIndex);
+  // With stock selling on, the buy phase isn't finished just because nothing is
+  // affordable — the player may still want to liquidate.
+  const canSellAnything = buyPhaseActive && !!onSellStocks && canSellStock(gameState, myPlayerIndex);
+  // Epic 17's third term, for the same reason Epic 14 added the second: the
+  // turn where nothing is affordable is precisely the turn Free Shares is for,
+  // and auto-ending there would take the card off the table at the only moment
+  // it matters. The per-card "has a use" half lives in canUsePowerCard, so a
+  // player holding only unusable cards still gets today's auto-end.
+  const canPlayAnyCard = buyPhaseActive && !!onPlayPowerCard && canUsePowerCard(gameState, myPlayerIndex);
+  const forfeitableCardNames = onPlayPowerCard
+    ? usablePowerCards(gameState, myPlayerIndex).map((card) => POWER_CARD_INFO[card].name)
+    : [];
+  const canTradeAnything = canBuyAnything || canSellAnything || canPlayAnyCard;
+
+  // Epic 18. Which end-game condition is met, if any — a null reason means the
+  // game cannot be ended yet. Local hot-seat play keeps the old automatic end,
+  // so this whole path is inert without an onDeclareGameEnd handler.
+  const endCondition = onDeclareGameEnd ? endConditionReason(gameState) : null;
+  const endDeclaredBy = gameState.endDeclaredBy ?? null;
+  const endDeclared = endDeclaredBy !== null;
+  const iDeclared = endDeclared && endDeclaredBy === myPlayerIndex;
+  const endGameSize = gameState.boardRows === 6 ? 30 : 41;
+
+  // Epic 17, Building Spree. The turn stays in place_tile after each placement
+  // until the budget runs out, the player has nothing legal left, or they say
+  // they are done — which is what this control is for.
+  const spreeActive = isMultiTileActive(gameState.activePowerCard ?? null);
+  const tilesPlacedThisTurn = gameState.tilesPlacedThisTurn ?? 0;
+  const canEndPlacements =
+    spreeActive && isMyTurn && gameState.phase === 'place_tile' &&
+    tilesPlacedThisTurn >= 1 && !!onEndPlacements;
+
+  // The turn no longer ends itself once the game can be ended. A declaration is
+  // worthless if the player is swept past the decision, so the buy phase stays
+  // open and the player leaves it deliberately through the modal below. Third
+  // term of the gate Epic 14 widened with canSellAnything; mirrored server-side
+  // in game-action.ts's buy_stocks handler.
+  const turnMayAutoEnd = !canTradeAnything && endCondition === null;
 
   useEffect(() => {
-    if (buyPhaseActive && !canBuyAnything) {
+    if (buyPhaseActive && turnMayAutoEnd) {
       const t = setTimeout(() => onEndTurn?.(), 800);
       return () => clearTimeout(t);
     }
-  }, [buyPhaseActive, canBuyAnything]);
+  }, [buyPhaseActive, turnMayAutoEnd]);
 
   // Leaving the buy phase (turn ended, timer expired) clears the confirmation so
   // it can't reappear on the player's next turn.
   useEffect(() => {
     if (!buyPhaseActive) {
       setShowEndTurnConfirm(false);
-      setPendingPurchase({ shares: 0, cost: 0 });
+      setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
     }
   }, [buyPhaseActive]);
 
   // Stable identity so the buy panel's report doesn't re-fire the effect, and a
   // bail-out so an unchanged selection doesn't spin a render loop.
-  const handlePendingChange = useCallback((pending: { shares: number; cost: number }) => {
+  const handlePendingChange = useCallback((pending: PendingTrade) => {
     setPendingPurchase(prev =>
-      prev.shares === pending.shares && prev.cost === pending.cost ? prev : pending
+      prev.shares === pending.shares && prev.cost === pending.cost &&
+      prev.sellShares === pending.sellShares && prev.proceeds === pending.proceeds
+        ? prev
+        : pending
     );
   }, []);
 
   const handleConfirmEndTurn = () => {
     setShowEndTurnConfirm(false);
-    setPendingPurchase({ shares: 0, cost: 0 });
+    setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
+    onEndTurn();
+  };
+
+  // Declare and end the turn in one gesture. The declaration is awaited rather
+  // than fired alongside: the server reads end_declared_by when the turn ends,
+  // so a turn that ended first would simply pass to the next player. A rejected
+  // declaration leaves the turn open — the player sees the error and can retry.
+  const handleDeclareAndEndTurn = async () => {
+    if (!onDeclareGameEnd) return;
+    setShowEndTurnConfirm(false);
+    if (!(await onDeclareGameEnd())) return;
+    setPendingPurchase({ shares: 0, cost: 0, sellShares: 0, proceeds: 0 });
     onEndTurn();
   };
 
@@ -268,11 +346,6 @@ export const GameContainer = ({
     return analysis.potentialSurvivors;
   };
 
-  // Check if end game voting is allowed
-  const canCallEndGameVote = 
-    gameState.phase !== 'game_over' &&
-    ['place_tile', 'buy_stock'].includes(gameState.phase);
-
   // Handle tile selection (show confirmation modal)
   const handleTileSelect = (tileId: TileId) => {
     setSelectedTile(tileId);
@@ -329,13 +402,22 @@ export const GameContainer = ({
         </div>
       )}
 
-      {/* End Turn Confirmation - warns when stock is still affordable */}
-      {showEndTurnConfirm && buyPhaseActive && canBuyAnything && (
+      {/* End Turn Confirmation — warns when stock is still affordable, and once
+          the game can be ended, carries the declaration decision (Epic 18). */}
+      {showEndTurnConfirm && buyPhaseActive && !turnMayAutoEnd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
           <EndTurnConfirmModal
             purchasedThisTurn={gameState.stocksPurchasedThisTurn}
             pendingShares={pendingPurchase.shares}
             pendingCost={pendingPurchase.cost}
+            pendingSellShares={pendingPurchase.sellShares}
+            pendingProceeds={pendingPurchase.proceeds}
+            canStillBuy={canBuyAnything}
+            endCondition={endCondition}
+            endGameSize={endGameSize}
+            alreadyDeclared={iDeclared}
+            playableCardNames={forfeitableCardNames}
+            onDeclareAndEnd={onDeclareGameEnd ? handleDeclareAndEndTurn : undefined}
             onConfirm={handleConfirmEndTurn}
             onCancel={() => setShowEndTurnConfirm(false)}
           />
@@ -394,15 +476,47 @@ export const GameContainer = ({
             )}
             <InfoCard gameState={gameState} />
             <AudioSettingsButton variant="outline" />
-            <EndGameVote
-              gameState={gameState}
-              currentPlayerId={myPlayer.id}
-              onVote={onEndGameVote}
-              canCallVote={canCallEndGameVote}
-              botCount={botCount}
-            />
+            {onDeclareGameEnd && (
+              <EndGameDeclaration
+                gameState={gameState}
+                myPlayerIndex={myPlayerIndex}
+                onDeclare={() => { void onDeclareGameEnd(); }}
+              />
+            )}
           </div>
         </header>
+
+        {/* Epic 18. The announcement, made visible the way it is audible around
+            a physical table — every player's remaining decisions depend on
+            knowing the game ends after this turn. And when the condition is met
+            but nobody has declared, that is shown too, so the strategic
+            opt-out reads as a choice someone is making rather than a bug. */}
+        {(endDeclared || endCondition !== null) && gameState.phase !== 'game_over' && (
+          <div
+            className={`flex items-center gap-3 rounded-xl border p-3 mb-4 lg:mb-6 ${
+              endDeclared
+                ? 'border-chain-merger/50 bg-chain-merger/10'
+                : 'border-primary/30 bg-primary/5'
+            }`}
+          >
+            <Flag className={`w-5 h-5 shrink-0 ${endDeclared ? 'text-chain-merger' : 'text-primary'}`} />
+            <div>
+              <p className="font-semibold text-sm">
+                {endDeclared
+                  ? `${gameState.players[endDeclaredBy!]?.name ?? 'A player'} has declared the game will end after this turn.`
+                  : 'The game can now be ended.'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {endDeclared
+                  ? 'Final scores are calculated as soon as that turn finishes.'
+                  : `${endCondition === 'all_safe'
+                      ? 'Every chain on the board is safe'
+                      : `A chain has reached ${endGameSize} tiles`}` +
+                    ` — ${isMyTurn ? 'you may declare it over on this turn' : `${currentPlayer.name} may declare it over on this turn`}.`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Main Layout */}
         <div className="grid lg:grid-cols-[1fr_320px] gap-4 lg:gap-6">
@@ -426,11 +540,12 @@ export const GameContainer = ({
                 isMyTurn &&
                 isOnlineMode &&
                 gameState.phase === 'place_tile' &&
-                rules?.turnTimerEnabled === true &&
+                rules != null &&
+                getTurnTimerSeconds(rules) !== null &&
                 !(rules.disableTimerFirstRounds && roundNumber < 2) &&
                 onAutoEndTurn !== undefined;
               if (!showTimer) return null;
-              const durationSecs = parseInt(rules!.turnTimer ?? '60');
+              const durationSecs = getTurnTimerSeconds(rules!)!;
               return (
                 <TurnTimer
                   key={gameState.currentPlayerIndex}
@@ -449,9 +564,15 @@ export const GameContainer = ({
                   isMyTurn ? (
                     <div className="bg-card rounded-xl p-6 h-full flex items-center justify-center">
                       <div className="text-center">
-                        <p className="text-lg font-semibold mb-2">Place a Tile</p>
+                        <p className="text-lg font-semibold mb-2">
+                          {spreeActive
+                            ? `Place a Tile (${tilesPlacedThisTurn}/${MULTI_TILE_LIMIT})`
+                            : 'Place a Tile'}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Select a highlighted tile from your hand or the board
+                          {spreeActive
+                            ? `${POWER_CARD_INFO.multi_tile.name} — place up to ${MULTI_TILE_LIMIT} tiles, or use Done placing to stop.`
+                            : 'Select a highlighted tile from your hand or the board'}
                         </p>
                       </div>
                     </div>
@@ -518,7 +639,10 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
+                      playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
+                      onSell={onSellStocks}
+                      onPowerTrade={onPowerTrade}
                       onPendingChange={handlePendingChange}
                     />
                   ) : isOnlineMode ? (
@@ -534,7 +658,10 @@ export const GameContainer = ({
                     <StockPurchase
                       gameState={gameState}
                       playerCash={myPlayer.cash}
+                      playerStocks={myPlayer.stocks}
                       onPurchase={handleBuyStocksWithSfx}
+                      onSell={onSellStocks}
+                      onPowerTrade={onPowerTrade}
                       onPendingChange={handlePendingChange}
                     />
                   )
@@ -597,9 +724,27 @@ export const GameContainer = ({
                 onTileClick={handleTileSelect}
                 selectedTile={selectedTile}
               />
+              {/* Power cards (Epic 17) — the last "what I have" in the rail,
+                  reachable in both place_tile and buy_stock. Renders nothing
+                  when the room rule is off. */}
+              <PowerCardBar
+                gameState={gameState}
+                myPlayerIndex={myPlayerIndex}
+                onPlayPowerCard={onPlayPowerCard}
+              />
+
+              {/* Done placing — only during a Building Spree that has already
+                  put at least one tile down. */}
+              {canEndPlacements && (
+                <Button variant="outline" size="lg" className="w-full" onClick={onEndPlacements}>
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  Done placing ({tilesPlacedThisTurn}/{MULTI_TILE_LIMIT})
+                </Button>
+              )}
+
               {/* End Turn — shown below tiles during the buy phase */}
               {buyPhaseActive && (
-                canBuyAnything ? (
+                !turnMayAutoEnd ? (
                   <Button size="lg" className="w-full" onClick={() => setShowEndTurnConfirm(true)}>
                     <ArrowRight className="w-4 h-4 mr-2" />
                     End Turn

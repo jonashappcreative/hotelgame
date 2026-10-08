@@ -17,15 +17,26 @@
 //
 // The handler only ever deletes rooms already idle for >10 min, so it is safe
 // to run unauthenticated on a schedule; it can never touch an active game.
+//
+// Before deleting, every idle room is offered to recordIfFinished (Epic 16).
+// The engine already records a game the moment it ends, so this is a safety
+// net: it catches games that finished while the recorder was down, rooms that
+// were already over when the feature deployed, and any future game_over path
+// that somehow bypasses the engine's exit point. Recording is idempotent, so
+// the overwhelmingly common case — an abandoned lobby, or a game already
+// recorded — costs one indexed lookup and writes nothing.
 // =============================================================================
 
 import { query } from '../lib/db';
+import { recordIfFinished } from '../lib/results';
 
 const IDLE_MINUTES = 10;
 
 export default async (_req: Request): Promise<Response> => {
   try {
-    const closed = await query<{ id: string }>(
+    // Identify the idle rooms first, so a finished game can be recorded before
+    // its state row is cascaded away.
+    const idle = await query<{ id: string }>(
       `WITH room_activity AS (
          SELECT gr.id,
                 GREATEST(
@@ -38,16 +49,33 @@ export default async (_req: Request): Promise<Response> => {
            LEFT JOIN game_states  gs ON gs.room_id = gr.id
           GROUP BY gr.id
        )
-       DELETE FROM game_rooms
-        WHERE id IN (
-          SELECT id FROM room_activity
-           WHERE last_active < now() - interval '${IDLE_MINUTES} minutes'
-        )
-        RETURNING id`,
+       SELECT id FROM room_activity
+        WHERE last_active < now() - interval '${IDLE_MINUTES} minutes'`,
     );
 
-    console.log(`cleanup-rooms: closed ${closed.length} idle room(s)`);
-    return new Response(JSON.stringify({ closed: closed.length }), {
+    if (idle.length === 0) {
+      console.log('cleanup-rooms: closed 0 idle room(s)');
+      return new Response(JSON.stringify({ closed: 0, recorded: 0 }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Safety net (Epic 16). recordIfFinished never throws and is idempotent.
+    let recorded = 0;
+    for (const room of idle) {
+      if (await recordIfFinished(room.id, 'unknown')) recorded += 1;
+    }
+
+    const closed = await query<{ id: string }>(
+      `DELETE FROM game_rooms WHERE id = ANY($1::uuid[]) RETURNING id`,
+      [idle.map((r) => r.id)],
+    );
+
+    console.log(
+      `cleanup-rooms: closed ${closed.length} idle room(s)` +
+      (recorded > 0 ? `, recorded ${recorded} unrecorded finished game(s)` : ''),
+    );
+    return new Response(JSON.stringify({ closed: closed.length, recorded }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {

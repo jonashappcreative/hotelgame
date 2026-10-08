@@ -7,7 +7,7 @@ import { GameContainer } from '@/components/game/GameContainer';
 import { TileId, ChainName } from '@/types/game';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Monitor, Wifi, User, LogOut, History } from 'lucide-react';
+import { Monitor, Wifi, User, LogOut, History, BarChart3 } from 'lucide-react';
 import logoMainScreen from '@/img/Logo_MainScreen.webp';
 import { AudioSettingsButton } from '@/components/AudioSettingsButton';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -35,7 +35,6 @@ const Index = () => {
     handleMergerStockChoice,
     handleBuyStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
     resetGame,
   } = useGameState();
 
@@ -153,6 +152,20 @@ const Index = () => {
                   Learn how to play the game
                 </span>
               </Button>
+
+              <Button
+                variant="outline"
+                className="group w-full h-20 flex flex-col items-center justify-center gap-2"
+                onClick={() => navigate('/dashboard')}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5" />
+                  <span className="text-lg font-semibold">Statistics</span>
+                </div>
+                <span className="text-xs text-muted-foreground group-hover:text-accent-foreground">
+                  See how the game is being played
+                </span>
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -178,7 +191,6 @@ const Index = () => {
       onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
       onEndTurn={handleSkipBuyStock}
-      onEndGameVote={handleEndGameVote}
       onNewGame={() => {
         resetGame();
         setMode('select');

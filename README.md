@@ -4,7 +4,7 @@ An online multiplayer hotel-chain board game — place tiles, found chains, trad
 stocks, trigger mergers, and finish with the greatest fortune. Inspired by the
 board game classic *Acquire*.
 
-**Live:** [hotelgame.jonashapp.com](https://hotelgame.jonashapp.com) · **Version:** 1.4.2
+**Live:** [hotelgame.jonashapp.com](https://hotelgame.jonashapp.com) · **Version:** 2.0.0
 
 Play solo against AI bots, hot-seat on one device, or online with friends in
 real time. A [story page](https://hotelgame.jonashapp.com/case-study) walks
@@ -54,7 +54,7 @@ game action emits to subscribed clients directly with no internal network hop.
 | Database | PostgreSQL 16 |
 | Proxy / TLS | Caddy 2 |
 | Hosting | Hetzner VPS, Docker Compose, deployed via Coolify |
-| Tests | Vitest + Testing Library (202 tests) |
+| Tests | Vitest + Testing Library (618 tests) |
 
 ## Repository layout
 
@@ -152,16 +152,18 @@ Full process, including how to cut a release: **[docs/CI_CD.md](docs/CI_CD.md)**
 
 ## Deployment
 
-Merging to `main` triggers GitHub Actions → Coolify webhook → rebuild → health
-check → tag. Manual deploys run on the server:
+Production runs on Coolify on one Hetzner server. Merging to `main` triggers
+GitHub Actions → build check → Coolify deploy webhook → rebuild from
+`server/Dockerfile` → health check → tag. There is no other deploy path; to
+rebuild the current `main`, use **Redeploy** in the Coolify UI.
 
 ```sh
-ssh hetzner "cd ~/aquire02 && ./deploy.sh"
 curl -fsS https://hotelgame.jonashapp.com/health
 ```
 
-`deploy.sh` is the single source of truth for deploy steps. Real secrets live in
-`~/aquire02/.env` on the host (gitignored — never commit or overwrite it).
+Database migrations under `db/migrations/` are **not** applied by a deploy — run
+them by hand before the PR into `main` is merged. Secrets are environment
+variables on the Coolify app, never in git.
 
 See [docs/infrastructure/DEPLOYMENT.md](docs/infrastructure/DEPLOYMENT.md) for
 provisioning, backups, and troubleshooting.

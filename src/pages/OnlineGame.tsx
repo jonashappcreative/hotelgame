@@ -17,6 +17,8 @@ const OnlineGame = () => {
     myPlayerIndex,
     maxPlayers,
     roomStatus,
+    roomRules,
+    turnOrderMode,
     isLoading,
     isCheckingActiveGame,
     activeGameInfo,
@@ -26,6 +28,9 @@ const OnlineGame = () => {
     handleToggleReady,
     handleAddBot,
     handleRemoveBot,
+    handleUpdateRules,
+    handleSetPlayerOrder,
+    handleSetTurnOrderMode,
     isHost,
     handleRejoinGame,
     dismissActiveGame,
@@ -36,8 +41,12 @@ const OnlineGame = () => {
     handlePayMergerBonuses,
     handleMergerStockChoice,
     handleBuyStocks,
+    handleSellStocks,
     handleSkipBuyStock,
-    handleEndGameVote,
+    handleDeclareGameEnd,
+    handlePlayPowerCard,
+    handlePowerTrade,
+    handleEndPlacements,
     handleNewGame,
     handleAutoEndTurn,
   } = useOnlineGame();
@@ -59,6 +68,8 @@ const OnlineGame = () => {
         players={players}
         myPlayerIndex={myPlayerIndex}
         maxPlayers={maxPlayers}
+        roomRules={roomRules}
+        turnOrderMode={turnOrderMode}
         isLoading={isLoading}
         isCheckingActiveGame={isCheckingActiveGame}
         activeGameInfo={activeGameInfo}
@@ -69,6 +80,9 @@ const OnlineGame = () => {
         isHost={isHost}
         onAddBot={handleAddBot}
         onRemoveBot={handleRemoveBot}
+        onUpdateRules={handleUpdateRules}
+        onSetPlayerOrder={handleSetPlayerOrder}
+        onSetTurnOrderMode={handleSetTurnOrderMode}
         onRejoinGame={handleRejoinGame}
         onDismissActiveGame={dismissActiveGame}
       />
@@ -88,8 +102,12 @@ const OnlineGame = () => {
       onPayMergerBonuses={handlePayMergerBonuses}
       onMergerStockChoice={handleMergerStockChoice}
       onBuyStocks={(purchases) => handleBuyStocks(purchases as { chain: ChainName; quantity: number }[])}
+      onSellStocks={handleSellStocks}
       onEndTurn={handleSkipBuyStock}
-      onEndGameVote={handleEndGameVote}
+      onDeclareGameEnd={handleDeclareGameEnd}
+      onPlayPowerCard={(card) => { void handlePlayPowerCard(card); }}
+      onPowerTrade={handlePowerTrade}
+      onEndPlacements={handleEndPlacements}
       onNewGame={handleNewGame}
       onReturnToLobby={handleLeaveRoom}
       onAutoEndTurn={handleAutoEndTurn}

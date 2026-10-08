@@ -1,4 +1,4 @@
-import { TileId, GameState } from '@/types/game';
+import { TileId, GameState, DEFAULT_RULES } from '@/types/game';
 import { analyzeTilePlacement } from '@/utils/gameLogic';
 import { cn } from '@/lib/utils';
 import { Ban } from 'lucide-react';
@@ -13,6 +13,11 @@ interface PlayerHandProps {
 }
 
 export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTileClick, selectedTile }: PlayerHandProps) => {
+  const handLimit = parseInt(
+    gameState.rulesSnapshot?.startingTiles ?? DEFAULT_RULES.startingTiles,
+    10,
+  );
+
   const isTilePlayable = (tileId: TileId): boolean => {
     if (!isCurrentPlayer || !canPlace) return false;
     const analysis = analyzeTilePlacement(gameState, tileId);
@@ -68,8 +73,10 @@ export const PlayerHand = ({ tiles, gameState, isCurrentPlayer, canPlace, onTile
           );
         })}
         
-        {/* Empty slots */}
-        {Array.from({ length: Math.max(0, 6 - tiles.length) }).map((_, i) => (
+        {/* Empty slots — the room's hand limit, not a hardcoded 6. A 5- or
+            7-tile room had the wrong number of placeholders before Epic 17, and
+            an 11-tile hand after Extra Tiles would have shown negative ones. */}
+        {Array.from({ length: Math.max(0, handLimit - tiles.length) }).map((_, i) => (
           <div
             key={`empty-${i}`}
             className="aspect-[4/3] rounded-md border-2 border-dashed border-border/30 bg-muted/20"

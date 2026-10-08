@@ -10,14 +10,27 @@ import {
   CHAIN_SIZE_BRACKETS,
   STOCKS_PER_CHAIN,
   MAX_STOCKS_PER_TURN,
-  SAFE_CHAIN_SIZE,
   END_GAME_CHAIN_SIZE,
   CustomRules,
   DEFAULT_RULES,
-  ELIGIBLE_CHAINS_5,
-  ELIGIBLE_CHAINS_6,
-  ELIGIBLE_CHAINS_7,
+  PowerCardId,
 } from '@/types/game';
+import {
+  normalizeRules,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getMaxChains,
+  getBonusTier,
+  getSellPriceFactor as getSellPriceFactorFromRules,
+} from '@/types/rules-normalize';
+import {
+  canPlayPowerCard,
+  canUseAnyPowerCard,
+  getStockAllowance,
+  isFreeStockActive,
+  powerCardHasUse,
+} from '@/types/power-cards';
 
 const ALL_COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
 
@@ -83,6 +96,18 @@ export const getStockPrice = (chainName: ChainName, size: number): number => {
   return prices[prices.length - 1];
 };
 
+// Fraction of market price the bank pays back. 0 means the Stock Selling rule
+// is off; a factor of 1 ("Full Value") is a legitimate, spread-free setting.
+// The rule itself lives in src/types/rules-normalize.ts, which the server reads
+// too — this wrapper only adds the "no rules yet" case the UI can hit.
+export const getSellPriceFactor = (rules: CustomRules | null): number =>
+  rules ? getSellPriceFactorFromRules(rules) : 0;
+
+// What the bank pays for one share, rounded down to the nearest $10 so the
+// figure always reads like a price on a chain card.
+export const getSellPrice = (chainName: ChainName, size: number, factor: number): number =>
+  Math.floor((getStockPrice(chainName, size) * factor) / 10) * 10;
+
 // Get majority and minority bonuses based on tier
 // standard: 10x majority / 5x minority
 // aggressive: 15x majority / 5x minority
@@ -133,27 +158,20 @@ export const getStockholderRankings = (
 };
 
 // Initialize game state
-export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAULT_RULES): GameState => {
+export const initializeGame = (playerNames: string[], rawRules: CustomRules = DEFAULT_RULES): GameState => {
   if (playerNames.length !== 4) {
     throw new Error('Game requires exactly 4 players');
   }
 
-  // Derive board dimensions from rules (Story 7)
-  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
-  const colsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
+  // A caller may still hand us a pre-Epic-15 rules blob (a rules_snapshot read
+  // back from the DB, say), so normalise before reading anything off it.
+  const rules = normalizeRules(rawRules);
+
+  const { boardRows, boardColsCount: colsCount } = getBoardDimensions(rules);
   const boardCols = ALL_COLS.slice(0, colsCount);
-
-  // Derive eligible chains from rules (Story 8)
-  const maxChainsNum = rules.chainFoundingEnabled ? parseInt(rules.maxChains) : 7;
-  const eligibleChains: ChainName[] =
-    maxChainsNum === 5 ? ELIGIBLE_CHAINS_5 :
-    maxChainsNum === 6 ? ELIGIBLE_CHAINS_6 :
-    ELIGIBLE_CHAINS_7;
-
-  // Derive bonus tier from rules (Story 6)
-  const bonusTier = (rules.bonusTierEnabled
-    ? rules.bonusTier
-    : 'standard') as 'standard' | 'flat' | 'aggressive';
+  const eligibleChains: ChainName[] = getEligibleChains(rules);
+  const maxChainsNum = getMaxChains(rules);
+  const bonusTier = getBonusTier(rules);
 
   // Initialize tile bag
   const tileBag = shuffle(generateAllTiles(boardRows, colsCount));
@@ -193,6 +211,9 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
         imperial: 0,
       },
       isConnected: true,
+      // Local hot-seat play never deals power cards — the rule is online-only,
+      // so the field exists on the type but the local engine leaves it empty.
+      powerCards: [],
     };
   });
 
@@ -227,11 +248,16 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     chains,
     stockBank,
     tileBag,
+    tileBagCount: tileBag.length,
     lastPlacedTile: startingTile,
     pendingChainFoundation: null,
     merger: null,
     mergerAdjacentChains: null,
     stocksPurchasedThisTurn: 0,
+    stocksSoldThisTurn: 0,
+    chainsBoughtThisTurn: [],
+    activePowerCard: null,
+    tilesPlacedThisTurn: 0,
     gameLog: [{
       timestamp: Date.now(),
       playerId: 'system',
@@ -241,10 +267,13 @@ export const initializeGame = (playerNames: string[], rules: CustomRules = DEFAU
     }],
     winner: null,
     endGameVotes: [],
+    endDeclaredBy: null,
     roundNumber: 0,
-    rulesSnapshot: null,
+    // Carry the rules the game was built from, and derive chain safety from
+    // them rather than pinning it at 11 — the default is now "no safe chains".
+    rulesSnapshot: rules,
     turnDeadlineEpoch: null,
-    safeChainSize: SAFE_CHAIN_SIZE,
+    safeChainSize: getSafeChainSize(rules),
     bonusTier,
     boardRows,
     boardCols,
@@ -466,8 +495,10 @@ export const growChain = (state: GameState, chainName: ChainName): GameState => 
 
 // Shares the current player may still buy this turn. Buying no longer ends the
 // turn, so this is what gates both the +/- controls and the automatic turn end.
+// The cap itself is no longer a constant: Extra Purchase (Epic 17) raises it to
+// 5 for the turn, and getStockAllowance is the same helper the server reads.
 export const getRemainingStockAllowance = (state: GameState): number =>
-  Math.max(0, MAX_STOCKS_PER_TURN - state.stocksPurchasedThisTurn);
+  Math.max(0, getStockAllowance(state.activePowerCard ?? null) - state.stocksPurchasedThisTurn);
 
 // True when the player could still buy at least one more share: allowance left,
 // and an active chain with stock in the bank priced within their cash. Once this
@@ -477,13 +508,114 @@ export const canBuyMoreStock = (
   playerIndex: number = state.currentPlayerIndex
 ): boolean => {
   if (getRemainingStockAllowance(state) === 0) return false;
+
+  // Free Shares makes price irrelevant, so the affordability half is skipped —
+  // otherwise a broke player's free-share turn would auto-end before they could
+  // take anything, which is the one turn the card exists for.
+  const free = isFreeStockActive(state.activePowerCard ?? null);
   const cash = state.players[playerIndex]?.cash ?? 0;
-  if (cash <= 0) return false;
+  if (!free && cash <= 0) return false;
 
   return (Object.keys(state.chains) as ChainName[]).some(chain =>
     state.chains[chain].isActive &&
     state.stockBank[chain] > 0 &&
-    getStockPrice(chain, state.chains[chain].tiles.length) <= cash
+    (free || getStockPrice(chain, state.chains[chain].tiles.length) <= cash)
+  );
+};
+
+/**
+ * The cards this player could still usefully play right now — both legal and
+ * with an actual use. Drives the End Turn warning, so ending a turn is never a
+ * silent forfeit of a one-shot card.
+ */
+export const usablePowerCards = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): PowerCardId[] => {
+  const player = state.players[playerIndex];
+  if (!player || state.rulesSnapshot?.powerCards !== 'on') return [];
+
+  const turn = {
+    enabled: true,
+    phase: state.phase,
+    held: player.powerCards ?? [],
+    active: state.activePowerCard ?? null,
+    stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
+    tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
+    tileBagCount: state.tileBagCount,
+  };
+  const use = {
+    chains: state.chains,
+    stockBank: state.stockBank,
+    stocks: player.stocks ?? {},
+    chainsBoughtThisTurn: state.chainsBoughtThisTurn ?? [],
+    cash: player.cash ?? 0,
+    handSize: player.tiles?.length ?? 0,
+  };
+
+  return (player.powerCards ?? []).filter(
+    (card) => canPlayPowerCard(card, turn).ok && powerCardHasUse(card, turn, use, getStockPrice),
+  );
+};
+
+/**
+ * Client mirror of the server's power-card term in the auto-end gate (Epic 17).
+ * True when the player still holds a card worth playing, or has an active card
+ * with an unspent use. Reads exactly the shared helpers game-action.ts reads, so
+ * the client never auto-ends a turn the server would have kept open.
+ */
+export const canUsePowerCard = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): boolean => {
+  const player = state.players[playerIndex];
+  if (!player) return false;
+
+  return canUseAnyPowerCard(
+    {
+      enabled: state.rulesSnapshot?.powerCards === 'on',
+      phase: state.phase,
+      held: player.powerCards ?? [],
+      active: state.activePowerCard ?? null,
+      stocksPurchasedThisTurn: state.stocksPurchasedThisTurn ?? 0,
+      tilesPlacedThisTurn: state.tilesPlacedThisTurn ?? 0,
+      tileBagCount: state.tileBagCount,
+    },
+    {
+      chains: state.chains,
+      stockBank: state.stockBank,
+      stocks: player.stocks ?? {},
+      chainsBoughtThisTurn: state.chainsBoughtThisTurn ?? [],
+      cash: player.cash ?? 0,
+      handSize: player.tiles?.length ?? 0,
+    },
+    getStockPrice,
+  );
+};
+
+// Shares the current player may still sell this turn. Selling has its own
+// budget, so a turn can be a rebalance rather than a buy-or-sell choice.
+export const getRemainingSellAllowance = (state: GameState): number =>
+  Math.max(0, MAX_STOCKS_PER_TURN - (state.stocksSoldThisTurn ?? 0));
+
+// True when the player has something they could actually sell: the rule is on,
+// allowance is left, and they hold shares in an active chain they didn't buy
+// this turn. Mirrors canBuyMoreStock and, with it, gates the automatic turn end.
+export const canSellStock = (
+  state: GameState,
+  playerIndex: number = state.currentPlayerIndex
+): boolean => {
+  if (getSellPriceFactor(state.rulesSnapshot) <= 0) return false;
+  if (getRemainingSellAllowance(state) === 0) return false;
+
+  const stocks = state.players[playerIndex]?.stocks;
+  if (!stocks) return false;
+  const boughtThisTurn = state.chainsBoughtThisTurn ?? [];
+
+  return (Object.keys(state.chains) as ChainName[]).some(chain =>
+    state.chains[chain].isActive &&
+    (stocks[chain] ?? 0) > 0 &&
+    !boughtThisTurn.includes(chain)
   );
 };
 
@@ -511,6 +643,10 @@ export const buyStocks = (
   newState.stockBank = newStockBank;
   newState.stocksPurchasedThisTurn =
     state.stocksPurchasedThisTurn + purchases.reduce((sum, p) => sum + p.quantity, 0);
+  // Recorded so the sell panel can block flipping a purchase in the same turn.
+  newState.chainsBoughtThisTurn = [
+    ...new Set([...(state.chainsBoughtThisTurn ?? []), ...purchases.map(p => p.chain)]),
+  ];
 
   newState.players = [...newState.players];
   newState.players[newState.currentPlayerIndex] = currentPlayer;
@@ -549,6 +685,7 @@ export const drawTile = (state: GameState): GameState => {
   newState.players = [...newState.players];
   newState.players[newState.currentPlayerIndex] = currentPlayer;
   newState.tileBag = newTileBag;
+  newState.tileBagCount = newTileBag.length;
 
   return newState;
 };
@@ -574,7 +711,7 @@ export const discardTile = (state: GameState, tileId: TileId): GameState => {
   // Draw new tile from bag
   if (newTileBag.length === 0) {
     // Edge case: bag is empty (shouldn't happen in normal game)
-    return { ...state, players: [...state.players], tileBag: newTileBag };
+    return { ...state, players: [...state.players], tileBag: newTileBag, tileBagCount: 0 };
   }
 
   const drawnTile = newTileBag.pop()!;
@@ -591,6 +728,7 @@ export const discardTile = (state: GameState, tileId: TileId): GameState => {
     ...state,
     players: newPlayers,
     tileBag: newTileBag,
+    tileBagCount: newTileBag.length,
   };
 };
 
@@ -602,6 +740,8 @@ export const endTurn = (state: GameState): GameState => {
   newState.roundNumber = nextPlayerIndex === 0 ? state.roundNumber + 1 : state.roundNumber;
   newState.phase = 'place_tile';
   newState.stocksPurchasedThisTurn = 0;
+  newState.stocksSoldThisTurn = 0;
+  newState.chainsBoughtThisTurn = [];
   newState.lastPlacedTile = null;
 
   return newState;
@@ -610,11 +750,45 @@ export const endTurn = (state: GameState): GameState => {
 // Check if game should end
 // Game ends ONLY when any chain reaches the end-game tile threshold.
 // Small board (6 rows) uses 30; standard board uses 41.
+// Still the local hot-seat engine's end condition — online play declares
+// instead (Epic 18, canDeclareGameEnd below).
 export const checkGameEnd = (state: GameState): boolean => {
   const endSize = state.boardRows === 6 ? 30 : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(state.chains).filter(c => c.isActive);
   return activeChains.some(c => c.tiles.length >= endSize);
 };
+
+/**
+ * Client mirror of server/lib/rules.ts canDeclareGameEnd (Epic 18). Whether the
+ * player whose turn it is may declare the game over: one active chain at the
+ * end-game size, or every active chain safe.
+ *
+ * The empty-board guard is the all-safe condition's precondition — "every
+ * active chain is safe" is vacuously true with no chains, which would let a
+ * player end the game on turn one.
+ */
+export const canDeclareGameEnd = (state: GameState): boolean =>
+  endConditionReason(state) !== null;
+
+/**
+ * Which condition is met, so the UI can name it — the two read completely
+ * differently at the table. `null` when the game cannot be declared over.
+ */
+export const endConditionReason = (state: GameState): 'threshold' | 'all_safe' | null => {
+  const activeChains = Object.values(state.chains ?? {}).filter(c => c?.isActive);
+  if (activeChains.length === 0) return null;
+
+  const endSize = state.boardRows === 6 ? 30 : END_GAME_CHAIN_SIZE;
+  if (activeChains.some(c => c.tiles.length >= endSize)) return 'threshold';
+  // safeChainSize is null when chainSafety is 'none' (the default), which makes
+  // isSafe permanently false — so this route never fires in a default room.
+  if (state.safeChainSize !== null && activeChains.every(c => c.isSafe)) return 'all_safe';
+  return null;
+};
+
+/** True once a player has announced the end; the game ends when their turn does. */
+export const isEndDeclared = (state: GameState): boolean =>
+  state.endDeclaredBy !== null && state.endDeclaredBy !== undefined;
 
 // Calculate final scores
 export const calculateFinalScores = (state: GameState): PlayerState[] => {

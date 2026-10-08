@@ -6,26 +6,26 @@
   Supabase anymore. The backend lives entirely under `server/`: `server.ts` is
   the entrypoint, `server/api/` holds one handler per endpoint, and `server/lib/`
   holds the shared modules (db, auth, rules, bot, CORS, errors, Socket.IO).
-- Backend stack (all on Hetzner, in Docker):
+- Backend stack (all on Hetzner, managed by Coolify):
   - API + Auth: Hono server (`server/server.ts`), custom JWT signed/verified with `jose`
   - Realtime: Socket.io served by that same backend on `:3000`
-  - DB: self-hosted Postgres (`postgres:16-alpine`) container
-  - Caddy: TLS + reverse proxy + serves the static `dist/`
+  - Frontend: the same container serves the static `dist/`
+  - DB: Coolify-managed Postgres, container `a8ws9g5d9w9j1rhz2lfx73k2`
+  - TLS + routing: Coolify's Traefik proxy
 - Built with React, TypeScript, Vite, and Tailwind CSS
 
 ## Deploying to the server
-- **The full deploy process is documented in [`docs/DEPLOYMENT.md`](./DEPLOYMENT.md).** Read it before deploying.
-- When Jonas says **"push this to the server"**, **"merge to main and update on
-  server"**, **"deploy"**, or anything similar, do this:
-  1. Make sure the intended work is committed and pushed to `origin/main`.
-  2. Deploy by running, on his behalf:
-     `ssh hetzner "cd ~/aquire02 && ./deploy.sh"`
-  3. Verify: `curl -fsS https://hotelgame.jonashapp.com/health` and check
-     `docker compose ps` / backend logs.
-- The server checkout is `~/aquire02` (a git clone of `origin/main`). Real
-  secrets live in `~/aquire02/.env` (gitignored — never overwrite or commit it).
-- `deploy.sh` is the single source of truth for deploy steps. Don't invent
-  ad-hoc deploy commands — update `deploy.sh` instead.
+- **The full deploy process is documented in [`infrastructure/DEPLOYMENT.md`](./infrastructure/DEPLOYMENT.md).** Read it before deploying.
+- A deploy **is** a merge into `main`: GitHub Actions (`deploy.yml`) calls the
+  Coolify webhook, Coolify rebuilds from `server/Dockerfile`, and the workflow
+  health-checks and tags. Coolify's own Git auto-deploy is off on purpose.
+- When Jonas says **"push this to the server"**, **"deploy"**, or similar, that
+  means promoting to `main` via `/release` (see below), then verifying:
+  `curl -fsS https://hotelgame.jonashapp.com/health` and `gh run list --workflow=deploy.yml`.
+- **DB migrations are manual and must run before the merge into `main`:**
+  `ssh hetzner "docker exec -i a8ws9g5d9w9j1rhz2lfx73k2 psql -v ON_ERROR_STOP=1 -U postgres -d postgres" < db/migrations/<file>.sql`
+- `deploy.sh`, `docker-compose.yml`, `Caddyfile` and `/root/aquire02` on the server
+  are the retired pre-Coolify stack. Never deploy with them; `acquire-db` no longer exists.
 
 ## Branching and releases
 - **Full process: [`docs/CI_CD.md`](./CI_CD.md).** Read it before promoting anything.

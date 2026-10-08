@@ -11,46 +11,58 @@ export type ChainName =
   | 'festival' | 'continental' | 'imperial';
 export type TileId = string;
 
-// Mirror of src/types/game.ts CustomRules — keep in sync (founderFreeStock intentionally excluded)
-export interface CustomRules {
-  startWithTileOnBoard: boolean;
-  turnTimerEnabled: boolean;
-  turnTimer: string;
-  disableTimerFirstRounds: boolean;
-  chainSafetyEnabled: boolean;
-  chainSafetyThreshold: string;
-  cashVisibilityEnabled: boolean;
-  cashVisibility: string;
-  bonusTierEnabled: boolean;
-  bonusTier: string;
-  boardSizeEnabled: boolean;
-  boardSize: string;
-  chainFoundingEnabled: boolean;
-  maxChains: string;
-  startingConditionsEnabled: boolean;
-  startingCash: string;
-  startingTiles: string;
-}
+// Rules model, normalisation, validation and the derived getters all live in
+// src/types/rules-normalize.ts so the browser engine and this one read the same
+// definitions. They are re-exported here because every server module already
+// imports its rule helpers from `../lib/rules`.
+export type { CustomRules, PowerCardId, ActivePowerCard } from '../../src/types/game';
+export {
+  DEFAULT_RULES,
+  POWER_CARDS,
+  EXTRA_BUY_LIMIT,
+  EXTRA_TILES_DRAW,
+  MULTI_TILE_LIMIT,
+  MAX_POWER_TRADES,
+  TRADE_GIVE,
+  TRADE_RECEIVE,
+} from '../../src/types/game';
 
-export const DEFAULT_RULES: CustomRules = {
-  startWithTileOnBoard: true,
-  turnTimerEnabled: false,
-  turnTimer: '60',
-  disableTimerFirstRounds: true,
-  chainSafetyEnabled: false,
-  chainSafetyThreshold: 'none',
-  cashVisibilityEnabled: false,
-  cashVisibility: 'hidden',
-  bonusTierEnabled: false,
-  bonusTier: 'standard',
-  boardSizeEnabled: false,
-  boardSize: '9x12',
-  chainFoundingEnabled: false,
-  maxChains: '7',
-  startingConditionsEnabled: false,
-  startingCash: '6000',
-  startingTiles: '6',
-};
+// Power-card legality (Epic 17). The server gates play_power_card on exactly
+// the function the client uses to disable a button, so the two can never
+// disagree about what is playable.
+export {
+  canPlayPowerCard,
+  canUseAnyPowerCard,
+  powerCardHasUse,
+  getStockAllowance,
+  isFreeStockActive,
+  isMultiTileActive,
+  remainingPowerTrades,
+  normalizeActivePowerCard,
+  normalizePowerCards,
+  isPowerCardId,
+  POWER_CARD_INFO,
+} from '../../src/types/power-cards';
+export type {
+  PowerCardLegality,
+  PowerCardTurnState,
+  PowerCardUseState,
+} from '../../src/types/power-cards';
+export {
+  normalizeRules,
+  validateRules,
+  isLegacyRules,
+  coerceBoardSizeCoupling,
+  getSafeChainSize,
+  getBoardDimensions,
+  getEligibleChains,
+  getMaxChains,
+  getBonusTier,
+  getSellPriceFactor,
+  getTurnTimerSeconds,
+  RULE_VALUES,
+} from '../../src/types/rules-normalize';
+export type { ValidationResult } from '../../src/types/rules-normalize';
 
 export interface MergerStockDecision {
   sell: number;
@@ -69,6 +81,8 @@ export const CHAINS: Record<ChainName, { displayName: string; tier: 'budget' | '
   imperial: { displayName: 'Imperial', tier: 'premium' },
 };
 
+import { MAX_POWER_TRADES, TRADE_GIVE, TRADE_RECEIVE } from '../../src/types/game';
+
 export const END_GAME_CHAIN_SIZE = 41;
 export const MAX_STOCKS_PER_TURN = 3;
 export const CHAIN_SIZE_BRACKETS = [2, 3, 5, 10, 20, 30, 40, Infinity] as const;
@@ -84,28 +98,6 @@ export const ELIGIBLE_CHAINS_5_EF: ChainName[] = ['sackson', 'tower', 'worldwide
 export const ELIGIBLE_CHAINS_6_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'continental', 'imperial'];
 export const ELIGIBLE_CHAINS_7_EF: ChainName[] = ['sackson', 'tower', 'worldwide', 'american', 'festival', 'continental', 'imperial'];
 
-export function getSafeChainSize(rules: CustomRules): number | null {
-  if (!rules.chainSafetyEnabled) return null;
-  if (rules.chainSafetyThreshold === 'none') return null;
-  return parseInt(rules.chainSafetyThreshold);
-}
-
-export function getBoardDimensions(rules: CustomRules): { boardRows: number; boardColsCount: number } {
-  const boardRows = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 6 : 9;
-  const boardColsCount = rules.boardSizeEnabled && rules.boardSize === '6x10' ? 10 : 12;
-  return { boardRows, boardColsCount };
-}
-
-export function getEligibleChains(rules: CustomRules): ChainName[] {
-  if (!rules.chainFoundingEnabled) return ELIGIBLE_CHAINS_7_EF;
-  const max = parseInt(rules.maxChains);
-  return max === 5 ? ELIGIBLE_CHAINS_5_EF : max === 6 ? ELIGIBLE_CHAINS_6_EF : ELIGIBLE_CHAINS_7_EF;
-}
-
-export function getBonusTier(rules: CustomRules): string {
-  return rules.bonusTierEnabled ? rules.bonusTier : 'standard';
-}
-
 // Helper functions
 export function getStockPrice(chainName: ChainName, size: number): number {
   if (size === 0) return 0;
@@ -118,6 +110,226 @@ export function getStockPrice(chainName: ChainName, size: number): number {
     }
   }
   return prices[prices.length - 1];
+}
+
+// What the bank pays for one share, rounded down to the nearest $10 so the
+// figure always reads like a price on a chain card. `factor` comes from
+// getSellPriceFactor; a factor of 1 is the identity of getStockPrice.
+export function getSellPrice(chainName: ChainName, size: number, factor: number): number {
+  return Math.floor((getStockPrice(chainName, size) * factor) / 10) * 10;
+}
+
+export interface SaleRequest {
+  chain: ChainName;
+  quantity: number;
+}
+
+export interface SaleOutcome {
+  ok: boolean;
+  /** Present when ok. */
+  settlement?: SaleSettlement;
+  /** Present when the sale was rejected. */
+  error?: string;
+}
+
+export interface SaleSettlement {
+  /** Cash the seller receives for the whole basket. */
+  proceeds: number;
+  /** Shares sold across all chains. */
+  totalQuantity: number;
+  /** Seller's holdings after the sale. */
+  newStocks: Record<ChainName, number>;
+  /** Bank holdings after the sale. */
+  newStockBank: Record<ChainName, number>;
+  /** Per-chain breakdown, for the game log. */
+  lines: { chain: ChainName; quantity: number; amount: number }[];
+}
+
+// Pure validation + settlement for a sale basket. The engine case in
+// server/api/game-action.ts does nothing but persist what this returns, which
+// keeps every rejection rule testable without a database.
+export function settleSale(opts: {
+  sales: SaleRequest[];
+  chains: Record<ChainName, { tiles: TileId[]; isActive: boolean }>;
+  stocks: Record<ChainName, number>;
+  stockBank: Record<ChainName, number>;
+  soldThisTurn: number;
+  chainsBoughtThisTurn: ChainName[];
+  factor: number;
+}): SaleOutcome {
+  const { sales, chains, stocks, stockBank, soldThisTurn, chainsBoughtThisTurn, factor } = opts;
+
+  if (factor <= 0) return { ok: false, error: 'Stock selling is not enabled in this room' };
+  if (!Array.isArray(sales) || sales.length === 0) {
+    return { ok: false, error: 'No shares selected to sell' };
+  }
+
+  // Collapse duplicate entries so a basket can't slip past the per-chain checks
+  // by naming the same chain twice.
+  const wanted = new Map<ChainName, number>();
+  for (const sale of sales) {
+    const qty = Number(sale?.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return { ok: false, error: 'Sale quantity must be a positive whole number' };
+    }
+    if (!chains[sale.chain]) return { ok: false, error: `Unknown chain: ${sale.chain}` };
+    wanted.set(sale.chain, (wanted.get(sale.chain) ?? 0) + qty);
+  }
+
+  const totalQuantity = [...wanted.values()].reduce((sum, q) => sum + q, 0);
+  if (soldThisTurn + totalQuantity > MAX_STOCKS_PER_TURN) {
+    return { ok: false, error: `Cannot sell more than ${MAX_STOCKS_PER_TURN} stocks per turn` };
+  }
+
+  const newStocks = { ...stocks };
+  const newStockBank = { ...stockBank };
+  const lines: { chain: ChainName; quantity: number; amount: number }[] = [];
+  let proceeds = 0;
+
+  for (const [chain, quantity] of wanted) {
+    if (!chains[chain].isActive) {
+      return { ok: false, error: `Cannot sell stock in inactive chain: ${chain}` };
+    }
+    if (chainsBoughtThisTurn.includes(chain)) {
+      return { ok: false, error: `Cannot sell ${CHAINS[chain].displayName} — bought this turn` };
+    }
+    if ((stocks[chain] ?? 0) < quantity) {
+      return {
+        ok: false,
+        error: `You only hold ${stocks[chain] ?? 0} ${CHAINS[chain].displayName} share(s)`,
+      };
+    }
+
+    const amount = getSellPrice(chain, chains[chain].tiles.length, factor) * quantity;
+    proceeds += amount;
+    newStocks[chain] = (newStocks[chain] ?? 0) - quantity;
+    newStockBank[chain] = (newStockBank[chain] ?? 0) + quantity;
+    lines.push({ chain, quantity, amount });
+  }
+
+  return { ok: true, settlement: { proceeds, totalQuantity, newStocks, newStockBank, lines } };
+}
+
+export interface TradeGive {
+  chain: ChainName;
+  quantity: number;
+}
+
+export interface TradeOutcome {
+  ok: boolean;
+  /** Present when ok. */
+  settlement?: TradeSettlement;
+  /** Present when the trade was rejected. */
+  error?: string;
+}
+
+export interface TradeSettlement {
+  /** Trader's holdings after the trade. */
+  newStocks: Record<ChainName, number>;
+  /** Bank holdings after the trade. */
+  newStockBank: Record<ChainName, number>;
+  /** chains_bought_this_turn after the received chain is added to it. */
+  newChainsBoughtThisTurn: ChainName[];
+  /** Per-chain breakdown of what was given, for the game log. */
+  given: { chain: ChainName; quantity: number }[];
+  received: ChainName;
+}
+
+/**
+ * Pure validation + settlement for one power-card trade (Epic 17, Stock Trade):
+ * TRADE_GIVE shares the player owns go back to the bank, TRADE_RECEIVE come out
+ * of it. Beside settleSale for the same reason — the engine case persists what
+ * this returns, so every rejection rule is testable without a database.
+ *
+ * Both sides are restricted to chains currently active on the board: defunct
+ * certificates are worthless paper and must not be launderable into live stock.
+ * Epic 14's "no selling what you bought this turn" guard extends to both halves
+ * — the give side is blocked for a chain bought this turn, and the chain
+ * received joins that list — or buy-then-trade would be a way around it.
+ */
+export function settleTrade(opts: {
+  give: TradeGive[];
+  receive: ChainName;
+  chains: Record<ChainName, { tiles: TileId[]; isActive: boolean }>;
+  stocks: Record<ChainName, number>;
+  stockBank: Record<ChainName, number>;
+  tradesUsed: number;
+  chainsBoughtThisTurn: ChainName[];
+}): TradeOutcome {
+  const { give, receive, chains, stocks, stockBank, tradesUsed, chainsBoughtThisTurn } = opts;
+
+  if (tradesUsed >= MAX_POWER_TRADES) {
+    return { ok: false, error: `You have used all ${MAX_POWER_TRADES} trades this turn` };
+  }
+  if (!Array.isArray(give) || give.length === 0) {
+    return { ok: false, error: 'No shares selected to trade away' };
+  }
+  if (!receive || !chains[receive]) {
+    return { ok: false, error: `Unknown chain: ${receive}` };
+  }
+
+  // Collapse duplicates so a request can't slip past the per-chain checks by
+  // naming the same chain twice.
+  const wanted = new Map<ChainName, number>();
+  for (const entry of give) {
+    const qty = Number(entry?.quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return { ok: false, error: 'Trade quantity must be a positive whole number' };
+    }
+    if (!chains[entry.chain]) return { ok: false, error: `Unknown chain: ${entry.chain}` };
+    wanted.set(entry.chain, (wanted.get(entry.chain) ?? 0) + qty);
+  }
+
+  const totalGiven = [...wanted.values()].reduce((sum, q) => sum + q, 0);
+  if (totalGiven !== TRADE_GIVE) {
+    return { ok: false, error: `A trade gives exactly ${TRADE_GIVE} shares` };
+  }
+
+  const newStocks = { ...stocks };
+  const newStockBank = { ...stockBank };
+  const given: { chain: ChainName; quantity: number }[] = [];
+
+  for (const [chain, quantity] of wanted) {
+    if (!chains[chain].isActive) {
+      return { ok: false, error: `${CHAINS[chain].displayName} is not on the board` };
+    }
+    if (chainsBoughtThisTurn.includes(chain)) {
+      return { ok: false, error: `Cannot trade away ${CHAINS[chain].displayName} — bought this turn` };
+    }
+    if ((stocks[chain] ?? 0) < quantity) {
+      return {
+        ok: false,
+        error: `You only hold ${stocks[chain] ?? 0} ${CHAINS[chain].displayName} share(s)`,
+      };
+    }
+    newStocks[chain] = (newStocks[chain] ?? 0) - quantity;
+    newStockBank[chain] = (newStockBank[chain] ?? 0) + quantity;
+    given.push({ chain, quantity });
+  }
+
+  if (!chains[receive].isActive) {
+    return { ok: false, error: `${CHAINS[receive].displayName} is not on the board` };
+  }
+  // Checked against the bank *after* the given shares are returned, so trading
+  // 2 Tower for 1 Tower is legal (and pointless), and trading into a chain whose
+  // last share you just handed back works.
+  if ((newStockBank[receive] ?? 0) < TRADE_RECEIVE) {
+    return { ok: false, error: `No ${CHAINS[receive].displayName} shares left in the bank` };
+  }
+
+  newStockBank[receive] = (newStockBank[receive] ?? 0) - TRADE_RECEIVE;
+  newStocks[receive] = (newStocks[receive] ?? 0) + TRADE_RECEIVE;
+
+  return {
+    ok: true,
+    settlement: {
+      newStocks,
+      newStockBank,
+      newChainsBoughtThisTurn: [...new Set<ChainName>([...chainsBoughtThisTurn, receive])],
+      given,
+      received: receive,
+    },
+  };
 }
 
 export function getBonuses(chainName: ChainName, size: number, bonusTier: string = 'standard'): { majority: number; minority: number } {
@@ -149,6 +361,38 @@ export function getAdjacentTiles(tileId: TileId, boardRows: number = 9, boardCol
   return adjacent;
 }
 
+/**
+ * Whether a tile could legally be placed on the board as it stands. A tile is
+ * dead when it would merge two safe chains, or would found a chain with none
+ * left to found. Extracted so the four callers that need it — the turn timer,
+ * the stalemate backstop, the Building Spree exit and the bot — all agree.
+ */
+export function isTilePlayable(opts: {
+  tileId: TileId;
+  board: Record<string, any>;
+  chains: Record<string, any>;
+  eligibleChains: ChainName[];
+  boardRows: number;
+  boardColsCount: number;
+}): boolean {
+  const { tileId, board, chains, eligibleChains, boardRows, boardColsCount } = opts;
+
+  const adjacentChains = new Set<ChainName>();
+  let adjacentUnincorporated = 0;
+  for (const adj of getAdjacentTiles(tileId, boardRows, boardColsCount)) {
+    const tile = board[adj];
+    if (!tile?.placed) continue;
+    if (tile.chain) adjacentChains.add(tile.chain as ChainName);
+    else adjacentUnincorporated++;
+  }
+
+  const touching = Array.from(adjacentChains);
+  if (touching.length >= 2 && touching.filter((c) => chains[c]?.isSafe).length >= 2) return false;
+  if (touching.length === 0 && adjacentUnincorporated > 0 &&
+      eligibleChains.filter((c) => !chains[c]?.isActive).length === 0) return false;
+  return true;
+}
+
 export function shuffle<T>(array: T[]): T[] {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -171,10 +415,57 @@ export function generateAllTiles(boardRows: number = 9, boardColsCount: number =
 
 export const SMALL_BOARD_END_GAME_SIZE = 30;
 
+// The 41-tile threshold on its own. Since Epic 18 the online engine no longer
+// ends a game off this — it is kept for the local hot-seat engine's mirror and
+// as the size half of canDeclareGameEnd below.
 export function checkGameEnd(chains: Record<ChainName, any>, boardRows: number = 9): boolean {
   const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
   const activeChains = Object.values(chains).filter((c: any) => c.isActive);
   return activeChains.some((c: any) => c.tiles.length >= endSize);
+}
+
+/**
+ * Whether the player whose turn it is may *declare* the game over (Epic 18).
+ * Acquire's two conditions, and nothing else ends a game on the online path:
+ *   1. one active chain has reached the end-game size (41, or 30 on 6 rows), or
+ *   2. every active chain is safe.
+ *
+ * The `active.length === 0` guard is the second condition's precondition, not an
+ * optimisation: "every active chain is safe" is vacuously true of an empty
+ * board, which would otherwise let anyone end the game on turn one.
+ *
+ * Condition 2 is inert whenever chain safety is off (`chainSafety: 'none'` makes
+ * getSafeChainSize return null and every chain permanently unsafe), which is the
+ * default — so a default room's only route to the end remains a 41-tile chain.
+ */
+export function canDeclareGameEnd(
+  chains: Record<ChainName, any>,
+  boardRows: number = 9,
+  safeChainSize: number | null = null,
+): boolean {
+  const active = Object.values(chains ?? {}).filter((c: any) => c?.isActive);
+  if (active.length === 0) return false;
+
+  const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
+  const hasGiant = active.some((c: any) => c.tiles.length >= endSize);
+  const allSafe = safeChainSize !== null && active.every((c: any) => c.isSafe);
+
+  return hasGiant || allSafe;
+}
+
+/** Which of the two conditions is met, for UI that has to name it. */
+export function endConditionReason(
+  chains: Record<ChainName, any>,
+  boardRows: number = 9,
+  safeChainSize: number | null = null,
+): 'threshold' | 'all_safe' | null {
+  const active = Object.values(chains ?? {}).filter((c: any) => c?.isActive);
+  if (active.length === 0) return null;
+
+  const endSize = boardRows === 6 ? SMALL_BOARD_END_GAME_SIZE : END_GAME_CHAIN_SIZE;
+  if (active.some((c: any) => c.tiles.length >= endSize)) return 'threshold';
+  if (safeChainSize !== null && active.every((c: any) => c.isSafe)) return 'all_safe';
+  return null;
 }
 
 export function getStockholderRankings(players: any[], chainName: ChainName): { majority: any[]; minority: any[] } {

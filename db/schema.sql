@@ -72,6 +72,29 @@ CREATE TABLE IF NOT EXISTS game_rooms (
   CONSTRAINT valid_player_count CHECK (max_players >= 2 AND max_players <= 6)
 );
 
+-- Epic 15 (added post-launch; see db/migrations/2026-08-30-epic15-host-and-turn-order.sql).
+--   host_user_id    — the room's owner. Host privilege used to be derived from
+--                     player_index = 0, which is what pinned the host to the
+--                     first seat; it is now explicit so the host can sit
+--                     anywhere in the turn order.
+--   turn_order_mode — 'random' shuffles all seats at game start, 'manual' means
+--                     the host arranged them by hand.
+-- Since Epic 15 max_players is pure capacity, always 6 — the host no longer
+-- picks a player count, and a room starts at 2+ players with all humans ready.
+-- Idempotent so this file can be re-applied to an already-provisioned DB.
+ALTER TABLE game_rooms ADD COLUMN IF NOT EXISTS host_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE game_rooms ADD COLUMN IF NOT EXISTS turn_order_mode VARCHAR(10) NOT NULL DEFAULT 'random';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'valid_turn_order_mode') THEN
+    ALTER TABLE game_rooms
+      ADD CONSTRAINT valid_turn_order_mode CHECK (turn_order_mode IN ('random', 'manual'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_game_rooms_host_user_id ON game_rooms (host_user_id);
+
 DROP TRIGGER IF EXISTS update_game_rooms_updated_at ON game_rooms;
 CREATE TRIGGER update_game_rooms_updated_at
   BEFORE UPDATE ON game_rooms
@@ -110,6 +133,10 @@ CREATE TABLE IF NOT EXISTS game_players (
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS bot_difficulty VARCHAR(10);
 
+-- Power Cards (Epic 17, added post-launch): the cards this player still holds.
+-- Public — every player sees what everyone else has left to spend.
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS power_cards TEXT[] NOT NULL DEFAULT '{}';
+
 -- Prevent the same user joining the same room twice (also guards race conditions)
 CREATE UNIQUE INDEX IF NOT EXISTS unique_user_per_room
   ON game_players (room_id, user_id);
@@ -136,6 +163,8 @@ CREATE TABLE IF NOT EXISTS game_states (
   pending_chain_foundation  TEXT[],
   merger                    JSONB,
   stocks_purchased_this_turn INTEGER NOT NULL DEFAULT 0,
+  stocks_sold_this_turn     INTEGER NOT NULL DEFAULT 0,
+  chains_bought_this_turn   TEXT[] NOT NULL DEFAULT '{}',
   game_log                  JSONB NOT NULL DEFAULT '[]',
   winner                    VARCHAR(100),
   end_game_votes            TEXT[] DEFAULT '{}',
@@ -144,6 +173,24 @@ CREATE TABLE IF NOT EXISTS game_states (
   round_number              INTEGER DEFAULT 0,
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Stock Selling (Epic 14, added post-launch): selling has its own per-turn
+-- budget, and chains bought this turn cannot be sold again in the same turn.
+-- Idempotent so this file can be re-applied to an already-provisioned DB.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS stocks_sold_this_turn INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS chains_bought_this_turn TEXT[] NOT NULL DEFAULT '{}';
+
+-- End-Game Declaration (Epic 18, added post-launch). The seat that announced
+-- the game will end (NULL = nobody has), and the round an end condition was
+-- first seen, which anchors the bots' declaration backstop.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_declared_by INTEGER DEFAULT NULL;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS end_condition_round INTEGER DEFAULT NULL;
+
+-- Power Cards (Epic 17, added post-launch). The card in effect this turn
+-- ({"card": ..., "tradesUsed": n}), cleared at every turn end, and the
+-- always-maintained count of tiles placed this turn.
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS active_power_card JSONB DEFAULT NULL;
+ALTER TABLE game_states ADD COLUMN IF NOT EXISTS tiles_placed_this_turn INTEGER NOT NULL DEFAULT 0;
 
 DROP TRIGGER IF EXISTS update_game_states_updated_at ON game_states;
 CREATE TRIGGER update_game_states_updated_at
@@ -166,6 +213,75 @@ CREATE TABLE IF NOT EXISTS game_history (
 );
 
 -- -----------------------------------------------------------------------------
+-- game_results / game_result_players — durable statistics record (Epic 16)
+-- -----------------------------------------------------------------------------
+-- game_history above is superseded and no longer read: it never had a writer,
+-- and its ON DELETE CASCADE against game_rooms meant any row would be deleted
+-- by cleanup-rooms within ~10 minutes of the game ending.
+--
+-- These tables hold NO foreign key to game_rooms — a finished game is an
+-- immutable fact that must outlive the room. source_room_id is a bare UUID kept
+-- only so recording is idempotent; users are referenced ON DELETE SET NULL.
+-- Written by server/lib/results.ts, read by server/api/stats.ts.
+-- See db/migrations/2026-08-31-epic16-game-results.sql.
+CREATE TABLE IF NOT EXISTS game_results (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_room_id     UUID NOT NULL UNIQUE,
+  room_code          VARCHAR(8),
+  started_at         TIMESTAMPTZ,
+  ended_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  duration_seconds   INTEGER,
+  rounds             INTEGER,
+  end_reason         VARCHAR(16) NOT NULL DEFAULT 'unknown',
+  player_count       INTEGER NOT NULL,
+  human_count        INTEGER NOT NULL,
+  bot_count          INTEGER NOT NULL,
+  winner_name        VARCHAR(50),
+  winner_is_bot      BOOLEAN,
+  winner_difficulty  VARCHAR(10),
+  winning_total      INTEGER,
+  rules              JSONB NOT NULL DEFAULT '{}'::jsonb,
+  final_chains       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  mergers_count      INTEGER NOT NULL DEFAULT 0,
+  largest_chain      VARCHAR(20),
+  largest_chain_size INTEGER,
+  app_version        VARCHAR(16),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 'declared' and 'stalemate' are Epic 18's reasons; 'threshold' and 'vote' are
+-- legacy values no new game writes, kept for historical rows. Dropped and
+-- recreated rather than guarded on existence, so re-applying this file to a
+-- database provisioned before Epic 18 actually widens the constraint.
+ALTER TABLE game_results DROP CONSTRAINT IF EXISTS valid_end_reason;
+ALTER TABLE game_results
+  ADD CONSTRAINT valid_end_reason
+  CHECK (end_reason IN ('declared', 'stalemate', 'threshold', 'vote', 'auto', 'unknown'));
+
+CREATE INDEX IF NOT EXISTS idx_game_results_ended_at ON game_results (ended_at DESC);
+
+CREATE TABLE IF NOT EXISTS game_result_players (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  result_id         UUID NOT NULL REFERENCES game_results(id) ON DELETE CASCADE,
+  user_id           UUID REFERENCES users(id) ON DELETE SET NULL,
+  display_name      VARCHAR(50) NOT NULL,
+  seat_index        INTEGER NOT NULL,
+  is_bot            BOOLEAN NOT NULL DEFAULT false,
+  bot_difficulty    VARCHAR(10),
+  final_cash        INTEGER NOT NULL DEFAULT 0,
+  final_stock_value INTEGER NOT NULL DEFAULT 0,
+  final_bonus_total INTEGER NOT NULL DEFAULT 0,
+  final_total       INTEGER NOT NULL DEFAULT 0,
+  placement         INTEGER NOT NULL,
+  stocks            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT unique_seat_per_result UNIQUE (result_id, seat_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_result_players_result ON game_result_players (result_id);
+CREATE INDEX IF NOT EXISTS idx_game_result_players_user
+  ON game_result_players (user_id) WHERE user_id IS NOT NULL;
+
+-- -----------------------------------------------------------------------------
 -- Public views — the browser-facing projection that strips sensitive columns.
 -- Without RLS these are plain views; the API layer queries them
 -- (instead of the base tables) whenever it returns data to the client.
@@ -181,6 +297,7 @@ CREATE VIEW game_players_public AS
     player_index,
     cash,
     stocks,
+    power_cards,
     is_connected,
     is_ready,
     is_bot,
@@ -190,7 +307,9 @@ CREATE VIEW game_players_public AS
     created_at
   FROM game_players;
 
--- game_states_public: excludes tile_bag
+-- game_states_public: excludes tile_bag, but exposes its length as
+-- tile_bag_count — extra_tiles is refused on an empty bag, so the client
+-- needs that number without seeing which tiles are left to draw.
 DROP VIEW IF EXISTS game_states_public;
 CREATE VIEW game_states_public AS
   SELECT
@@ -205,13 +324,20 @@ CREATE VIEW game_states_public AS
     pending_chain_foundation,
     game_log,
     end_game_votes,
+    end_declared_by,
+    end_condition_round,
     stocks_purchased_this_turn,
+    stocks_sold_this_turn,
+    chains_bought_this_turn,
+    active_power_card,
+    tiles_placed_this_turn,
     merger,
     winner,
     updated_at,
     rules_snapshot,
     turn_deadline_epoch,
-    round_number
+    round_number,
+    COALESCE(array_length(tile_bag, 1), 0) AS tile_bag_count
   FROM game_states;
 
 -- =============================================================================

@@ -13,6 +13,14 @@ import { verifyAuth } from '../lib/auth';
 import { getCorsHeaders } from '../lib/cors';
 import { notifyWsServer } from '../lib/ws';
 import { decideBotMove, type BotDifficulty } from '../lib/bot';
+import {
+  MIN_PLAYERS_TO_START,
+  reindexPlayers,
+  refillHand,
+  getHandLimit,
+  phaseAfterPlacement,
+} from '../lib/players';
+import { recordIfFinished, endReasonForAction } from '../lib/results';
 
 // Pure Hotel Game rule helpers, constants, and shared types now live in
 // ../lib/rules.ts so the bot (../lib/bot.ts) evaluates moves with the exact
@@ -22,34 +30,64 @@ import {
   type TileId,
   type CustomRules,
   type MergerStockDecision,
-  DEFAULT_RULES,
+  normalizeRules,
+  coerceBoardSizeCoupling,
+  getTurnTimerSeconds,
   CHAINS,
-  MAX_STOCKS_PER_TURN,
   getSafeChainSize,
   getBoardDimensions,
   getEligibleChains,
   getBonusTier,
+  getSellPriceFactor,
+  settleSale,
   getStockPrice,
   getBonuses,
   getAdjacentTiles,
   shuffle,
   generateAllTiles,
-  checkGameEnd,
+  canDeclareGameEnd,
+  endConditionReason,
   getStockholderRankings,
   calculateFinalScores,
+  isTilePlayable,
+  // Power cards (Epic 17). The legality helpers are the same ones the client
+  // reads, so a button it offers is a move the engine accepts.
+  type PowerCardId,
+  type ActivePowerCard,
+  type PowerCardTurnState,
+  type PowerCardUseState,
+  POWER_CARDS,
+  EXTRA_TILES_DRAW,
+  MAX_POWER_TRADES,
+  canPlayPowerCard,
+  canUseAnyPowerCard,
+  getStockAllowance,
+  isFreeStockActive,
+  isMultiTileActive,
+  remainingPowerTrades,
+  normalizeActivePowerCard,
+  normalizePowerCards,
+  isPowerCardId,
+  settleTrade,
+  POWER_CARD_INFO,
 } from '../lib/rules';
 
 interface GameActionRequest {
-  action: 'start_game' | 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
-          'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'skip_buy' |
-          'discard_tile' | 'end_game_vote' | 'new_game' | 'update_room_status' | 'auto_end_turn' | 'bot_tick';
+  action: 'toggle_ready' | 'place_tile' | 'found_chain' | 'choose_merger_survivor' |
+          'pay_merger_bonuses' | 'merger_stock_choice' | 'buy_stocks' | 'sell_stocks' | 'skip_buy' |
+          'discard_tile' | 'declare_game_end' | 'new_game' | 'update_room_status' | 'auto_end_turn' |
+          'play_power_card' | 'power_trade' | 'end_placements' | 'bot_tick';
   roomId: string;
   payload?: any;
 }
 
 // Fan out realtime events after a successful mutation. Over-notifying just
 // triggers a client refetch, so we keep the mapping simple and safe.
-const ROOM_STATUS_ACTIONS = new Set(['toggle_ready', 'start_game', 'new_game', 'update_room_status']);
+// Every action already fans out game:state_updated and game:players_changed, so
+// Epic 17's three new actions need no entry here — play_power_card and
+// power_trade both change public state (the bank, the cards a player has left)
+// and must not be silent, and the default fan-out covers exactly that.
+const ROOM_STATUS_ACTIONS = new Set(['toggle_ready', 'new_game', 'update_room_status']);
 async function notifyForAction(action: string, roomId: string): Promise<void> {
   const events: Promise<void>[] = [
     notifyWsServer(roomId, 'game:state_updated', { roomId }),
@@ -141,6 +179,15 @@ async function handleGameAction(opts: {
 
     const myPlayerIndex = playerData.player_index;
 
+    // Host privilege is the room's owner column, never seat 0 — the host can
+    // sit anywhere in the turn order, and the start-time shuffle moves them.
+    // Read lazily so the per-turn actions don't pay for a query they never use.
+    const isCallerHost = async (): Promise<boolean> => {
+      const { data: room } = await adminClient
+        .from('game_rooms').select('host_user_id').eq('id', roomId).single();
+      return room?.host_user_id != null && room.host_user_id === opts.actorUserId;
+    };
+
     // Fetch game state and all players in parallel (player query already completed above)
     const [stateResult, playersResult] = await Promise.all([
       adminClient.from('game_states').select('*').eq('room_id', roomId).single(),
@@ -158,11 +205,76 @@ async function handleGameAction(opts: {
     }
 
     // Derive rule-based values from rules snapshot
-    const globalRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState?.rules_snapshot as Partial<CustomRules> ?? {}) };
+    const globalRulesSnap: CustomRules = normalizeRules(gameState?.rules_snapshot);
     const safeChainSize: number | null = getSafeChainSize(globalRulesSnap);
     const { boardRows: globalBoardRows, boardColsCount: globalBoardColsCount } = getBoardDimensions(globalRulesSnap);
     const globalEligibleChains: ChainName[] = getEligibleChains(globalRulesSnap);
     const globalBonusTier: string = getBonusTier(globalRulesSnap);
+    const globalSellFactor: number = getSellPriceFactor(globalRulesSnap);
+
+    // Power cards (Epic 17). Normalised on read rather than trusted: the column
+    // is JSONB, an unmigrated row reads as undefined, and a pre-epic game has
+    // NULL — all three must mean "no card active" without a special case.
+    const powerCardsOn: boolean = globalRulesSnap.powerCards === 'on';
+    const activePowerCard: ActivePowerCard | null =
+      normalizeActivePowerCard(gameState?.active_power_card);
+    const myPowerCards: PowerCardId[] = normalizePowerCards(playerData.power_cards);
+    const tilesPlacedThisTurn: number = gameState?.tiles_placed_this_turn ?? 0;
+    /** Shares this player may still buy — 5 under Extra Purchase, otherwise 3. */
+    const stockAllowance: number = getStockAllowance(activePowerCard);
+    const freeStock: boolean = isFreeStockActive(activePowerCard);
+
+    // The two halves of the auto-end gate's power-card term, built from the row
+    // exactly as the client builds them from GameState.
+    // `purchased` is an explicit override rather than a read of the row: the
+    // buy handler asks this question *after* settling a purchase the row does
+    // not know about yet, and a stale zero there would leave extra_buy and
+    // free_stock looking playable forever — a turn that never ends on its own.
+    const powerTurnState = (phase: string, purchased?: number): PowerCardTurnState => ({
+      enabled: powerCardsOn,
+      phase,
+      held: myPowerCards,
+      active: activePowerCard,
+      stocksPurchasedThisTurn: purchased ?? gameState?.stocks_purchased_this_turn ?? 0,
+      tilesPlacedThisTurn,
+      tileBagCount: gameState?.tile_bag?.length ?? 0,
+    });
+    const powerUseState = (opts?: {
+      stocks?: Record<string, number>;
+      stockBank?: Record<string, number>;
+      cash?: number;
+      chainsBoughtThisTurn?: string[];
+    }): PowerCardUseState => ({
+      chains: gameState?.chains ?? {},
+      stockBank: opts?.stockBank ?? gameState?.stock_bank ?? {},
+      stocks: opts?.stocks ?? playerData.stocks ?? {},
+      chainsBoughtThisTurn:
+        opts?.chainsBoughtThisTurn ?? ((gameState?.chains_bought_this_turn ?? []) as string[]),
+      cash: opts?.cash ?? playerData.cash ?? 0,
+      handSize: (playerData.tiles ?? []).length,
+    });
+
+    /** Per-turn counters cleared at every one of the three turn ends. */
+    const TURN_RESET = {
+      stocks_purchased_this_turn: 0,
+      stocks_sold_this_turn: 0,
+      chains_bought_this_turn: [] as ChainName[],
+      active_power_card: null as ActivePowerCard | null,
+      tiles_placed_this_turn: 0,
+    };
+
+    // Epic 18. An end condition being met unlocks a declaration; it never ends
+    // anything by itself. `end_condition_round` records the round it was first
+    // observed at a turn boundary — stamped once, never cleared. Only the bots'
+    // "declare unconditionally after a full round" backstop reads it, and that
+    // backstop is what stops a table of bots that all want to keep playing from
+    // running forever.
+    const stampEndConditionRound = (
+      chains: Record<ChainName, any>,
+      roundNumber: number,
+    ): number | null =>
+      gameState?.end_condition_round ??
+      (canDeclareGameEnd(chains, globalBoardRows, safeChainSize) ? roundNumber : null);
 
     // Handle different actions
     let result: { success: boolean; error?: string; data?: any; turnEnded?: boolean } = { success: false };
@@ -183,10 +295,10 @@ async function handleGameAction(opts: {
           break;
         }
 
-        // Check if all players are ready and room is full
+        // Check whether the room can start
         const { data: room } = await adminClient
           .from('game_rooms')
-          .select('max_players, custom_rules')
+          .select('max_players, custom_rules, turn_order_mode')
           .eq('id', roomId)
           .single();
 
@@ -202,8 +314,12 @@ async function handleGameAction(opts: {
           break;
         }
 
-        // Bots are always considered ready — only real players need to ready up.
-        const allReady = freshPlayers.length === room.max_players &&
+        // Epic 15: rooms no longer have a fixed player count, so the start
+        // condition is "at least two players and every human ready". Bots are
+        // always ready. Any join or leave clears every ready flag (see
+        // rooms.ts), which is what makes readying up mean "ready to play with
+        // exactly this group" and removes the last-second-joiner race.
+        const allReady = freshPlayers.length >= MIN_PLAYERS_TO_START &&
           freshPlayers.every(p => p.is_bot || p.is_ready);
 
         if (!allReady) {
@@ -214,12 +330,22 @@ async function handleGameAction(opts: {
         // All players ready — start the game!
         console.log('All players ready, starting game for room:', roomId);
 
-        // Resolve custom rules: merge room's custom_rules over DEFAULT_RULES
-        const rules: CustomRules = { ...DEFAULT_RULES, ...(room.custom_rules as Partial<CustomRules> ?? {}) };
+        // v1 blobs are translated on read; the small board drops Max Chains
+        // from the default 7 to 5 here as well as in the rules form.
+        const rules: CustomRules = coerceBoardSizeCoupling(normalizeRules(room.custom_rules));
 
-        // Board-size coupling: small board forces maxChains to 5 when chain founding is enabled
-        if (rules.boardSize === '6x10' && rules.chainFoundingEnabled && rules.maxChains === '7') {
-          rules.maxChains = '5';
+        // Turn order. In 'random' mode (the default) the seats are shuffled
+        // now, host included — this MUST happen before the dealing loop below,
+        // which walks players in seat order. In 'manual' mode the host already
+        // arranged the seats and we deal in the order they set.
+        let seatedPlayers = freshPlayers;
+        if ((room.turn_order_mode ?? 'random') === 'random' && freshPlayers.length > 1) {
+          const shuffledIds: string[] = shuffle((freshPlayers as any[]).map((p) => String(p.id)));
+          await reindexPlayers(roomId, shuffledIds);
+          seatedPlayers = shuffledIds.map((id, index) => ({
+            ...freshPlayers.find((p: any) => p.id === id),
+            player_index: index,
+          }));
         }
 
         // Derive starting parameters from rules
@@ -261,8 +387,14 @@ async function handleGameAction(opts: {
           festival: 25, continental: 25, imperial: 25,
         };
 
-        // Deal tiles to players and reset ready state
-        for (const player of freshPlayers) {
+        // Epic 17: every seat is dealt the same five cards, bots included, or
+        // none at all when the rule is off. Nothing about the deal is random —
+        // the cards add timing decisions, not luck.
+        const dealtPowerCards: PowerCardId[] = rules.powerCards === 'on' ? [...POWER_CARDS] : [];
+
+        // Deal tiles to players and reset ready state. seatedPlayers is in
+        // final seat order, so hand N goes to seat N.
+        for (const player of seatedPlayers) {
           const playerTiles = tileBag.splice(0, startingTiles);
           await adminClient
             .from('game_players')
@@ -270,6 +402,7 @@ async function handleGameAction(opts: {
               tiles: playerTiles,
               cash: startingCash,
               stocks: { sackson: 0, tower: 0, worldwide: 0, american: 0, festival: 0, continental: 0, imperial: 0 },
+              power_cards: dealtPowerCards,
               // Bots stay ready so a re-created room (new_game) never gets stuck;
               // only real players are reset and must ready up again.
               is_ready: player.is_bot === true,
@@ -287,9 +420,10 @@ async function handleGameAction(opts: {
         };
 
         // Compute turn deadline for the first turn
+        const firstTurnSeconds = getTurnTimerSeconds(rules);
         const firstTurnDeadline: number | null =
-          rules.turnTimerEnabled && !rules.disableTimerFirstRounds
-            ? Math.floor(Date.now() / 1000) + parseInt(rules.turnTimer)
+          firstTurnSeconds !== null && !rules.disableTimerFirstRounds
+            ? Math.floor(Date.now() / 1000) + firstTurnSeconds
             : null;
 
         // Create game state with rules_snapshot
@@ -328,98 +462,10 @@ async function handleGameAction(opts: {
         break;
       }
 
-      case 'start_game': {
-        // Kept for backward compatibility but toggle_ready is the preferred way
-        if (myPlayerIndex !== 0) {
-          return new Response(JSON.stringify({ error: 'Only host can start game' }), {
-            status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        const playerNames = allPlayers.map(p => p.player_name);
-
-        // Initialize tile bag
-        const tileBag = shuffle(generateAllTiles());
-
-        // Initialize board
-        const board: Record<string, any> = {};
-        for (const tileId of generateAllTiles()) {
-          board[tileId] = { id: tileId, placed: false, chain: null };
-        }
-
-        // Place starting tile
-        const startingTile = tileBag.pop()!;
-        board[startingTile] = { id: startingTile, placed: true, chain: null };
-
-        // Initialize chains
-        const chains: Record<ChainName, any> = {
-          sackson: { name: 'sackson', tiles: [], isActive: false, isSafe: false },
-          tower: { name: 'tower', tiles: [], isActive: false, isSafe: false },
-          worldwide: { name: 'worldwide', tiles: [], isActive: false, isSafe: false },
-          american: { name: 'american', tiles: [], isActive: false, isSafe: false },
-          festival: { name: 'festival', tiles: [], isActive: false, isSafe: false },
-          continental: { name: 'continental', tiles: [], isActive: false, isSafe: false },
-          imperial: { name: 'imperial', tiles: [], isActive: false, isSafe: false },
-        };
-
-        // Initialize stock bank
-        const stockBank: Record<ChainName, number> = {
-          sackson: 25, tower: 25, worldwide: 25, american: 25,
-          festival: 25, continental: 25, imperial: 25,
-        };
-
-        // Deal tiles to players and update their records
-        for (const player of allPlayers) {
-          const playerTiles = tileBag.splice(0, 6);
-          await adminClient
-            .from('game_players')
-            .update({
-              tiles: playerTiles,
-              cash: 6000,
-              stocks: { sackson: 0, tower: 0, worldwide: 0, american: 0, festival: 0, continental: 0, imperial: 0 }
-            })
-            .eq('id', player.id);
-        }
-
-        // Create game state
-        const { error: insertError } = await adminClient
-          .from('game_states')
-          .insert({
-            room_id: roomId,
-            current_player_index: 0,
-            phase: 'place_tile',
-            board,
-            chains,
-            stock_bank: stockBank,
-            tile_bag: tileBag,
-            last_placed_tile: startingTile,
-            game_log: [{
-              timestamp: Date.now(),
-              playerId: 'system',
-              playerName: 'System',
-              action: 'Game started',
-              details: `Starting tile ${startingTile} placed on board`,
-            }],
-          });
-
-        if (insertError) {
-          console.error('Insert error:', insertError);
-          return new Response(JSON.stringify({ error: 'Failed to create game state' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Update room status
-        await adminClient
-          .from('game_rooms')
-          .update({ status: 'playing' })
-          .eq('id', roomId);
-
-        result = { success: true };
-        break;
-      }
+      // The legacy `start_game` handler was deleted with Epic 17. It predated
+      // custom rules — hardcoded 9x12, $6000 and 6 tiles — was unreferenced by
+      // the client, and would have created a rule-on game whose players held no
+      // power cards. `toggle_ready` is and was the only way a game starts.
 
       case 'place_tile': {
         if (!gameState) {
@@ -525,6 +571,23 @@ async function handleGameAction(opts: {
           details: tileId,
         }];
 
+        // Epic 17. Maintained on every placement, card or no card — it is what
+        // "only before you have placed this turn" reads, and what bounds a spree.
+        const placedThisTurn = tilesPlacedThisTurn + 1;
+
+        // Both non-merger, non-founding exits ask the same question, and so do
+        // found_chain and completeMergerInDb: is this turn still placing? One
+        // shared helper, because a missed exit strands a spree in place_tile.
+        const nextPhaseAfterThisPlacement = (chainsNow: Record<ChainName, any>) =>
+          phaseAfterPlacement({
+            activePowerCard,
+            tilesPlacedThisTurn: placedThisTurn,
+            playerTiles: newPlayerTiles,
+            board: newBoard,
+            chains: chainsNow,
+            rules: globalRulesSnap,
+          });
+
         if (chainArray.length >= 2) {
           // Merger
           mergerAdjacentChains = chainArray;
@@ -576,27 +639,22 @@ async function handleGameAction(opts: {
             details: `Chain now has ${allTiles.length} tiles`,
           });
 
-          newPhase = 'buy_stock';
+          newPhase = nextPhaseAfterThisPlacement(newChains);
         } else if (adjacentUnincorporated.length > 0) {
           // Form new chain
           newPhase = 'found_chain';
           pendingChainFoundation = [tileId, ...adjacentUnincorporated];
         } else {
           // Place only
-          newPhase = 'buy_stock';
+          newPhase = nextPhaseAfterThisPlacement(newChains);
         }
 
-        // Check for game end
-        if (checkGameEnd(newChains, globalBoardRows) && newPhase === 'buy_stock') {
-          newPhase = 'game_over';
-          const scoredPlayers = allPlayers.map(p => ({
-            id: `player-${p.player_index}`,
-            name: p.player_name,
-            cash: p.cash,
-            stocks: p.stocks,
-          }));
-          const winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
-
+        // Epic 18: placing the 41st tile no longer ends the game here. Meeting
+        // an end condition only unlocks a declaration; the placement proceeds
+        // to buy_stock so the declaring player still finishes their turn — and
+        // under Epic 17's Building Spree it may proceed to another placement
+        // instead, with the condition still merely declarable either way.
+        {
           const { error: updateError } = await adminClient
             .from('game_states')
             .update({
@@ -604,27 +662,7 @@ async function handleGameAction(opts: {
               chains: newChains,
               phase: newPhase,
               last_placed_tile: tileId,
-              pending_chain_foundation: pendingChainFoundation,
-              merger,
-              game_log: gameLog,
-              winner,
-            })
-            .eq('room_id', roomId);
-
-          if (updateError) {
-            return new Response(JSON.stringify({ error: 'Failed to update game state', detail: updateError.message }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-        } else {
-          const { error: updateError } = await adminClient
-            .from('game_states')
-            .update({
-              board: newBoard,
-              chains: newChains,
-              phase: newPhase,
-              last_placed_tile: tileId,
+              tiles_placed_this_turn: placedThisTurn,
               pending_chain_foundation: pendingChainFoundation,
               merger,
               game_log: gameLog,
@@ -728,19 +766,18 @@ async function handleGameAction(opts: {
           details: 'Received 1 bonus share',
         }];
 
-        let newPhase = 'buy_stock';
-        let winner = null;
-
-        if (checkGameEnd(newChains, globalBoardRows)) {
-          newPhase = 'game_over';
-          const scoredPlayers = allPlayers.map(p => ({
-            id: `player-${p.player_index}`,
-            name: p.player_name,
-            cash: p.player_index === myPlayerIndex ? playerData.cash : p.cash,
-            stocks: p.player_index === myPlayerIndex ? playerStocks : p.stocks,
-          }));
-          winner = calculateFinalScores(scoredPlayers, newChains, globalBonusTier)[0].name;
-        }
+        // Epic 18: founding a chain never ends the game, however large the
+        // cluster. Epic 17: the turn continues into the buy phase as it
+        // otherwise would — unless a Building Spree still has tiles to place,
+        // which is the third of the four placement exits.
+        const foundNextPhase = phaseAfterPlacement({
+          activePowerCard,
+          tilesPlacedThisTurn,
+          playerTiles: playerData.tiles ?? [],
+          board: newBoard,
+          chains: newChains,
+          rules: globalRulesSnap,
+        });
 
         await adminClient
           .from('game_states')
@@ -748,10 +785,9 @@ async function handleGameAction(opts: {
             board: newBoard,
             chains: newChains,
             stock_bank: newStockBank,
-            phase: newPhase,
+            phase: foundNextPhase,
             pending_chain_foundation: null,
             game_log: gameLog,
-            winner,
           })
           .eq('room_id', roomId);
 
@@ -760,7 +796,7 @@ async function handleGameAction(opts: {
           .update({ stocks: playerStocks })
           .eq('id', playerData.id);
 
-        result = { success: true };
+        result = { success: true, data: { phase: foundNextPhase } };
         break;
       }
 
@@ -1190,12 +1226,14 @@ async function handleGameAction(opts: {
 
         const purchases = payload?.purchases as { chain: ChainName; quantity: number }[];
 
-        // Validate total quantity does not exceed 3 per turn. Buying is
+        // Validate total quantity against the per-turn allowance. Buying is
         // incremental, so this counts what the player already bought this turn.
+        // The allowance stopped being a constant with Epic 17: Extra Purchase
+        // raises it to 5 for this turn only.
         const totalQuantity = (purchases || []).reduce((sum, p) => sum + p.quantity, 0);
         const alreadyPurchased = gameState.stocks_purchased_this_turn ?? 0;
-        if (alreadyPurchased + totalQuantity > MAX_STOCKS_PER_TURN) {
-          return new Response(JSON.stringify({ error: 'Cannot buy more than 3 stocks per turn' }), {
+        if (alreadyPurchased + totalQuantity > stockAllowance) {
+          return new Response(JSON.stringify({ error: `Cannot buy more than ${stockAllowance} stocks per turn` }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
@@ -1222,7 +1260,12 @@ async function handleGameAction(opts: {
             });
           }
 
-          const price = getStockPrice(purchase.chain, gameState.chains[purchase.chain].tiles.length);
+          // Free Shares zeroes the price and nothing else: the bank must still
+          // hold the shares and the chain must still be active, both checked
+          // above. Only what the player pays changes.
+          const price = freeStock
+            ? 0
+            : getStockPrice(purchase.chain, gameState.chains[purchase.chain].tiles.length);
           totalCost += price * purchase.quantity;
           newPlayerStocks[purchase.chain] = (newPlayerStocks[purchase.chain] || 0) + purchase.quantity;
           newStockBank[purchase.chain] -= purchase.quantity;
@@ -1244,32 +1287,66 @@ async function handleGameAction(opts: {
 
         const gameLog = [...gameState.game_log];
         if (purchases && purchases.length > 0) {
+          const bought = purchases.map(p => `${p.quantity} ${CHAINS[p.chain].displayName}`).join(', ');
           gameLog.push({
             timestamp: Date.now(),
             playerId: `player-${myPlayerIndex}`,
             playerName: playerData.player_name,
-            action: 'Bought stocks',
-            details: purchases.map(p => `${p.quantity} ${CHAINS[p.chain].displayName}`).join(', '),
+            // The log names the price, so a free purchase never looks like a
+            // bookkeeping error to the players watching it happen.
+            action: freeStock ? 'Took stocks' : 'Bought stocks',
+            details: freeStock ? `${bought} (free — Free Shares)` : bought,
           });
         }
 
         // A purchase no longer ends the turn: the player keeps buying until the
         // per-turn cap is spent or nothing left in the bank is affordable.
         const purchasedThisTurn = alreadyPurchased + totalQuantity;
-        const canBuyMore = purchasedThisTurn < MAX_STOCKS_PER_TURN &&
+        // Chains touched this turn can't be sold back this turn (Epic 14.3).
+        const chainsBoughtThisTurn = [...new Set<ChainName>([
+          ...((gameState.chains_bought_this_turn ?? []) as ChainName[]),
+          ...(purchases || []).filter(p => p.quantity > 0).map(p => p.chain),
+        ])];
+        // Affordability is skipped entirely while Free Shares is active — a
+        // broke player would otherwise have their free-share turn auto-ended
+        // before they could take anything.
+        const canBuyMore = purchasedThisTurn < stockAllowance &&
           (Object.keys(CHAINS) as ChainName[]).some(c =>
             gameState.chains[c]?.isActive &&
             newStockBank[c] > 0 &&
-            getStockPrice(c, gameState.chains[c].tiles.length) <= newCash
+            (freeStock || getStockPrice(c, gameState.chains[c].tiles.length) <= newCash)
           );
 
-        if (canBuyMore) {
+        // Epic 18: once the game *can* be ended, the turn stops ending itself.
+        // A declaration is worthless if the player is swept past the decision
+        // by buying their last affordable share, so the turn stays open and the
+        // player leaves it deliberately through skip_buy. Mirrored client-side
+        // in GameContainer's auto-end effect.
+        const endDeclarable = canDeclareGameEnd(gameState.chains, globalBoardRows, safeChainSize);
+
+        // Epic 17 adds the third term for exactly the same reason. The per-card
+        // "is there actually a use" half matters as much as the first: without
+        // it, a player holding only Stock Trade and nothing tradeable would have
+        // every turn hang waiting for a manual End Turn.
+        const cardStillPlayable = canUseAnyPowerCard(
+          powerTurnState('buy_stock', purchasedThisTurn),
+          powerUseState({
+            stocks: newPlayerStocks,
+            stockBank: newStockBank,
+            cash: newCash,
+            chainsBoughtThisTurn,
+          }),
+          getStockPrice,
+        );
+
+        if (canBuyMore || endDeclarable || cardStillPlayable) {
           // Same player, same turn deadline — only the bank and counter move.
           await adminClient
             .from('game_states')
             .update({
               stock_bank: newStockBank,
               stocks_purchased_this_turn: purchasedThisTurn,
+              chains_bought_this_turn: chainsBoughtThisTurn,
               game_log: gameLog,
             })
             .eq('room_id', roomId);
@@ -1278,31 +1355,42 @@ async function handleGameAction(opts: {
           break;
         }
 
-        // End turn: draw tile, advance player
-        const tileBag = [...gameState.tile_bag];
-        const drawnTile = tileBag.pop();
+        // End turn: top the hand back up to the room's limit, advance player.
+        // "Refill to the limit" rather than "draw one": with Building Spree the
+        // hand can be four tiles short, and after Extra Tiles it is above the
+        // limit and correctly draws nothing (Epic 17.1).
+        const refilled = refillHand(
+          playerData.tiles ?? [],
+          gameState.tile_bag ?? [],
+          getHandLimit(globalRulesSnap),
+        );
+        const tileBag = refilled.bag;
 
-        if (drawnTile) {
-          const newPlayerTiles = [...playerData.tiles, drawnTile];
+        if (refilled.tiles.length !== (playerData.tiles ?? []).length) {
           await adminClient
             .from('game_players')
-            .update({ tiles: newPlayerTiles })
+            .update({ tiles: refilled.tiles })
             .eq('id', playerData.id);
         }
 
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
         const currentRoundNumber = gameState.round_number ?? 0;
         const newRoundNumber = currentRoundNumber + (nextPlayerIndex === 0 ? 1 : 0);
-        const rulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const rulesSnap: CustomRules = normalizeRules(gameState.rules_snapshot);
+        const turnSeconds = getTurnTimerSeconds(rulesSnap);
         const newDeadline: number | null =
-          rulesSnap.turnTimerEnabled && !(rulesSnap.disableTimerFirstRounds && newRoundNumber < 2)
-            ? Math.floor(Date.now() / 1000) + parseInt(rulesSnap.turnTimer)
+          turnSeconds !== null && !(rulesSnap.disableTimerFirstRounds && newRoundNumber < 2)
+            ? Math.floor(Date.now() / 1000) + turnSeconds
             : null;
 
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains, globalBoardRows)) {
+        // Epic 18: the game ends here only because this player announced it —
+        // and only for the seat that announced it, so a declaration can never
+        // leak into someone else's turn. The purchases just made are in the
+        // final score, which is the whole point of finishing the turn.
+        if (gameState.end_declared_by === myPlayerIndex) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1320,16 +1408,104 @@ async function handleGameAction(opts: {
             phase: newPhase,
             stock_bank: newStockBank,
             tile_bag: tileBag,
-            stocks_purchased_this_turn: 0,
+            ...TURN_RESET,
             last_placed_tile: null,
             game_log: gameLog,
             winner,
             round_number: newRoundNumber,
+            end_condition_round: stampEndConditionRound(gameState.chains, currentRoundNumber),
             turn_deadline_epoch: newPhase === 'game_over' ? null : newDeadline,
           })
           .eq('room_id', roomId);
 
         result = { success: true, turnEnded: true };
+        break;
+      }
+
+      // Stock Selling (Epic 14, Mode B "Broker's Cut"). Lives inside the
+      // buy_stock phase with its own per-turn allowance: selling never ends the
+      // turn and never changes the phase. All validation and arithmetic happens
+      // in settleSale (server/lib/rules.ts) so it stays unit-testable.
+      case 'sell_stocks': {
+        if (!gameState || gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'buy_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (globalSellFactor <= 0) {
+          return new Response(JSON.stringify({ error: 'Stock selling is not enabled in this room' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const sales = payload?.sales as { chain: ChainName; quantity: number }[];
+        const soldThisTurn = gameState.stocks_sold_this_turn ?? 0;
+
+        const outcome = settleSale({
+          sales,
+          chains: gameState.chains,
+          stocks: playerData.stocks,
+          stockBank: gameState.stock_bank,
+          soldThisTurn,
+          chainsBoughtThisTurn: (gameState.chains_bought_this_turn ?? []) as ChainName[],
+          factor: globalSellFactor,
+        });
+
+        if (!outcome.ok) {
+          return new Response(JSON.stringify({ error: outcome.error }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const { proceeds, totalQuantity: soldQuantity, newStocks, newStockBank: bankAfterSale, lines } =
+          outcome.settlement;
+
+        // Write ordering matters — there are no transactions here. Cash and
+        // stocks move together in one player row update; the bank follows. A
+        // failure between the two can only under-return shares to the bank, it
+        // can never duplicate cash or shares.
+        await adminClient
+          .from('game_players')
+          .update({ cash: playerData.cash + proceeds, stocks: newStocks })
+          .eq('id', playerData.id);
+
+        const sellLog = [...gameState.game_log];
+        for (const line of lines) {
+          sellLog.push({
+            timestamp: Date.now(),
+            playerId: `player-${myPlayerIndex}`,
+            playerName: playerData.player_name,
+            action: 'Sold stocks',
+            details: `${line.quantity} ${CHAINS[line.chain].displayName} for $${line.amount.toLocaleString()}`,
+          });
+        }
+
+        try {
+          await adminClient
+            .from('game_states')
+            .update({
+              stock_bank: bankAfterSale,
+              stocks_sold_this_turn: soldThisTurn + soldQuantity,
+              game_log: sellLog,
+            })
+            .eq('room_id', roomId);
+        } catch (bankError) {
+          console.warn('sell_stocks: bank/counter write failed after player was paid:', bankError);
+          throw bankError;
+        }
+
+        result = { success: true, turnEnded: false, data: { proceeds } };
         break;
       }
 
@@ -1348,31 +1524,39 @@ async function handleGameAction(opts: {
           });
         }
 
-        // Draw tile
-        const tileBag = [...gameState.tile_bag];
-        const drawnTile = tileBag.pop();
+        // Refill the hand to the room's limit (Epic 17.1) — one tile in ordinary
+        // play, up to four after a Building Spree, none while Extra Tiles still
+        // has the hand above the limit.
+        const skipRefill = refillHand(
+          playerData.tiles ?? [],
+          gameState.tile_bag ?? [],
+          getHandLimit(globalRulesSnap),
+        );
+        const tileBag = skipRefill.bag;
 
-        if (drawnTile) {
-          const newPlayerTiles = [...playerData.tiles, drawnTile];
+        if (skipRefill.tiles.length !== (playerData.tiles ?? []).length) {
           await adminClient
             .from('game_players')
-            .update({ tiles: newPlayerTiles })
+            .update({ tiles: skipRefill.tiles })
             .eq('id', playerData.id);
         }
 
         const nextPlayerIndex = (myPlayerIndex + 1) % allPlayers.length;
         const skipCurrentRound = gameState.round_number ?? 0;
         const skipNewRound = skipCurrentRound + (nextPlayerIndex === 0 ? 1 : 0);
-        const skipRulesSnap: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const skipRulesSnap: CustomRules = normalizeRules(gameState.rules_snapshot);
+        const skipTurnSeconds = getTurnTimerSeconds(skipRulesSnap);
         const skipNewDeadline: number | null =
-          skipRulesSnap.turnTimerEnabled && !(skipRulesSnap.disableTimerFirstRounds && skipNewRound < 2)
-            ? Math.floor(Date.now() / 1000) + parseInt(skipRulesSnap.turnTimer)
+          skipTurnSeconds !== null && !(skipRulesSnap.disableTimerFirstRounds && skipNewRound < 2)
+            ? Math.floor(Date.now() / 1000) + skipTurnSeconds
             : null;
 
         let newPhase = 'place_tile';
         let winner = null;
 
-        if (checkGameEnd(gameState.chains, globalBoardRows)) {
+        // Epic 18: same branch as buy_stocks — a declared turn ends the game
+        // when it ends, and only for the seat that declared.
+        if (gameState.end_declared_by === myPlayerIndex) {
           newPhase = 'game_over';
           const scoredPlayers = allPlayers.map(p => ({
             id: `player-${p.player_index}`,
@@ -1389,10 +1573,11 @@ async function handleGameAction(opts: {
             current_player_index: nextPlayerIndex,
             phase: newPhase,
             tile_bag: tileBag,
-            stocks_purchased_this_turn: 0,
+            ...TURN_RESET,
             last_placed_tile: null,
             winner,
             round_number: skipNewRound,
+            end_condition_round: stampEndConditionRound(gameState.chains, skipCurrentRound),
             turn_deadline_epoch: newPhase === 'game_over' ? null : skipNewDeadline,
           })
           .eq('room_id', roomId);
@@ -1401,6 +1586,9 @@ async function handleGameAction(opts: {
         break;
       }
 
+      // Deliberately still a 1-for-1 swap, not a refill (Epic 17.7). Turning it
+      // into refillHand would let an 11-tile hand full of dead tiles collapse
+      // straight back to the limit, which is exactly the cost Extra Tiles buys.
       case 'discard_tile': {
         const { tileId } = payload as { tileId: string };
 
@@ -1483,7 +1671,13 @@ async function handleGameAction(opts: {
         break;
       }
 
-      case 'end_game_vote': {
+      // Epic 18. Announcing the end, in the sense the physical rules mean it:
+      // the player says so during their turn, then finishes that turn as
+      // normal, and the game ends when the turn does. Nothing here changes the
+      // current turn — the branch that ends the game lives in buy_stocks,
+      // skip_buy and auto_end_turn. Replaces the majority end-game vote, which
+      // was a mechanic the board game does not have.
+      case 'declare_game_end': {
         if (!gameState) {
           return new Response(JSON.stringify({ error: 'Game not started' }), {
             status: 400,
@@ -1491,53 +1685,293 @@ async function handleGameAction(opts: {
           });
         }
 
+        // Only the player whose turn it is may declare. Everyone else can see
+        // the condition is met — chain sizes are public — but cannot act on it.
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Merger phases are excluded (as the retired vote also excluded them):
+        // the board is mid-transition and chain sizes are not final.
         if (!['place_tile', 'buy_stock'].includes(gameState.phase)) {
-          return new Response(JSON.stringify({ error: 'Cannot vote to end game during an active action phase' }), {
+          return new Response(JSON.stringify({ error: 'Cannot declare the game over during an active action phase' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        const vote = payload?.vote as boolean;
-        const playerId = `player-${myPlayerIndex}`;
-        const endGameVotes = gameState.end_game_votes || [];
-
-        if (vote && !endGameVotes.includes(playerId)) {
-          const newVotes = [...endGameVotes, playerId];
-          const humanPlayers = allPlayers.filter((p: any) => !p.is_bot);
-          const votesNeeded = Math.max(1, Math.ceil(humanPlayers.length / 2));
-
-          let newPhase = gameState.phase;
-          let winner = null;
-
-          if (newVotes.length >= votesNeeded) {
-            newPhase = 'game_over';
-            const scoredPlayers = allPlayers.map(p => ({
-              id: `player-${p.player_index}`,
-              name: p.player_name,
-              cash: p.cash,
-              stocks: p.stocks,
-            }));
-            winner = calculateFinalScores(scoredPlayers, gameState.chains, globalBonusTier)[0].name;
-          }
-
-          await adminClient
-            .from('game_states')
-            .update({
-              end_game_votes: newVotes,
-              phase: newPhase,
-              winner,
-            })
-            .eq('room_id', roomId);
+        // A declaration cannot be withdrawn, and the first one stands.
+        if (gameState.end_declared_by !== null && gameState.end_declared_by !== undefined) {
+          return new Response(JSON.stringify({ error: 'The game has already been declared over' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
+
+        // The condition is evaluated now, when the declaration is made — not
+        // when the turn ends.
+        if (!canDeclareGameEnd(gameState.chains, globalBoardRows, safeChainSize)) {
+          return new Response(JSON.stringify({ error: 'No end-game condition is met' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const declareReason = endConditionReason(gameState.chains, globalBoardRows, safeChainSize);
+        const declareLog = [...gameState.game_log, {
+          timestamp: Date.now(),
+          playerId: `player-${myPlayerIndex}`,
+          playerName: playerData.player_name,
+          action: 'Declared the game over',
+          details: declareReason === 'all_safe'
+            ? 'Every active chain is safe — the game ends after this turn'
+            : `A chain has reached ${globalBoardRows === 6 ? 30 : 41} tiles — the game ends after this turn`,
+        }];
+
+        await adminClient
+          .from('game_states')
+          .update({
+            end_declared_by: myPlayerIndex,
+            end_condition_round: stampEndConditionRound(gameState.chains, gameState.round_number ?? 0),
+            game_log: declareLog,
+          })
+          .eq('room_id', roomId);
 
         result = { success: true };
         break;
       }
 
+      // =======================================================================
+      // Power cards (Epic 17)
+      // =======================================================================
+      // Three actions, all following the existing handler shape: turn check →
+      // phase check → validate → write → fan out.
+
+      // Play one card. This is the ONLY place card legality is decided, through
+      // canPlayPowerCard — the same function the client calls to disable a
+      // button and explain why, so the two can never disagree.
+      //
+      // A card is spent when it is played, not when it pays off: playing Extra
+      // Purchase and then buying nothing burns the card. That is what makes
+      // this validation simple and race-free, and it is stated in the dialog.
+      case 'play_power_card': {
+        if (!gameState) {
+          return new Response(JSON.stringify({ error: 'Game not started' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const card = payload?.card;
+        if (!isPowerCardId(card)) {
+          return new Response(JSON.stringify({ error: 'Unknown power card' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const legality = canPlayPowerCard(card, powerTurnState(gameState.phase));
+        if (!legality.ok) {
+          // 409 for "a card is already active": that is the double-click race,
+          // and it is a conflict with state rather than a malformed request.
+          const conflict = activePowerCard !== null || !myPowerCards.includes(card);
+          return new Response(JSON.stringify({ error: legality.reason }), {
+            status: conflict ? 409 : 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const info = POWER_CARD_INFO[card];
+        const cardLog = [...gameState.game_log, {
+          timestamp: Date.now(),
+          playerId: `player-${myPlayerIndex}`,
+          playerName: playerData.player_name,
+          action: `Played ${info.name}`,
+          details: info.summary,
+        }];
+
+        // Extra Tiles is the one card whose effect lands at play time rather
+        // than colouring the rest of the turn: the tiles have to arrive now to
+        // be usable now. Everything else is bookkeeping the later handlers read.
+        const cardTileBag = [...(gameState.tile_bag ?? [])];
+        let cardPlayerTiles: string[] = playerData.tiles ?? [];
+        if (card === 'extra_tiles') {
+          const drawCount = Math.min(EXTRA_TILES_DRAW, cardTileBag.length);
+          const drawn = cardTileBag.splice(cardTileBag.length - drawCount, drawCount);
+          cardPlayerTiles = [...cardPlayerTiles, ...drawn.reverse()];
+          cardLog.push({
+            timestamp: Date.now(),
+            playerId: `player-${myPlayerIndex}`,
+            playerName: playerData.player_name,
+            action: 'Drew extra tiles',
+            details: `${drawn.length} tiles — no tiles are drawn at end of turn until the hand is back to ${getHandLimit(globalRulesSnap)}`,
+          });
+          await adminClient
+            .from('game_players')
+            .update({ tiles: cardPlayerTiles })
+            .eq('id', playerData.id);
+        }
+
+        // The card leaves the player's hand in the same write that marks it
+        // active, so a double-clicked card cannot be played twice.
+        await adminClient
+          .from('game_players')
+          .update({ power_cards: myPowerCards.filter((c) => c !== card) })
+          .eq('id', playerData.id);
+
+        await adminClient
+          .from('game_states')
+          .update({
+            active_power_card: { card, tradesUsed: 0 },
+            tile_bag: cardTileBag,
+            game_log: cardLog,
+          })
+          .eq('room_id', roomId);
+
+        result = { success: true, turnEnded: false, data: { card } };
+        break;
+      }
+
+      // One Stock Trade: TRADE_GIVE shares of the player's own go back to the
+      // bank, TRADE_RECEIVE comes out of it. Modelled exactly on sell_stocks,
+      // including the write ordering — the player row moves first and the bank
+      // second, so a failure between them can only under-return shares to the
+      // bank, never duplicate them. Trading never ends the turn and never
+      // changes the phase.
+      case 'power_trade': {
+        if (!gameState || gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'buy_stock') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (activePowerCard?.card !== 'stock_trade') {
+          return new Response(JSON.stringify({ error: 'Stock Trade is not active this turn' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const tradeOutcome = settleTrade({
+          give: payload?.give,
+          receive: payload?.receive,
+          chains: gameState.chains,
+          stocks: playerData.stocks,
+          stockBank: gameState.stock_bank,
+          tradesUsed: activePowerCard.tradesUsed ?? 0,
+          chainsBoughtThisTurn: (gameState.chains_bought_this_turn ?? []) as ChainName[],
+        });
+
+        if (!tradeOutcome.ok) {
+          return new Response(JSON.stringify({ error: tradeOutcome.error }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const trade = tradeOutcome.settlement;
+
+        await adminClient
+          .from('game_players')
+          .update({ stocks: trade.newStocks })
+          .eq('id', playerData.id);
+
+        const tradesUsed = (activePowerCard.tradesUsed ?? 0) + 1;
+        const tradeLog = [...gameState.game_log, {
+          timestamp: Date.now(),
+          playerId: `player-${myPlayerIndex}`,
+          playerName: playerData.player_name,
+          action: 'Traded stocks',
+          details: `${trade.given.map(g => `${g.quantity} ${CHAINS[g.chain].displayName}`).join(' + ')} → 1 ${CHAINS[trade.received].displayName} (trade ${tradesUsed} of ${MAX_POWER_TRADES})`,
+        }];
+
+        await adminClient
+          .from('game_states')
+          .update({
+            stock_bank: trade.newStockBank,
+            chains_bought_this_turn: trade.newChainsBoughtThisTurn,
+            active_power_card: { card: 'stock_trade', tradesUsed },
+            game_log: tradeLog,
+          })
+          .eq('room_id', roomId);
+
+        result = { success: true, turnEnded: false, data: { tradesUsed } };
+        break;
+      }
+
+      // Stop a Building Spree early. Without it a player who wants only two of
+      // their four tiles would be stuck in place_tile — the spree has no other
+      // way out while they still hold a playable tile.
+      case 'end_placements': {
+        if (!gameState || gameState.current_player_index !== myPlayerIndex) {
+          return new Response(JSON.stringify({ error: 'Not your turn' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (gameState.phase !== 'place_tile') {
+          return new Response(JSON.stringify({ error: 'Action not valid in current phase' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        if (!isMultiTileActive(activePowerCard)) {
+          return new Response(JSON.stringify({ error: 'Building Spree is not active this turn' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Refused before the first placement: a turn still owes the board a
+        // tile, spree or no spree.
+        if (tilesPlacedThisTurn < 1) {
+          return new Response(JSON.stringify({ error: 'Place at least one tile first' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        await adminClient
+          .from('game_states')
+          .update({
+            phase: 'buy_stock',
+            game_log: [...gameState.game_log, {
+              timestamp: Date.now(),
+              playerId: `player-${myPlayerIndex}`,
+              playerName: playerData.player_name,
+              action: 'Finished placing',
+              details: `${tilesPlacedThisTurn} tile${tilesPlacedThisTurn === 1 ? '' : 's'} placed this turn`,
+            }],
+          })
+          .eq('room_id', roomId);
+
+        result = { success: true, turnEnded: false };
+        break;
+      }
+
       case 'new_game': {
         // Only host can start new game
-        if (myPlayerIndex !== 0) {
+        if (!await isCallerHost()) {
           return new Response(JSON.stringify({ error: 'Only host can start new game' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1559,8 +1993,8 @@ async function handleGameAction(opts: {
       }
 
       case 'update_room_status': {
-        // Security: Only host (player_index 0) can update room status
-        if (myPlayerIndex !== 0) {
+        // Security: only the room's host may change its status
+        if (!await isCallerHost()) {
           return new Response(JSON.stringify({ error: 'Only host can update room status' }), {
             status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1613,7 +2047,7 @@ async function handleGameAction(opts: {
           });
         }
 
-        const autoRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+        const autoRules: CustomRules = normalizeRules(gameState.rules_snapshot);
         const autoSafeChainSize: number | null = getSafeChainSize(autoRules);
         const { boardRows: autoBoardRows, boardColsCount: autoBoardColsCount } = getBoardDimensions(autoRules);
         const autoEligibleChains: ChainName[] = getEligibleChains(autoRules);
@@ -1631,37 +2065,32 @@ async function handleGameAction(opts: {
           action: 'Turn auto-ended (timer expired)',
         }];
 
-        // Find playable tiles (same validity checks as place_tile handler)
-        const autoPlayableTiles = autoPlayerTiles.filter(tileId => {
-          const adjTiles = getAdjacentTiles(tileId, autoBoardRows, autoBoardColsCount);
-          const adjChainsSet = new Set<ChainName>();
-          const adjUnincorpTiles: string[] = [];
-          for (const a of adjTiles) {
-            const t = autoBoard[a];
-            if (t?.placed) {
-              if (t.chain) adjChainsSet.add(t.chain as ChainName);
-              else adjUnincorpTiles.push(a);
-            }
-          }
-          const ca = Array.from(adjChainsSet);
-          if (ca.length >= 2 && ca.filter(c => autoChains[c].isSafe).length >= 2) return false;
-          if (ca.length === 0 && adjUnincorpTiles.length > 0 &&
-              autoEligibleChains.filter(c => !autoChains[c].isActive).length === 0) return false;
-          return true;
-        });
+        // Find playable tiles (the same legality test place_tile enforces).
+        const autoPlayableTiles = autoPlayerTiles.filter(tileId => isTilePlayable({
+          tileId,
+          board: autoBoard,
+          chains: autoChains,
+          eligibleChains: autoEligibleChains,
+          boardRows: autoBoardRows,
+          boardColsCount: autoBoardColsCount,
+        }));
 
         // Helper: compute next turn index, round number, and timer deadline
         const computeAutoNextTurn = (chains: Record<ChainName, any>) => {
           const npi = (myPlayerIndex + 1) % allPlayers.length;
           const curRound = gameState.round_number ?? 0;
           const nrn = curRound + (npi === 0 ? 1 : 0);
+          const autoTurnSeconds = getTurnTimerSeconds(autoRules);
           const nd: number | null =
-            autoRules.turnTimerEnabled && !(autoRules.disableTimerFirstRounds && nrn < 2)
-              ? Math.floor(Date.now() / 1000) + parseInt(autoRules.turnTimer)
+            autoTurnSeconds !== null && !(autoRules.disableTimerFirstRounds && nrn < 2)
+              ? Math.floor(Date.now() / 1000) + autoTurnSeconds
               : null;
           let phase = 'place_tile';
           let autoWinner: string | null = null;
-          if (checkGameEnd(chains, autoBoardRows)) {
+          // Epic 18: a declared turn that times out still ends the game — a
+          // player can neither stall out of the consequence nor lose the
+          // declaration by running down the clock.
+          if (gameState.end_declared_by === myPlayerIndex) {
             phase = 'game_over';
             const scored = allPlayers.map(p => ({
               id: `player-${p.player_index}`,
@@ -1671,31 +2100,45 @@ async function handleGameAction(opts: {
             }));
             autoWinner = calculateFinalScores(scored, chains, autoBonusTier)[0].name;
           }
-          return { nextPlayerIndex: npi, newRoundNumber: nrn, newDeadline: phase === 'game_over' ? null : nd, newPhase: phase, winner: autoWinner };
+          return {
+            nextPlayerIndex: npi,
+            newRoundNumber: nrn,
+            newDeadline: phase === 'game_over' ? null : nd,
+            newPhase: phase,
+            winner: autoWinner,
+            endConditionRound: stampEndConditionRound(chains, curRound),
+          };
         };
 
         let autoNewPlayerTiles = [...autoPlayerTiles];
 
         if (autoPlayableTiles.length === 0) {
-          // No playable tile: discard a random tile, draw a replacement, end turn
+          // No playable tile: return a random tile to the bag, refill, end turn.
           const discardIdx = Math.floor(Math.random() * autoPlayerTiles.length);
           const tileToDiscard = autoPlayerTiles[discardIdx];
           const bagInsertPos = Math.floor(Math.random() * (autoTileBag.length + 1));
           autoTileBag.splice(bagInsertPos, 0, tileToDiscard);
-          const replaceTile = autoTileBag.pop();
-          autoNewPlayerTiles = autoPlayerTiles.filter(t => t !== tileToDiscard);
-          if (replaceTile) autoNewPlayerTiles.push(replaceTile);
+          const swapped = refillHand(
+            autoPlayerTiles.filter(t => t !== tileToDiscard),
+            autoTileBag,
+            getHandLimit(autoRules),
+          );
+          autoNewPlayerTiles = swapped.tiles;
+          autoTileBag.length = 0;
+          autoTileBag.push(...swapped.bag);
 
           await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
 
-          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(autoChains);
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner, endConditionRound } =
+            computeAutoNextTurn(autoChains);
           await adminClient.from('game_states').update({
             current_player_index: nextPlayerIndex,
             phase: newPhase,
             tile_bag: autoTileBag,
-            stocks_purchased_this_turn: 0,
+            ...TURN_RESET,
             last_placed_tile: null,
             round_number: newRoundNumber,
+            end_condition_round: endConditionRound,
             turn_deadline_epoch: newDeadline,
             game_log: autoGameLog,
             winner,
@@ -1728,10 +2171,16 @@ async function handleGameAction(opts: {
 
         // Helper: draw tile and advance turn
         const advanceTurn = async (chains: Record<ChainName, any>) => {
-          const drawn = autoTileBag.pop();
-          if (drawn) autoNewPlayerTiles.push(drawn);
+          // Epic 17.13: a timer that expires mid-spree ends the turn from
+          // wherever the spree reached and refills the hand from there, rather
+          // than forcing another placement.
+          const autoRefill = refillHand(autoNewPlayerTiles, autoTileBag, getHandLimit(autoRules));
+          autoNewPlayerTiles = autoRefill.tiles;
+          autoTileBag.length = 0;
+          autoTileBag.push(...autoRefill.bag);
           await adminClient.from('game_players').update({ tiles: autoNewPlayerTiles }).eq('id', playerData.id);
-          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner } = computeAutoNextTurn(chains);
+          const { nextPlayerIndex, newRoundNumber, newDeadline, newPhase, winner, endConditionRound } =
+            computeAutoNextTurn(chains);
           await adminClient.from('game_states').update({
             board: autoBoard,
             chains,
@@ -1739,11 +2188,12 @@ async function handleGameAction(opts: {
             current_player_index: nextPlayerIndex,
             phase: newPhase,
             tile_bag: autoTileBag,
-            stocks_purchased_this_turn: 0,
+            ...TURN_RESET,
             last_placed_tile: null,
             merger: null,
             pending_chain_foundation: null,
             round_number: newRoundNumber,
+            end_condition_round: endConditionRound,
             turn_deadline_epoch: newDeadline,
             game_log: autoGameLog,
             winner,
@@ -1897,6 +2347,28 @@ async function handleGameAction(opts: {
       notifyForAction(action, roomId).catch((err) => console.error('notify error:', err));
     }
 
+    // Record the game for the statistics dashboard the moment it ends (Epic 16).
+    // Hooked here, at the single exit point, rather than at each of the seven
+    // sites that set phase = 'game_over' — so a path added later is still
+    // captured. The gate is one indexed lookup when the game was already
+    // running, and skipped entirely once the game is over. Awaited on purpose:
+    // 'new_game' deletes the game_states row, and the record is built from it.
+    if (result.success && gameState && gameState.phase !== 'game_over') {
+      // Epic 18.7 — the stalemate backstop. Removing automatic end detection
+      // makes one dead end reachable: the bag is empty, no player holds a
+      // playable tile, and nobody has declared. discard_tile already refuses on
+      // an empty bag, so there is nothing any player could still do, and with
+      // the vote retired there is no human escape either. Acquire's own answer
+      // is that the game ends when no one can place a tile — the single piece
+      // of automatic ending this epic keeps, as a liveness guarantee rather
+      // than a rules decision. Gated on the pre-action bag already being empty,
+      // so ordinary play pays nothing for it.
+      const stalled = (gameState.tile_bag?.length ?? 0) === 0
+        ? await endIfStalemate(roomId)
+        : false;
+      await recordIfFinished(roomId, stalled ? 'stalemate' : endReasonForAction(action));
+    }
+
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -1907,6 +2379,62 @@ async function handleGameAction(opts: {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
+}
+
+// Epic 18.7. End the game when the board is dead: the tile bag is empty and no
+// player holds a tile they could legally place. Only ever called at a turn
+// boundary (phase 'place_tile') so a mid-merger state is never mistaken for a
+// stalemate. Returns true when this call is the one that ended the game.
+async function endIfStalemate(roomId: string): Promise<boolean> {
+  try {
+    const { data: state } = await db.from('game_states').select('*').eq('room_id', roomId).single();
+    if (!state || state.phase !== 'place_tile') return false;
+    if ((state.tile_bag?.length ?? 0) > 0) return false;
+
+    const { data: players } = await db
+      .from('game_players').select('*').eq('room_id', roomId).order('player_index');
+    if (!players || players.length === 0) return false;
+
+    const rules: CustomRules = normalizeRules(state.rules_snapshot);
+    const { boardRows, boardColsCount } = getBoardDimensions(rules);
+    const eligible: ChainName[] = getEligibleChains(rules);
+    const chains = state.chains ?? {};
+    const board = state.board ?? {};
+
+    // Same legality test the turn timer and the Building Spree exit use: a tile
+    // is dead if it would merge two safe chains, or would found an eighth chain.
+    const isPlayable = (tileId: string): boolean =>
+      isTilePlayable({ tileId, board, chains, eligibleChains: eligible, boardRows, boardColsCount });
+
+    if (players.some((p: any) => (p.tiles ?? []).some(isPlayable))) return false;
+
+    const scored = players.map((p: any) => ({
+      id: `player-${p.player_index}`,
+      name: p.player_name,
+      cash: p.cash,
+      stocks: p.stocks,
+    }));
+    const winner = calculateFinalScores(scored, chains, getBonusTier(rules))[0]?.name ?? null;
+
+    await db.from('game_states').update({
+      phase: 'game_over',
+      winner,
+      turn_deadline_epoch: null,
+      game_log: [...(state.game_log ?? []), {
+        timestamp: Date.now(),
+        playerId: 'system',
+        playerName: 'System',
+        action: 'Game over — no player can place a tile',
+        details: 'The tile bag is empty and every remaining tile is unplayable.',
+      }],
+    }).eq('room_id', roomId);
+
+    return true;
+  } catch (error) {
+    // A backstop that throws must not fail the action that triggered it.
+    console.error('endIfStalemate error:', error);
+    return false;
   }
 }
 
@@ -2048,7 +2576,7 @@ async function completeMergerInDb(
   const lastTile = gameState.last_placed_tile;
 
   // Derive board dimensions for adjacency calculation
-  const completeMergerRulesForBoard: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const completeMergerRulesForBoard: CustomRules = normalizeRules(gameState.rules_snapshot);
   const { boardRows: cmBoardRows, boardColsCount: cmBoardColsCount } = getBoardDimensions(completeMergerRulesForBoard);
 
   // Collect all tiles to add
@@ -2073,9 +2601,8 @@ async function completeMergerInDb(
   }
 
   // Update chains
-  const completeMergerRules: CustomRules = { ...DEFAULT_RULES, ...(gameState.rules_snapshot as Partial<CustomRules> ?? {}) };
+  const completeMergerRules: CustomRules = normalizeRules(gameState.rules_snapshot);
   const completeMergerSafeSize: number | null = getSafeChainSize(completeMergerRules);
-  const completeMergerBonusTier: string = getBonusTier(completeMergerRules);
   const newChains = { ...gameState.chains };
   const existingTiles = newChains[survivingChain].tiles;
   const allTiles = [...new Set([...existingTiles, ...tilesToAdd])];
@@ -2103,19 +2630,26 @@ async function completeMergerInDb(
     details: `${CHAINS[survivingChain].displayName} absorbed ${merger.defunctChains.map((c: ChainName) => CHAINS[c].displayName).join(', ')}. Now has ${allTiles.length} tiles.`,
   });
 
-  let newPhase = 'buy_stock';
-  let winner = null;
-
-  if (checkGameEnd(newChains, cmBoardRows)) {
-    newPhase = 'game_over';
-    const scoredPlayers = allPlayers.map(p => ({
-      id: `player-${p.player_index}`,
-      name: p.player_name,
-      cash: p.cash,
-      stocks: p.stocks,
-    }));
-    winner = calculateFinalScores(scoredPlayers, newChains, completeMergerBonusTier)[0].name;
-  }
+  // Epic 18: a merger that pushes a chain past the end-game size no longer ends
+  // the game mid-turn. It exits like any other merger, and the player may
+  // declare from there.
+  //
+  // Epic 17: this is the fourth and last placement exit — the one every merger
+  // path funnels through. A merger triggered mid-spree is therefore always
+  // *fully* resolved (survivor, bonuses, every player's stock decision) before
+  // the next tile can be placed, because the spree edge is only added here,
+  // after the merger has finished.
+  const placingPlayer = allPlayers.find(
+    (p: any) => p.player_index === gameState.current_player_index,
+  );
+  const newPhase = phaseAfterPlacement({
+    activePowerCard: normalizeActivePowerCard(gameState.active_power_card),
+    tilesPlacedThisTurn: gameState.tiles_placed_this_turn ?? 0,
+    playerTiles: placingPlayer?.tiles ?? [],
+    board: newBoard,
+    chains: newChains,
+    rules: completeMergerRules,
+  });
 
   await adminClient
     .from('game_states')
@@ -2125,7 +2659,6 @@ async function completeMergerInDb(
       phase: newPhase,
       merger: null,
       game_log: gameLog,
-      winner,
     })
     .eq('room_id', roomId);
 

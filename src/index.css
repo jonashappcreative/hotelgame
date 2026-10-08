@@ -45,6 +45,20 @@
     --chain-festival: 142 71% 45%;
     --chain-continental: 0 84% 60%;
     --chain-imperial: 330 81% 60%;
+    /* Statistics dashboard data colors (Epic 16).
+       --chart-1 is --primary stepped down to 38% lightness: the UI primary sits
+       above the dark-mode lightness band for data marks (OKLCH L 0.74 vs the
+       0.48-0.67 band), so a mark painted in it reads as glare rather than data.
+       --chart-2 pairs with it at deltaE 26 normal / 10 deutan, verified with the
+       dataviz palette validator against the --card surface.
+       The chain colors above are NOT used as a categorical data palette: as
+       adjacent marks Imperial and Continental separate by only deltaE 11.6 even
+       with full color vision. They appear on the dashboard as identity swatches
+       beside a text label, never as the channel that carries a value. */
+    --chart-1: 185 82% 38%;
+    --chart-2: 280 67% 60%;
+    --chart-grid: 188 30% 22%;
+
     --chain-merger: 45 100% 50%;
     --chain-majority: 45 100% 50%;
     --chain-minority: 200 80% 60%;

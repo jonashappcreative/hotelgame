@@ -48,3 +48,7 @@ vite.config.ts.timestamp-*
 
 # Deno
 deno.lock
+
+# Simulation runs and their build output
+sim/
+.sim-build/
